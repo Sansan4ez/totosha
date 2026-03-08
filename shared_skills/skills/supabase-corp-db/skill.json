@@ -1,0 +1,8 @@
+{
+  "name": "supabase-corp-db",
+  "description": "Query the corporate Supabase PostgREST API (api.llm-studio.pro) to retrieve catalog/portfolio/series data. Use for translating questions into correct PostgREST requests (filters, pagination, joins, FTS via rpc/ru_fts).",
+  "version": "1.0.0",
+  "author": "LAD",
+  "system_prompt_file": "SKILL.md",
+  "enabled": true
+}
