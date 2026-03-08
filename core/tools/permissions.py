@@ -58,6 +58,7 @@ DEFAULT_PERMISSIONS = {
             "load_tools",     # Can load tools dynamically
             "install_skill",
             "list_skills",
+            "corp_db_search",
         ],
         "description": "Minimal tools for sandboxed sessions"
     },

@@ -70,6 +70,9 @@ services:
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - WORKSPACE_ROOT=/workspace
+      - SUPABASE_REST_URL=${SUPABASE_REST_URL:-https://api.llm-studio.pro/rest/v1}
+    secrets:
+      - supabase_key
     volumes:
       - ./workspace/_shared:/data
       - ./workspace:/workspace:ro  # Read-only access to scan for skills
@@ -390,6 +393,8 @@ secrets:
     file: ./secrets/model_name.txt
   admin_password:
     file: ./secrets/admin_password.txt
+  supabase_key:
+    file: ./secrets/supabase_key.txt
 
 networks:
   agent-net:

@@ -282,6 +282,7 @@ TOOL_DEFINITIONS = [
 # Import tool executors (done after class definitions to avoid circular imports)
 from tools.bash import tool_run_command
 from tools.files import tool_read_file, tool_write_file, tool_edit_file, tool_delete_file, tool_search_files, tool_search_text, tool_list_directory
+from tools.corp_db import tool_corp_db_search
 from tools.web import tool_search_web, tool_fetch_page
 from tools.memory import tool_memory
 from tools.scheduler import tool_schedule_task
@@ -505,6 +506,7 @@ TOOL_EXECUTORS = {
     "list_directory": tool_list_directory,
     "search_web": tool_search_web,
     "fetch_page": tool_fetch_page,
+    "corp_db_search": tool_corp_db_search,
     "memory": tool_memory,
     "schedule_task": tool_schedule_task,
     "manage_tasks": tool_manage_tasks,
