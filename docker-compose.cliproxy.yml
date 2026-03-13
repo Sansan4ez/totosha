@@ -1,0 +1,19 @@
+# Optional override for using cli-proxy-api running in its own Docker network.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.cliproxy.yml up -d --build
+#
+# This keeps the default docker-compose.yml portable (no hard dependency on an
+# external network) while allowing direct container-to-container connectivity
+# when needed.
+
+services:
+  proxy:
+    networks:
+      - agent-net
+      - cliproxyapi-net
+
+networks:
+  cliproxyapi-net:
+    external: true
+    name: cliproxyapi_default
