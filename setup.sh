@@ -73,7 +73,10 @@ if [ ! -f secrets/model_name.txt ]; then
 fi
 
 # Set permissions
-chmod 600 secrets/*.txt
+chmod 700 secrets
+# Docker Compose file-based secrets need to be readable inside containers.
+# With secrets/ at 700, 644 is still safe on the host.
+chmod 644 secrets/*.txt
 
 echo ""
 echo "✅ Setup complete!"
