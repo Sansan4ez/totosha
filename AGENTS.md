@@ -78,7 +78,7 @@ When monitoring and patching the system:
 | `bot/prompt-injection-patterns.json` | 19 injection patterns |
 | `core/tools/permissions.py` | Tool allowlist/denylist |
 | `bot/access.py` | DM Policy (pairing/allowlist) |
-| `core/src/agent/system.txt` | System prompt |
+| `core/src/agent/system.txt` | System prompt (source of truth in repo; Admin UI edits are temporary and disappear after core container recreation/rebuild) |
 | `scripts/doctor.py` | Security audit CLI |
 
 ## Access Control Commands

@@ -190,6 +190,8 @@ python scripts/doctor.py
 python scripts/e2e_test.py --verbose
 ```
 
+System prompt source of truth is `core/src/agent/system.txt` in the repo. Changes made from the Admin UI modify the prompt only inside the running `core` container and are intentionally ephemeral: they do not update the repository and are lost after container recreation or rebuild.
+
 ---
 
 ## Features
