@@ -3,6 +3,8 @@
         {
             "sphereName": "Промышленное освещение",
             "sphereUrl": "https://ladzavod.ru/catalog/promyshlennoe-osveshchenie",
+            "id": 1,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "LAD LED LINE-OZ",
@@ -93,6 +95,8 @@
         {
             "sphereName": "Тяжелые условия эксплуатации",
             "sphereUrl": "https://ladzavod.ru/catalog/tyazhelye-usloviya-ekspluatacii",
+            "id": 2,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "LAD LED R700-4 HT",
@@ -127,6 +131,8 @@
         {
             "sphereName": "Складские помещения",
             "sphereUrl": "https://ladzavod.ru/catalog/skladskie-pomeshcheniya",
+            "id": 3,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "LAD LED R700-3 ST",
@@ -213,6 +219,8 @@
         {
             "sphereName": "Спортивное и освещение высокой мощности",
             "sphereUrl": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie",
+            "id": 6,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "LAD LED R500 SPORT",
@@ -311,6 +319,8 @@
         {
             "sphereName": "РЖД",
             "sphereUrl": "https://ladzavod.ru/catalog/rzhd",
+            "id": 5,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "LAD LED R500-9 LZD",
@@ -349,6 +359,8 @@
         {
             "sphereName": "Периметральное и охранное освещение",
             "sphereUrl": "https://ladzavod.ru/catalog/perimetralnoe-i-ohrannoe-osveshchenie",
+            "id": 159,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "Охранное освещение",
@@ -367,6 +379,8 @@
         {
             "sphereName": "Наружное, уличное и дорожное освещение",
             "sphereUrl": "https://ladzavod.ru/catalog/ulichnoe-i-dorozhnoe",
+            "id": 7,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "Консольные светильники",
@@ -401,6 +415,8 @@
         {
             "sphereName": "Офисное, торговое, ЖКХ и АБК освещение",
             "sphereUrl": "https://ladzavod.ru/catalog/ofisnoe-torgovoe-i-zhkh",
+            "id": 8,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "NL Nova",
@@ -459,6 +475,8 @@
         {
             "sphereName": "Взрывозащищенное оборудование",
             "sphereUrl": "https://ladzavod.ru/catalog/vzryvozashchishchennoe-oborudovanie",
+            "id": 9,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "LAD LED R320-2 Ex",
@@ -533,6 +551,8 @@
         {
             "sphereName": "Низковольтное оборудование",
             "sphereUrl": "https://ladzavod.ru/catalog/nizkovoltnoe-oborudovanie",
+            "id": 10,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "LAD LED R500 36V",
@@ -563,6 +583,8 @@
         {
             "sphereName": "Светильники специального назначения",
             "sphereUrl": "https://ladzavod.ru/catalog/svetilniki-specialnogo-naznacheniya",
+            "id": 11,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "АЗС",
@@ -589,6 +611,8 @@
         {
             "sphereName": "Архитектурное освещение",
             "sphereUrl": "https://ladzavod.ru/catalog/arhitekturnoe-osveshchenie",
+            "id": 12,
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "categoriesInSphere": [
                 {
                     "name": "LAD LED LINE архитектурное освещение",
