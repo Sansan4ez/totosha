@@ -5,594 +5,462 @@
             "series": "LAD LED R500",
             "categoryId": 19,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 18,
             "series": "LAD LED R500",
             "categoryId": 20,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 19,
             "series": "LAD LED R500",
             "categoryId": 22,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 20,
             "series": "LAD LED R500",
             "categoryId": 19,
             "mounting_type_id": 35,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 21,
             "series": "LAD LED R500",
             "categoryId": 20,
             "mounting_type_id": 35,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 22,
             "series": "LAD LED R500",
             "categoryId": 22,
             "mounting_type_id": 35,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 23,
             "series": "LAD LED R500",
             "categoryId": 19,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 24,
             "series": "LAD LED R500",
             "categoryId": 20,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 25,
             "series": "LAD LED R500",
             "categoryId": 22,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 26,
             "series": "LAD LED R500",
             "categoryId": 23,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 27,
             "series": "LAD LED R500",
             "categoryId": 24,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 28,
             "series": "LAD LED R500",
             "categoryId": 25,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 29,
             "series": "LAD LED R500",
             "categoryId": 26,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 30,
             "series": "LAD LED R500",
             "categoryId": 27,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 31,
             "series": "LAD LED R500",
             "categoryId": 28,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 32,
             "series": "LAD LED R500",
             "categoryId": 29,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 33,
             "series": "LAD LED R500",
             "categoryId": 30,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 34,
             "series": "LAD LED R500",
             "categoryId": 31,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 35,
             "series": "LAD LED R500",
             "categoryId": 19,
             "mounting_type_id": 37,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 36,
             "series": "LAD LED R500",
             "categoryId": 20,
             "mounting_type_id": 37,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 37,
             "series": "LAD LED R500",
             "categoryId": 22,
             "mounting_type_id": 37,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 38,
             "series": "LAD LED R500",
             "categoryId": 23,
             "mounting_type_id": 37,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 39,
             "series": "LAD LED R500",
             "categoryId": 19,
             "mounting_type_id": 38,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 40,
             "series": "LAD LED R500",
             "categoryId": 20,
             "mounting_type_id": 38,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 41,
             "series": "LAD LED R500",
             "categoryId": 22,
             "mounting_type_id": 38,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 42,
             "series": "LAD LED R500",
             "categoryId": 23,
             "mounting_type_id": 38,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 43,
             "series": "LAD LED R500 LZD",
             "categoryId": 67,
             "mounting_type_id": 36,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 44,
             "series": "LAD LED R500 LZD",
             "categoryId": 178,
             "mounting_type_id": 36,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 45,
             "series": "LAD LED R500 LZD",
             "categoryId": 68,
             "mounting_type_id": 36,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 46,
             "series": "LAD LED R500 LZD",
             "categoryId": 69,
             "mounting_type_id": 36,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 47,
             "series": "LAD LED R500 ZD",
             "categoryId": 65,
             "mounting_type_id": 45,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 48,
             "series": "LAD LED R500 ZD",
             "categoryId": 66,
             "mounting_type_id": 45,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 49,
             "series": "LAD LED R500 2Ex",
             "categoryId": 184,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 50,
             "series": "LAD LED R500 2Ex",
             "categoryId": 185,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 51,
             "series": "LAD LED R500 2Ex",
             "categoryId": 186,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 52,
             "series": "LAD LED R500 2Ex",
             "categoryId": 184,
             "mounting_type_id": 35,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 53,
             "series": "LAD LED R500 2Ex",
             "categoryId": 185,
             "mounting_type_id": 35,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 54,
             "series": "LAD LED R500 2Ex",
             "categoryId": 186,
             "mounting_type_id": 35,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 55,
             "series": "LAD LED R500 2Ex",
             "categoryId": 184,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 56,
             "series": "LAD LED R500 2Ex",
             "categoryId": 185,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 57,
             "series": "LAD LED R500 2Ex",
             "categoryId": 186,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 58,
             "series": "LAD LED R500 2Ex",
             "categoryId": 187,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 59,
             "series": "LAD LED R320 Ex",
             "categoryId": 188,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 60,
             "series": "LAD LED R320 Ex",
             "categoryId": 149,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 61,
             "series": "LAD LED R320 Ex",
             "categoryId": 150,
             "mounting_type_id": 34,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 62,
             "series": "LAD LED R320 Ex",
             "categoryId": 188,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 63,
             "series": "LAD LED R320 Ex",
             "categoryId": 149,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 64,
             "series": "LAD LED R320 Ex",
             "categoryId": 150,
             "mounting_type_id": 47,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 65,
             "series": "LAD LED R320 Ex",
             "categoryId": 18,
             "mounting_type_id": 38,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 66,
             "series": "LAD LED LINE",
             "categoryId": 108,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 67,
             "series": "LAD LED LINE",
             "categoryId": 109,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 68,
             "series": "LAD LED LINE",
             "categoryId": 110,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 69,
             "series": "LAD LED LINE",
             "categoryId": 111,
             "mounting_type_id": 47,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 70,
             "series": "LAD LED LINE",
             "categoryId": 108,
             "mounting_type_id": 48,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 71,
             "series": "LAD LED LINE",
             "categoryId": 109,
             "mounting_type_id": 48,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 72,
             "series": "LAD LED LINE-OZ",
             "categoryId": 39,
             "mounting_type_id": 46,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 73,
             "series": "LAD LED LINE-OZ",
             "categoryId": 39,
             "mounting_type_id": 46,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 74,
             "series": "LAD LED LINE-OZ",
             "categoryId": 39,
             "mounting_type_id": 49,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 75,
             "series": "LAD LED LINE-OZ",
             "categoryId": 39,
             "mounting_type_id": 49,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 76,
             "series": "NL Nova",
             "categoryId": 112,
             "mounting_type_id": 50,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 77,
             "series": "NL Nova",
             "categoryId": 179,
             "mounting_type_id": 50,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 78,
             "series": "NL Nova",
             "categoryId": 114,
             "mounting_type_id": 50,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         },
         {
             "id": 79,
             "series": "NL Nova",
             "categoryId": 112,
             "mounting_type_id": 51,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 80,
             "series": "NL Nova",
             "categoryId": 114,
             "mounting_type_id": 51,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 81,
             "series": "NL Nova",
             "categoryId": 179,
             "mounting_type_id": 52,
-            "is_default": false,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": false
         },
         {
             "id": 82,
             "series": "NL VEGA",
             "categoryId": 170,
             "mounting_type_id": 53,
-            "is_default": true,
-            "created_at": "2025-05-13 00:07:29.306175+00",
-            "updated_at": "2025-05-13 00:07:29.306175+00"
+            "is_default": true
         }
     ]
 }
