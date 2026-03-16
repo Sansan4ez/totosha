@@ -1,8 +1,8 @@
 {
     "spheres": [
         {
-            "sphereName": "Промышленное освещение",
-            "sphereUrl": "https://ladzavod.ru/catalog/promyshlennoe-osveshchenie",
+            "name": "Промышленное освещение",
+            "url": "https://ladzavod.ru/catalog/promyshlennoe-osveshchenie",
             "id": 1,
             "categoriesInSphere": [
                 {
@@ -92,8 +92,8 @@
             ]
         },
         {
-            "sphereName": "Тяжелые условия эксплуатации",
-            "sphereUrl": "https://ladzavod.ru/catalog/tyazhelye-usloviya-ekspluatacii",
+            "name": "Тяжелые условия эксплуатации",
+            "url": "https://ladzavod.ru/catalog/tyazhelye-usloviya-ekspluatacii",
             "id": 2,
             "categoriesInSphere": [
                 {
@@ -127,8 +127,8 @@
             ]
         },
         {
-            "sphereName": "Складские помещения",
-            "sphereUrl": "https://ladzavod.ru/catalog/skladskie-pomeshcheniya",
+            "name": "Складские помещения",
+            "url": "https://ladzavod.ru/catalog/skladskie-pomeshcheniya",
             "id": 3,
             "categoriesInSphere": [
                 {
@@ -214,8 +214,8 @@
             ]
         },
         {
-            "sphereName": "Спортивное и освещение высокой мощности",
-            "sphereUrl": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie",
+            "name": "Спортивное и освещение высокой мощности",
+            "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie",
             "id": 6,
             "categoriesInSphere": [
                 {
@@ -313,8 +313,8 @@
             ]
         },
         {
-            "sphereName": "РЖД",
-            "sphereUrl": "https://ladzavod.ru/catalog/rzhd",
+            "name": "РЖД",
+            "url": "https://ladzavod.ru/catalog/rzhd",
             "id": 5,
             "categoriesInSphere": [
                 {
@@ -352,8 +352,8 @@
             ]
         },
         {
-            "sphereName": "Периметральное и охранное освещение",
-            "sphereUrl": "https://ladzavod.ru/catalog/perimetralnoe-i-ohrannoe-osveshchenie",
+            "name": "Периметральное и охранное освещение",
+            "url": "https://ladzavod.ru/catalog/perimetralnoe-i-ohrannoe-osveshchenie",
             "id": 159,
             "categoriesInSphere": [
                 {
@@ -371,8 +371,8 @@
             ]
         },
         {
-            "sphereName": "Наружное, уличное и дорожное освещение",
-            "sphereUrl": "https://ladzavod.ru/catalog/ulichnoe-i-dorozhnoe",
+            "name": "Наружное, уличное и дорожное освещение",
+            "url": "https://ladzavod.ru/catalog/ulichnoe-i-dorozhnoe",
             "id": 7,
             "categoriesInSphere": [
                 {
@@ -406,8 +406,8 @@
             ]
         },
         {
-            "sphereName": "Офисное, торговое, ЖКХ и АБК освещение",
-            "sphereUrl": "https://ladzavod.ru/catalog/ofisnoe-torgovoe-i-zhkh",
+            "name": "Офисное, торговое, ЖКХ и АБК освещение",
+            "url": "https://ladzavod.ru/catalog/ofisnoe-torgovoe-i-zhkh",
             "id": 8,
             "categoriesInSphere": [
                 {
@@ -465,8 +465,8 @@
             ]
         },
         {
-            "sphereName": "Взрывозащищенное оборудование",
-            "sphereUrl": "https://ladzavod.ru/catalog/vzryvozashchishchennoe-oborudovanie",
+            "name": "Взрывозащищенное оборудование",
+            "url": "https://ladzavod.ru/catalog/vzryvozashchishchennoe-oborudovanie",
             "id": 9,
             "categoriesInSphere": [
                 {
@@ -540,8 +540,8 @@
             ]
         },
         {
-            "sphereName": "Низковольтное оборудование",
-            "sphereUrl": "https://ladzavod.ru/catalog/nizkovoltnoe-oborudovanie",
+            "name": "Низковольтное оборудование",
+            "url": "https://ladzavod.ru/catalog/nizkovoltnoe-oborudovanie",
             "id": 10,
             "categoriesInSphere": [
                 {
@@ -571,8 +571,8 @@
             ]
         },
         {
-            "sphereName": "Светильники специального назначения",
-            "sphereUrl": "https://ladzavod.ru/catalog/svetilniki-specialnogo-naznacheniya",
+            "name": "Светильники специального назначения",
+            "url": "https://ladzavod.ru/catalog/svetilniki-specialnogo-naznacheniya",
             "id": 11,
             "categoriesInSphere": [
                 {
@@ -598,8 +598,8 @@
             ]
         },
         {
-            "sphereName": "Архитектурное освещение",
-            "sphereUrl": "https://ladzavod.ru/catalog/arhitekturnoe-osveshchenie",
+            "name": "Архитектурное освещение",
+            "url": "https://ladzavod.ru/catalog/arhitekturnoe-osveshchenie",
             "id": 12,
             "categoriesInSphere": [
                 {

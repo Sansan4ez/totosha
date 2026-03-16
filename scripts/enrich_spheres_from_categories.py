@@ -3,9 +3,10 @@
 Синхронизирует db/spheres.json и db/categories.json.
 
 Что делает:
-1. Добавляет `id` в каждую сферу из подходящей записи в categories.json.
-2. Удаляет `image` из сфер, если поле уже было записано ранее.
-3. Удаляет из списка `categories` те записи, которые соответствуют сферам.
+1. Стандартизирует поля сферы: `sphereName` -> `name`, `sphereUrl` -> `url`.
+2. Добавляет `id` в каждую сферу из подходящей записи в categories.json.
+3. Удаляет `image` из сфер, если поле уже было записано ранее.
+4. Удаляет из списка `categories` те записи, которые соответствуют сферам.
 
 По умолчанию обновляет оба файла на месте:
     python scripts/enrich_spheres_from_categories.py
@@ -103,9 +104,9 @@ def match_category(
     sphere: dict[str, Any],
     categories_by_name: dict[str, list[dict[str, Any]]],
     categories_by_url: dict[str, list[dict[str, Any]]],
-) -> dict[str, Any]:
-    sphere_name = sphere.get("sphereName")
-    sphere_url = sphere.get("sphereUrl")
+) -> dict[str, Any] | None:
+    sphere_name = sphere.get("name") or sphere.get("sphereName")
+    sphere_url = sphere.get("url") or sphere.get("sphereUrl")
 
     matches_by_name = categories_by_name.get(str(sphere_name), []) if sphere_name else []
     matches_by_url = categories_by_url.get(str(sphere_url), []) if sphere_url else []
@@ -133,6 +134,8 @@ def match_category(
 
     match = match_by_name or match_by_url
     if not match:
+        if "id" in sphere:
+            return None
         raise SystemExit(
             "Не удалось сопоставить сферу "
             f"{sphere_name!r} ({sphere_url!r}) с записью в categories.json"
@@ -147,20 +150,30 @@ def match_category(
     return match
 
 
-def enrich_sphere(sphere: dict[str, Any], category: dict[str, Any]) -> dict[str, Any]:
+def enrich_sphere(sphere: dict[str, Any], category: dict[str, Any] | None) -> dict[str, Any]:
     enriched: dict[str, Any] = {}
     inserted = False
 
     for key, value in sphere.items():
-        if key in {"id", "image"}:
+        if key == "image":
             continue
 
-        enriched[key] = value
-        if key == "sphereUrl":
-            enriched["id"] = category["id"]
-            inserted = True
+        if key == "id":
+            enriched["id"] = value
+            continue
 
-    if not inserted:
+        if key == "sphereName":
+            key = "name"
+        elif key == "sphereUrl":
+            key = "url"
+
+        enriched[key] = value
+        if key == "url":
+            if category is not None:
+                enriched["id"] = category["id"]
+                inserted = True
+
+    if not inserted and category is not None:
         enriched["id"] = category["id"]
 
     return enriched
@@ -196,7 +209,8 @@ def main() -> int:
     for sphere in spheres:
         category = match_category(sphere, categories_by_name, categories_by_url)
         enriched = enrich_sphere(sphere, category)
-        matched_category_objects.add(id(category))
+        if category is not None:
+            matched_category_objects.add(id(category))
 
         if enriched != sphere:
             updated_spheres += 1
@@ -208,10 +222,10 @@ def main() -> int:
     ]
     removed_categories = len(categories) - len(filtered_categories)
 
-    if removed_categories != len(spheres):
+    if removed_categories not in {0, len(matched_category_objects)}:
         raise SystemExit(
-            "Ожидалось удалить столько же категорий, сколько сфер найдено. "
-            f"Сферы: {len(spheres)}, удалено категорий: {removed_categories}"
+            "Неожиданное число удаленных категорий. "
+            f"Сопоставлено категорий: {len(matched_category_objects)}, удалено: {removed_categories}"
         )
 
     if args.dry_run:
