@@ -1,0 +1,2104 @@
+{
+    "categories": [
+        {
+            "id": 1,
+            "name": "Промышленное освещение",
+            "url": "https://ladzavod.ru/catalog/promyshlennoe-osveshchenie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 2,
+            "name": "Тяжелые условия эксплуатации",
+            "url": "https://ladzavod.ru/catalog/tyazhelye-usloviya-ekspluatacii",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 3,
+            "name": "Складские помещения",
+            "url": "https://ladzavod.ru/catalog/skladskie-pomeshcheniya",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 6,
+            "name": "Спортивное и освещение высокой мощности",
+            "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 169,
+            "name": "LAD LED R500 SPORT",
+            "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie-lad-led-r500-sport",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/d2f/b0e/692d2fb0e5a8d436229725.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 5,
+            "name": "РЖД",
+            "url": "https://ladzavod.ru/catalog/rzhd",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 159,
+            "name": "Периметральное и охранное освещение",
+            "url": "https://ladzavod.ru/catalog/perimetralnoe-i-ohrannoe-osveshchenie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 168,
+            "name": "Охранное освещение",
+            "url": "https://ladzavod.ru/catalog/ohrannoe-osveshchenie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": {
+                "id": 159,
+                "name": "Периметральное и охранное освещение",
+                "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 149,
+            "name": "LAD LED R320-2 Ex",
+            "url": "https://ladzavod.ru/catalog/r320-2-ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/92e/69427092e761a580104486.png",
+            "powerDescription": "Мощность, Вт: 35 - 165\nСветовой поток, Лм:\n4765-24877",
+            "parent": {
+                "id": 146,
+                "name": "LAD LED R320 Ex 220v",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/cb9/69426fcb9a7bf714990725.png",
+                "powerDescription": "Мощность, Вт: 35 - 165\nСветовой поток, Лм:\n4765-24877"
+            }
+        },
+        {
+            "id": 100,
+            "name": "LAD LED R700-18 ST",
+            "url": "https://ladzavod.ru/catalog/r700-18-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/fde/6943defde823d710361578.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 144,
+            "name": "140W 12/24V",
+            "url": "https://ladzavod.ru/catalog/r500-4-2ex-12-24v-140w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 140\nСветовой поток, Лм:\n20104 - 22382",
+            "parent": {
+                "id": 183,
+                "name": "LAD LED R500-4 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/86b/69426f86b54c5483297248.png",
+                "powerDescription": "Мощность, Вт: 140\nСветовой поток, Лм:\n20104 - 22382"
+            }
+        },
+        {
+            "id": 143,
+            "name": "105W 36V",
+            "url": "https://ladzavod.ru/catalog/r500-3-2ex-36v-105w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 105\nСветовой поток, Лм:\n15078 - 16786",
+            "parent": {
+                "id": 182,
+                "name": "LAD LED R500-3 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/7ae/69426f7ae9677250938341.png",
+                "powerDescription": "Мощность, Вт: 105\nСветовой поток, Лм:\n15078 - 16786"
+            }
+        },
+        {
+            "id": 161,
+            "name": "Консольные светильники",
+            "url": "https://ladzavod.ru/catalog/konsolnye-svetilniki",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d9e/124/67cd9e124ef38158632488.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 75,
+            "name": "LAD LED R500 36V",
+            "url": "https://ladzavod.ru/catalog/r500-36v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/da2/ece/67cda2eced573391307931.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 73,
+                "name": "LAD LED R500 12/24/36V",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67d/008/ab3/67d008ab34adc999307357.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 72,
+            "name": "70W",
+            "url": "https://ladzavod.ru/catalog/r500-a-70w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": {
+                "id": 189,
+                "name": "LAD LED R500 A",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67d/00a/666/67d00a66658a9411639903.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 129,
+            "name": "110W",
+            "url": "https://ladzavod.ru/catalog/r500-2-2ex-110w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 70-110 \nСветовой поток светильника, Лм:\n10052-16533",
+            "parent": {
+                "id": 185,
+                "name": "LAD LED R500-2 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/8e2/69426e8e2c4fd279299085.png",
+                "powerDescription": "Мощность, Вт: 70-110 \nСветовой поток светильника, Лм:\n10052-16533"
+            }
+        },
+        {
+            "id": 89,
+            "name": "LAD LED R700-3 ST",
+            "url": "https://ladzavod.ru/catalog/r700-3-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/4eb/6943de4ebf55e325787073.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 181,
+            "name": "LAD LED R500-2 2Ex (12/24/36V)",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-2-12-24-36-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/6b0/69426f6b04484575358328.png",
+            "powerDescription": "Мощность, Вт: 35 – 140\nСветовой поток светильника, Лм:\n5026-22233",
+            "parent": {
+                "id": 121,
+                "name": "LAD LED R500 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/e59/69426de592395741412334.png",
+                "powerDescription": "Мощность, Вт: 35 – 140\nСветовой поток светильника, Лм:\n5026-22233"
+            }
+        },
+        {
+            "id": 105,
+            "name": "LAD LED R700-4 HT",
+            "url": "https://ladzavod.ru/catalog/r700-4-ht",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/380/6943dd380c887423625656.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 32,
+                "name": "LAD LED R700 HT",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/7e5/6943dc7e5ea3d086783243.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 68,
+            "name": "LAD LED R500-9 LZD",
+            "url": "https://ladzavod.ru/catalog/r500-9-lzd",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/698/2e2/39a/6982e239a6c8d001208135.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 64,
+                "name": "LAD LED R500 LZD",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3a5/e84/6943a5e84b51d379839444.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 91,
+            "name": "LAD LED R700-5 ST",
+            "url": "https://ladzavod.ru/catalog/r700-5-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/676/6943de676c021595857769.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 76,
+            "name": "35W",
+            "url": "https://ladzavod.ru/catalog/r500-12-24v-35w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-70\nСветовой поток светильника, Лм: \n5026-11191",
+            "parent": {
+                "id": 74,
+                "name": "LAD LED R500 12/24V",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/da2/6d1/67cda26d1566c846978324.png",
+                "powerDescription": "Мощность, Вт: 35-70\nСветовой поток светильника, Лм: \n5026-11191"
+            }
+        },
+        {
+            "id": 155,
+            "name": "LAD LED R320-1 Ex (36V)",
+            "url": "https://ladzavod.ru/catalog/r320-1-ex-36v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/c29/694270c291def722895467.png",
+            "powerDescription": "Мощность, Вт: 35 - 70\nСветовой поток, Лм:\n4765-10554",
+            "parent": {
+                "id": 147,
+                "name": "LAD LED R320 Ex (36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/475/694270475c8ab778903909.png",
+                "powerDescription": "Мощность, Вт: 35 - 70\nСветовой поток, Лм:\n4765-10554"
+            }
+        },
+        {
+            "id": 117,
+            "name": "6W",
+            "url": "https://ladzavod.ru/catalog/vega-12-36-6w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": {
+                "id": 15,
+                "name": "NL VEGA-12-36",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/679/2ea/9dd/6792ea9dd1612510083170.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 164,
+            "name": "АЗС",
+            "url": "https://ladzavod.ru/catalog/azs",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/da3/5d3/67cda35d36f9f579236076.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 184,
+            "name": "LAD LED R500-1 2Ex",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-1-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/72b/69426e72b2b65134411309.png",
+            "powerDescription": "Мощность, Вт: 35 – 220\nСветовой поток светильника, Лм:\n5026-33066",
+            "parent": {
+                "id": 120,
+                "name": "LAD LED R500 2Ex 220v",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/d13/69426dd133a78701715336.png",
+                "powerDescription": "Мощность, Вт: 35 – 220\nСветовой поток светильника, Лм:\n5026-33066"
+            }
+        },
+        {
+            "id": 90,
+            "name": "LAD LED R700-4 ST",
+            "url": "https://ladzavod.ru/catalog/r700-4-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/5ba/6943de5bac743787786673.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 87,
+            "name": "LAD LED R700-1 ST",
+            "url": "https://ladzavod.ru/catalog/r700-1-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67d/286/b4e/67d286b4e8f6e328512082.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 173,
+            "name": "6W",
+            "url": "https://ladzavod.ru/catalog/6w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 6-10\nСветовой поток светильника, Лм:\n 900 - 1005",
+            "parent": {
+                "id": 171,
+                "name": "NL VEGA",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d97/fda/67cd97fdad711791759393.png",
+                "powerDescription": "Мощность, Вт: 6-10\nСветовой поток светильника, Лм:\n 900 - 1005"
+            }
+        },
+        {
+            "id": 182,
+            "name": "LAD LED R500-3 2Ex (12/24/36V)",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-3-12-24-36-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/7ae/69426f7ae9677250938341.png",
+            "powerDescription": "Мощность, Вт: 35 – 140\nСветовой поток светильника, Лм:\n5026-22233",
+            "parent": {
+                "id": 121,
+                "name": "LAD LED R500 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/e59/69426de592395741412334.png",
+                "powerDescription": "Мощность, Вт: 35 – 140\nСветовой поток светильника, Лм:\n5026-22233"
+            }
+        },
+        {
+            "id": 102,
+            "name": "LAD LED R700-1 HT",
+            "url": "https://ladzavod.ru/catalog/r700-1-ht",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/111/6943dd111fef6261936547.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 32,
+                "name": "LAD LED R700 HT",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/7e5/6943dc7e5ea3d086783243.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 115,
+            "name": "6W",
+            "url": "https://ladzavod.ru/catalog/vega-220-6w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": {
+                "id": 17,
+                "name": "NL VEGA 220",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/679/2ea/e45/6792eae45e16c272650757.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 158,
+            "name": "70W-36V",
+            "url": "https://ladzavod.ru/catalog/r320-2-ex-36-70w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 70\nСветовой поток, Лм: \n9531-10544",
+            "parent": {
+                "id": 156,
+                "name": "LAD LED R320-2 Ex (36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/d09/694270d0961b8168245227.png",
+                "powerDescription": "Мощность, Вт: 70\nСветовой поток, Лм: \n9531-10544"
+            }
+        },
+        {
+            "id": 14,
+            "name": "NL Nova",
+            "url": "https://ladzavod.ru/catalog/nl-nova",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/5e2/67ce795e24635603640814.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 138,
+            "name": "35W 12/24V",
+            "url": "https://ladzavod.ru/catalog/r500-1-2ex-12-24v-35w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35\nСветовой поток, Лм:\n5026 - 5595",
+            "parent": {
+                "id": 180,
+                "name": "LAD LED R500-1 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/593/69426f593a09d460981418.png",
+                "powerDescription": "Мощность, Вт: 35\nСветовой поток, Лм:\n5026 - 5595"
+            }
+        },
+        {
+            "id": 39,
+            "name": "LAD LED LINE-OZ",
+            "url": "https://ladzavod.ru/catalog/lad-led-line-oz",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/496/67ce79496ed72114449342.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 98,
+            "name": "LAD LED R700-14 ST",
+            "url": "https://ladzavod.ru/catalog/r700-14-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/e05/6943dee05db27310409960.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 95,
+            "name": "LAD LED R700-9 ST",
+            "url": "https://ladzavod.ru/catalog/r700-9-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/ad9/6943dead9b1b1291914010.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 83,
+            "name": "LAD LED R700-3 PROM",
+            "url": "https://ladzavod.ru/catalog/r700-3-prom",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/ba5/6943ddba521a7564435465.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 34,
+                "name": "LAD LED R700 PROM",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/a0c/6943dca0cfc50260987761.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 146,
+            "name": "LAD LED R320 Ex 220v",
+            "url": "https://ladzavod.ru/catalog/r320-ex-220v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/cb9/69426fcb9a7bf714990725.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 18,
+                "name": "LAD LED R320 Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/725/67ce797259ccb465679621.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 86,
+            "name": "LAD LED R700-6 PROM",
+            "url": "https://ladzavod.ru/catalog/r700-6-prom",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/f4e/6943ddf4ec4f6361275840.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 34,
+                "name": "LAD LED R700 PROM",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/a0c/6943dca0cfc50260987761.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 81,
+            "name": "LAD LED R700-1 PROM",
+            "url": "https://ladzavod.ru/catalog/r700-1-prom",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/a06/6943dda060e2e352097470.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 34,
+                "name": "LAD LED R700 PROM",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/a0c/6943dca0cfc50260987761.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 110,
+            "name": "LAD LED LINE-1000-40",
+            "url": "https://ladzavod.ru/catalog/line-40",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fd3/c3a/692fd3c3ad1ca653624518.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 13,
+                "name": "LAD LED LINE",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/3c5/67ce793c56d85506457229.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 190,
+            "name": "LAD LED LINE-120",
+            "url": "https://ladzavod.ru/catalog/lad-led-line-120",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fd5/23a/692fd523a2bdd120564416.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 13,
+                "name": "LAD LED LINE",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/3c5/67ce793c56d85506457229.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 142,
+            "name": "105W 12/24V",
+            "url": "https://ladzavod.ru/catalog/r500-3-2ex-12-24v-105w",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d9a/ac2/67cd9aac20c02634975156.png",
+            "powerDescription": "Мощность, Вт: 105\nСветовой поток, Лм:\n15078 - 16786",
+            "parent": {
+                "id": 182,
+                "name": "LAD LED R500-3 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/7ae/69426f7ae9677250938341.png",
+                "powerDescription": "Мощность, Вт: 105\nСветовой поток, Лм:\n15078 - 16786"
+            }
+        },
+        {
+            "id": 66,
+            "name": "LAD LED R500-3 ZD",
+            "url": "https://ladzavod.ru/catalog/zd-140w",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d9d/7a2/67cd9d7a2dda9373581463.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 63,
+                "name": "LAD LED R500 ZD",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3a5/dda/6943a5ddadfd6717598362.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 114,
+            "name": "NL Nova120",
+            "url": "https://ladzavod.ru/catalog/nova120",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/8f6/3e0/6948f63e030bf248133463.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 14,
+                "name": "NL Nova",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/5e2/67ce795e24635603640814.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 104,
+            "name": "LAD LED R700-3 HT",
+            "url": "https://ladzavod.ru/catalog/r700-3-ht",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/286/6943dd2866911914407240.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 32,
+                "name": "LAD LED R700 HT",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/7e5/6943dc7e5ea3d086783243.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 186,
+            "name": "LAD LED R500-3 2Ex",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-3-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/9c8/69426e9c8732c096539216.png",
+            "powerDescription": "Мощность, Вт: 35 – 220\nСветовой поток светильника, Лм:\n5026-33066",
+            "parent": {
+                "id": 120,
+                "name": "LAD LED R500 2Ex 220v",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/d13/69426dd133a78701715336.png",
+                "powerDescription": "Мощность, Вт: 35 – 220\nСветовой поток светильника, Лм:\n5026-33066"
+            }
+        },
+        {
+            "id": 163,
+            "name": "Парковые светильники",
+            "url": "https://ladzavod.ru/catalog/parkovye-svetilniki",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/693/13d/fc9/69313dfc991e4855814314.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 178,
+            "name": "LAD LED R500-4 LZD",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-4-lzd",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/698/2e2/2cb/6982e22cb9522399035836.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 64,
+                "name": "LAD LED R500 LZD",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3a5/e84/6943a5e84b51d379839444.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 79,
+            "name": "LAD LED R500 G",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-g",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/d2c/f64/692d2cf640cc4418257327.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 63,
+            "name": "LAD LED R500 ZD",
+            "url": "https://ladzavod.ru/catalog/r500-zd",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3a5/dda/6943a5ddadfd6717598362.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 62,
+                "name": "LAD LED R500 РЖД",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/11d/67ce7911dac29191644689.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 156,
+            "name": "LAD LED R320-2 Ex (36V)",
+            "url": "https://ladzavod.ru/catalog/r320-2-ex-36v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/d09/694270d0961b8168245227.png",
+            "powerDescription": "Мощность, Вт: 35 - 70\nСветовой поток, Лм:\n4765-10554",
+            "parent": {
+                "id": 147,
+                "name": "LAD LED R320 Ex (36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/475/694270475c8ab778903909.png",
+                "powerDescription": "Мощность, Вт: 35 - 70\nСветовой поток, Лм:\n4765-10554"
+            }
+        },
+        {
+            "id": 130,
+            "name": "105W",
+            "url": "https://ladzavod.ru/catalog/r500-3-2ex-105w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 105-165 \nСветовой поток светильника, Лм:\n15078-24799",
+            "parent": {
+                "id": 186,
+                "name": "LAD LED R500-3 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/9c8/69426e9c8732c096539216.png",
+                "powerDescription": "Мощность, Вт: 105-165 \nСветовой поток светильника, Лм:\n15078-24799"
+            }
+        },
+        {
+            "id": 18,
+            "name": "LAD LED R320 Ex",
+            "url": "https://ladzavod.ru/catalog/r320-ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/725/67ce797259ccb465679621.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 185,
+            "name": "LAD LED R500-2 2Ex",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-2-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/8e2/69426e8e2c4fd279299085.png",
+            "powerDescription": "Мощность, Вт: 35 – 220\nСветовой поток светильника, Лм:\n5026-33066",
+            "parent": {
+                "id": 120,
+                "name": "LAD LED R500 2Ex 220v",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/d13/69426dd133a78701715336.png",
+                "powerDescription": "Мощность, Вт: 35 – 220\nСветовой поток светильника, Лм:\n5026-33066"
+            }
+        },
+        {
+            "id": 176,
+            "name": "10W",
+            "url": "https://ladzavod.ru/catalog/vega12-36-10w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 6-10\nСветовой поток светильника, Лм:\n900 - 1005",
+            "parent": {
+                "id": 172,
+                "name": "NL VEGA 12/36V",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d98/15b/67cd9815b9e1c644064197.png",
+                "powerDescription": "Мощность, Вт: 6-10\nСветовой поток светильника, Лм:\n900 - 1005"
+            }
+        },
+        {
+            "id": 179,
+            "name": "NL Nova60",
+            "url": "https://ladzavod.ru/catalog/nl-nova60",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/8f6/2eb/6948f62eb5214995505584.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 14,
+                "name": "NL Nova",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/5e2/67ce795e24635603640814.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 132,
+            "name": "140W",
+            "url": "https://ladzavod.ru/catalog/r500-4-2ex-140w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 140-220\nСветовой поток светильника, Лм:\n20104-33066",
+            "parent": {
+                "id": 187,
+                "name": "LAD LED R500-4 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/d15/69426ed154c78459630745.png",
+                "powerDescription": "Мощность, Вт: 140-220\nСветовой поток светильника, Лм:\n20104-33066"
+            }
+        },
+        {
+            "id": 94,
+            "name": "LAD LED R700-8 ST",
+            "url": "https://ladzavod.ru/catalog/r700-8-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/996/6943de99671f3181846541.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 140,
+            "name": "70W 12/24V",
+            "url": "https://ladzavod.ru/catalog/r500-2-2ex-12-24v-70w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 70\nСветовой поток, Лм:\n10052 - 11191",
+            "parent": {
+                "id": 181,
+                "name": "LAD LED R500-2 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/6b0/69426f6b04484575358328.png",
+                "powerDescription": "Мощность, Вт: 70\nСветовой поток, Лм:\n10052 - 11191"
+            }
+        },
+        {
+            "id": 88,
+            "name": "LAD LED R700-2 ST",
+            "url": "https://ladzavod.ru/catalog/r700-2-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/438/6943de43809f0651237608.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 128,
+            "name": "70W",
+            "url": "https://ladzavod.ru/catalog/r500-2-2ex-70w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 70-110 \nСветовой поток светильника, Лм:\n10052-16533",
+            "parent": {
+                "id": 185,
+                "name": "LAD LED R500-2 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/8e2/69426e8e2c4fd279299085.png",
+                "powerDescription": "Мощность, Вт: 70-110 \nСветовой поток светильника, Лм:\n10052-16533"
+            }
+        },
+        {
+            "id": 126,
+            "name": "35W",
+            "url": "https://ladzavod.ru/catalog/r500-1-2ex-35w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-55\nСветовой поток светильника, Лм: \n5026-8266",
+            "parent": {
+                "id": 184,
+                "name": "LAD LED R500-1 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/72b/69426e72b2b65134411309.png",
+                "powerDescription": "Мощность, Вт: 35-55\nСветовой поток светильника, Лм: \n5026-8266"
+            }
+        },
+        {
+            "id": 133,
+            "name": "220W",
+            "url": "https://ladzavod.ru/catalog/r500-4-2ex-220w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 140-220\nСветовой поток светильника, Лм:\n20104-33066",
+            "parent": {
+                "id": 187,
+                "name": "LAD LED R500-4 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/d15/69426ed154c78459630745.png",
+                "powerDescription": "Мощность, Вт: 140-220\nСветовой поток светильника, Лм:\n20104-33066"
+            }
+        },
+        {
+            "id": 183,
+            "name": "LAD LED R500-4 2Ex (12/24/36V)",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-4-12-24-36-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/86b/69426f86b54c5483297248.png",
+            "powerDescription": "Мощность, Вт: 35 – 140\nСветовой поток светильника, Лм:\n5026-22233",
+            "parent": {
+                "id": 121,
+                "name": "LAD LED R500 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/e59/69426de592395741412334.png",
+                "powerDescription": "Мощность, Вт: 35 – 140\nСветовой поток светильника, Лм:\n5026-22233"
+            }
+        },
+        {
+            "id": 127,
+            "name": "55W",
+            "url": "https://ladzavod.ru/catalog/r500-1-2ex-55w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-55\nСветовой поток светильника, Лм: \n5026-8266",
+            "parent": {
+                "id": 184,
+                "name": "LAD LED R500-1 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/72b/69426e72b2b65134411309.png",
+                "powerDescription": "Мощность, Вт: 35-55\nСветовой поток светильника, Лм: \n5026-8266"
+            }
+        },
+        {
+            "id": 189,
+            "name": "LAD LED R500 A",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-a",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67d/00a/666/67d00a66658a9411639903.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 164,
+                "name": "АЗС",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/da3/5d3/67cda35d36f9f579236076.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 166,
+            "name": "Специальное освещение",
+            "url": "https://ladzavod.ru/catalog/specialnoe-osveshchenie",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/693/15b/82d/69315b82df1a2353018777.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 145,
+            "name": "140W 36V",
+            "url": "https://ladzavod.ru/catalog/r500-4-2ex-36v-140w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 140\nСветовой поток, Лм:\n20104 - 22382",
+            "parent": {
+                "id": 183,
+                "name": "LAD LED R500-4 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/86b/69426f86b54c5483297248.png",
+                "powerDescription": "Мощность, Вт: 140\nСветовой поток, Лм:\n20104 - 22382"
+            }
+        },
+        {
+            "id": 101,
+            "name": "LAD LED R700-20 ST",
+            "url": "https://ladzavod.ru/catalog/r700-20-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3df/0b2/6943df0b2b75f581702749.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 177,
+            "name": "LAD LED R500 периметральное",
+            "url": "https://ladzavod.ru/catalog/r500-pr",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/986/67ce799864a43100853679.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 147,
+            "name": "LAD LED R320 Ex (36V)",
+            "url": "https://ladzavod.ru/catalog/r320-ex-36v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/475/694270475c8ab778903909.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 18,
+                "name": "LAD LED R320 Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/725/67ce797259ccb465679621.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 107,
+            "name": "LAD LED R700-6 HT",
+            "url": "https://ladzavod.ru/catalog/r700-6-ht",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/516/6943dd516306f756875551.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 32,
+                "name": "LAD LED R700 HT",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/7e5/6943dc7e5ea3d086783243.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 64,
+            "name": "LAD LED R500 LZD",
+            "url": "https://ladzavod.ru/catalog/r500-lzd",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3a5/e84/6943a5e84b51d379839444.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 62,
+                "name": "LAD LED R500 РЖД",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/11d/67ce7911dac29191644689.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 118,
+            "name": "10W",
+            "url": "https://ladzavod.ru/catalog/vega-12-36-10w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": {
+                "id": 15,
+                "name": "NL VEGA-12-36",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/679/2ea/9dd/6792ea9dd1612510083170.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 62,
+            "name": "LAD LED R500 РЖД",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-rzhd",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/11d/67ce7911dac29191644689.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 167,
+            "name": "Периметральное освещение",
+            "url": "https://ladzavod.ru/catalog/perimetralnoe-osveshchenie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 7,
+            "name": "Наружное, уличное и дорожное освещение",
+            "url": "https://ladzavod.ru/catalog/ulichnoe-i-dorozhnoe",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 8,
+            "name": "Офисное, торговое, ЖКХ и АБК освещение",
+            "url": "https://ladzavod.ru/catalog/ofisnoe-torgovoe-i-zhkh",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 9,
+            "name": "Взрывозащищенное оборудование",
+            "url": "https://ladzavod.ru/catalog/vzryvozashchishchennoe-oborudovanie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 10,
+            "name": "Низковольтное оборудование",
+            "url": "https://ladzavod.ru/catalog/nizkovoltnoe-oborudovanie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 11,
+            "name": "Светильники специального назначения",
+            "url": "https://ladzavod.ru/catalog/svetilniki-specialnogo-naznacheniya",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 37,
+            "name": "LAD LED R500",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 23,
+            "name": "LAD LED R500-4",
+            "url": "https://ladzavod.ru/catalog/r500-4",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/fe4/692fc7fe43995180034715.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 46,
+            "name": "220W",
+            "url": "https://ladzavod.ru/catalog/r500-4-220w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 220-280\nСветовой поток, Лм:\n 29664 – 39874",
+            "parent": {
+                "id": 23,
+                "name": "LAD LED R500-4",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/fe4/692fc7fe43995180034715.png",
+                "powerDescription": "Мощность, Вт: 220-280\nСветовой поток, Лм:\n 29664 – 39874"
+            }
+        },
+        {
+            "id": 47,
+            "name": "280W",
+            "url": "https://ladzavod.ru/catalog/r500-4-280w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 220-280\nСветовой поток, Лм:\n 29664 – 39874",
+            "parent": {
+                "id": 23,
+                "name": "LAD LED R500-4",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/fe4/692fc7fe43995180034715.png",
+                "powerDescription": "Мощность, Вт: 220-280\nСветовой поток, Лм:\n 29664 – 39874"
+            }
+        },
+        {
+            "id": 24,
+            "name": "LAD LED R500-5",
+            "url": "https://ladzavod.ru/catalog/r500-5",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc8/09d/692fc809d074b309428441.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 48,
+            "name": "250W",
+            "url": "https://ladzavod.ru/catalog/r500-5-250w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 250-350\nСветовой поток, Лм: \n33709 – 49843",
+            "parent": {
+                "id": 24,
+                "name": "LAD LED R500-5",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc8/09d/692fc809d074b309428441.png",
+                "powerDescription": "Мощность, Вт: 250-350\nСветовой поток, Лм: \n33709 – 49843"
+            }
+        },
+        {
+            "id": 49,
+            "name": "350W",
+            "url": "https://ladzavod.ru/catalog/r500-5-350w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 250-350\nСветовой поток, Лм: \n33709 – 49843",
+            "parent": {
+                "id": 24,
+                "name": "LAD LED R500-5",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc8/09d/692fc809d074b309428441.png",
+                "powerDescription": "Мощность, Вт: 250-350\nСветовой поток, Лм: \n33709 – 49843"
+            }
+        },
+        {
+            "id": 25,
+            "name": "LAD LED R500-6",
+            "url": "https://ladzavod.ru/catalog/r500-6",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc5/d67/692fc5d6703af541093724.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 50,
+            "name": "300W",
+            "url": "https://ladzavod.ru/catalog/r500-6-300w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 300-420\nСветовой поток, Лм:\n 40453 – 59812",
+            "parent": {
+                "id": 25,
+                "name": "LAD LED R500-6",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc5/d67/692fc5d6703af541093724.png",
+                "powerDescription": "Мощность, Вт: 300-420\nСветовой поток, Лм:\n 40453 – 59812"
+            }
+        },
+        {
+            "id": 51,
+            "name": "420W",
+            "url": "https://ladzavod.ru/catalog/r500-6-420w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 300-420\nСветовой поток, Лм:\n 40453 – 59812",
+            "parent": {
+                "id": 25,
+                "name": "LAD LED R500-6",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc5/d67/692fc5d6703af541093724.png",
+                "powerDescription": "Мощность, Вт: 300-420\nСветовой поток, Лм:\n 40453 – 59812"
+            }
+        },
+        {
+            "id": 26,
+            "name": "LAD LED R500-7",
+            "url": "https://ladzavod.ru/catalog/r500-7",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc5/f0a/692fc5f0a98b1833472638.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 52,
+            "name": "500W",
+            "url": "https://ladzavod.ru/catalog/r500-7-500w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 500\nСветовой поток, Лм:\n 63101 - 69780",
+            "parent": {
+                "id": 26,
+                "name": "LAD LED R500-7",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc5/f0a/692fc5f0a98b1833472638.png",
+                "powerDescription": "Мощность, Вт: 500\nСветовой поток, Лм:\n 63101 - 69780"
+            }
+        },
+        {
+            "id": 27,
+            "name": "LAD LED R500-8",
+            "url": "https://ladzavod.ru/catalog/r500-8",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/21d/692fc621d86c2821561916.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 53,
+            "name": "400W",
+            "url": "https://ladzavod.ru/catalog/r500-8-400w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 400-560\nСветовой поток, Лм:\n 53937 - 79749",
+            "parent": {
+                "id": 27,
+                "name": "LAD LED R500-8",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/21d/692fc621d86c2821561916.png",
+                "powerDescription": "Мощность, Вт: 400-560\nСветовой поток, Лм:\n 53937 - 79749"
+            }
+        },
+        {
+            "id": 54,
+            "name": "560W",
+            "url": "https://ladzavod.ru/catalog/r500-8-560w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 400-560\nСветовой поток, Лм:\n 53937 - 79749",
+            "parent": {
+                "id": 27,
+                "name": "LAD LED R500-8",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/21d/692fc621d86c2821561916.png",
+                "powerDescription": "Мощность, Вт: 400-560\nСветовой поток, Лм:\n 53937 - 79749"
+            }
+        },
+        {
+            "id": 28,
+            "name": "LAD LED R500-9",
+            "url": "https://ladzavod.ru/catalog/r500-9",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/343/692fc63438346919542219.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 55,
+            "name": "630W",
+            "url": "https://ladzavod.ru/catalog/r500-9-630w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 630\nСветовой поток, Лм:\n 81130 – 89717",
+            "parent": {
+                "id": 28,
+                "name": "LAD LED R500-9",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/343/692fc63438346919542219.png",
+                "powerDescription": "Мощность, Вт: 630\nСветовой поток, Лм:\n 81130 – 89717"
+            }
+        },
+        {
+            "id": 29,
+            "name": "LAD LED R500-10",
+            "url": "https://ladzavod.ru/catalog/r500-10",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/4de/692fc64de9f3b478669905.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 56,
+            "name": "500W",
+            "url": "https://ladzavod.ru/catalog/r500-10-500w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 500-700\nСветовой поток, Лм:\n 67420 - 99686",
+            "parent": {
+                "id": 29,
+                "name": "LAD LED R500-10",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/4de/692fc64de9f3b478669905.png",
+                "powerDescription": "Мощность, Вт: 500-700\nСветовой поток, Лм:\n 67420 - 99686"
+            }
+        },
+        {
+            "id": 57,
+            "name": "700W",
+            "url": "https://ladzavod.ru/catalog/r500-10-700w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 500-700\nСветовой поток, Лм:\n 67420 - 99686",
+            "parent": {
+                "id": 29,
+                "name": "LAD LED R500-10",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/4de/692fc64de9f3b478669905.png",
+                "powerDescription": "Мощность, Вт: 500-700\nСветовой поток, Лм:\n 67420 - 99686"
+            }
+        },
+        {
+            "id": 30,
+            "name": "LAD LED R500-12",
+            "url": "https://ladzavod.ru/catalog/r500-12",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/61e/692fc661ef481511820500.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 58,
+            "name": "600W",
+            "url": "https://ladzavod.ru/catalog/r500-12-600w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 600-840\nСветовой поток, Лм: \n80904 - 119623",
+            "parent": {
+                "id": 30,
+                "name": "LAD LED R500-12",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/61e/692fc661ef481511820500.png",
+                "powerDescription": "Мощность, Вт: 600-840\nСветовой поток, Лм: \n80904 - 119623"
+            }
+        },
+        {
+            "id": 59,
+            "name": "840W",
+            "url": "https://ladzavod.ru/catalog/r500-12-840w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 600-840\nСветовой поток, Лм: \n80904 - 119623",
+            "parent": {
+                "id": 30,
+                "name": "LAD LED R500-12",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/61e/692fc661ef481511820500.png",
+                "powerDescription": "Мощность, Вт: 600-840\nСветовой поток, Лм: \n80904 - 119623"
+            }
+        },
+        {
+            "id": 31,
+            "name": "LAD LED R500-14",
+            "url": "https://ladzavod.ru/catalog/r500-14",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/74e/692fc674ecbd6949432659.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 60,
+            "name": "700W",
+            "url": "https://ladzavod.ru/catalog/r500-14-700w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 700-1000\nСветовой поток, Лм:\n 94388 - 142400",
+            "parent": {
+                "id": 31,
+                "name": "LAD LED R500-14",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/74e/692fc674ecbd6949432659.png",
+                "powerDescription": "Мощность, Вт: 700-1000\nСветовой поток, Лм:\n 94388 - 142400"
+            }
+        },
+        {
+            "id": 61,
+            "name": "1000W",
+            "url": "https://ladzavod.ru/catalog/r500-14-1000w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 700-1000\nСветовой поток, Лм:\n 94388 - 142400",
+            "parent": {
+                "id": 31,
+                "name": "LAD LED R500-14",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc6/74e/692fc674ecbd6949432659.png",
+                "powerDescription": "Мощность, Вт: 700-1000\nСветовой поток, Лм:\n 94388 - 142400"
+            }
+        },
+        {
+            "id": 19,
+            "name": "LAD LED R500-1",
+            "url": "https://ladzavod.ru/catalog/lad-led-r-500-1",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/cc5/692fc7cc564a7848064910.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 35,
+            "name": "35W",
+            "url": "https://ladzavod.ru/catalog/r500-1-35w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-70 \nСветовой поток, Лм:\n 5026 – 9969",
+            "parent": {
+                "id": 19,
+                "name": "LAD LED R500-1",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/cc5/692fc7cc564a7848064910.png",
+                "powerDescription": "Мощность, Вт: 35-70 \nСветовой поток, Лм:\n 5026 – 9969"
+            }
+        },
+        {
+            "id": 36,
+            "name": "55W",
+            "url": "https://ladzavod.ru/catalog/r500-1-55w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-70 \nСветовой поток, Лм:\n 5026 – 9969",
+            "parent": {
+                "id": 19,
+                "name": "LAD LED R500-1",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/cc5/692fc7cc564a7848064910.png",
+                "powerDescription": "Мощность, Вт: 35-70 \nСветовой поток, Лм:\n 5026 – 9969"
+            }
+        },
+        {
+            "id": 40,
+            "name": "70W",
+            "url": "https://ladzavod.ru/catalog/r500-1-70w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-70 \nСветовой поток, Лм:\n 5026 – 9969",
+            "parent": {
+                "id": 19,
+                "name": "LAD LED R500-1",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/cc5/692fc7cc564a7848064910.png",
+                "powerDescription": "Мощность, Вт: 35-70 \nСветовой поток, Лм:\n 5026 – 9969"
+            }
+        },
+        {
+            "id": 17,
+            "name": "NL VEGA 220",
+            "url": "https://ladzavod.ru/catalog/nl-vega-220",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/679/2ea/e45/6792eae45e16c272650757.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 20,
+            "name": "LAD LED R500-2",
+            "url": "https://ladzavod.ru/catalog/r500-2",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/e49/692fc7e49fd80208190840.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 41,
+            "name": "90W",
+            "url": "https://ladzavod.ru/catalog/r500-2-90w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 90-140 \nСветовой поток, Лм: \n12135 - 19936",
+            "parent": {
+                "id": 20,
+                "name": "LAD LED R500-2",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/e49/692fc7e49fd80208190840.png",
+                "powerDescription": "Мощность, Вт: 90-140 \nСветовой поток, Лм: \n12135 - 19936"
+            }
+        },
+        {
+            "id": 42,
+            "name": "110W",
+            "url": "https://ladzavod.ru/catalog/r500-2-110w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 90-140 \nСветовой поток, Лм: \n12135 - 19936",
+            "parent": {
+                "id": 20,
+                "name": "LAD LED R500-2",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/e49/692fc7e49fd80208190840.png",
+                "powerDescription": "Мощность, Вт: 90-140 \nСветовой поток, Лм: \n12135 - 19936"
+            }
+        },
+        {
+            "id": 43,
+            "name": "140W",
+            "url": "https://ladzavod.ru/catalog/r500-2-140w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 90-140 \nСветовой поток, Лм: \n12135 - 19936",
+            "parent": {
+                "id": 20,
+                "name": "LAD LED R500-2",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/e49/692fc7e49fd80208190840.png",
+                "powerDescription": "Мощность, Вт: 90-140 \nСветовой поток, Лм: \n12135 - 19936"
+            }
+        },
+        {
+            "id": 22,
+            "name": "LAD LED R500-3",
+            "url": "https://ladzavod.ru/catalog/r500-3",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/f17/692fc7f1718ea051784947.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 37,
+                "name": "LAD LED R500",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/29b/67ce7929b1153568956086.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 44,
+            "name": "165W",
+            "url": "https://ladzavod.ru/catalog/r500-3-165w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 165-230\nСветовой поток, Лм:\n 22249 – 32752",
+            "parent": {
+                "id": 22,
+                "name": "LAD LED R500-3",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/f17/692fc7f1718ea051784947.png",
+                "powerDescription": "Мощность, Вт: 165-230\nСветовой поток, Лм:\n 22249 – 32752"
+            }
+        },
+        {
+            "id": 45,
+            "name": "230W",
+            "url": "https://ladzavod.ru/catalog/r500-3-230w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 165-230\nСветовой поток, Лм:\n 22249 – 32752",
+            "parent": {
+                "id": 22,
+                "name": "LAD LED R500-3",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/692/fc7/f17/692fc7f1718ea051784947.png",
+                "powerDescription": "Мощность, Вт: 165-230\nСветовой поток, Лм:\n 22249 – 32752"
+            }
+        },
+        {
+            "id": 67,
+            "name": "LAD LED R500-3 LZD",
+            "url": "https://ladzavod.ru/catalog/r500-3-lzd",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/698/2e2/192/6982e21929f68404498665.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 64,
+                "name": "LAD LED R500 LZD",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3a5/e84/6943a5e84b51d379839444.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 187,
+            "name": "LAD LED R500-4 2Ex",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-4-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/d15/69426ed154c78459630745.png",
+            "powerDescription": "Мощность, Вт: 35 – 220\nСветовой поток светильника, Лм:\n5026-33066",
+            "parent": {
+                "id": 120,
+                "name": "LAD LED R500 2Ex 220v",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/d13/69426dd133a78701715336.png",
+                "powerDescription": "Мощность, Вт: 35 – 220\nСветовой поток светильника, Лм:\n5026-33066"
+            }
+        },
+        {
+            "id": 103,
+            "name": "LAD LED R700-2 HT",
+            "url": "https://ladzavod.ru/catalog/r700-2-ht",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/1d2/6943dd1d23bd0026365845.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 32,
+                "name": "LAD LED R700 HT",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/7e5/6943dc7e5ea3d086783243.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 73,
+            "name": "LAD LED R500 12/24/36V",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-12-24-36v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67d/008/ab3/67d008ab34adc999307357.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 171,
+            "name": "NL VEGA",
+            "url": "https://ladzavod.ru/catalog/vega-220",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d97/fda/67cd97fdad711791759393.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 170,
+                "name": "NL VEGA",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/bbc/67ce79bbc040d623292067.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 172,
+            "name": "NL VEGA 12/36V",
+            "url": "https://ladzavod.ru/catalog/vega-12-36",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d98/15b/67cd9815b9e1c644064197.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 170,
+                "name": "NL VEGA",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/bbc/67ce79bbc040d623292067.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 157,
+            "name": "35W-36V",
+            "url": "https://ladzavod.ru/catalog/r320-1-ex-36-35w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35\nСветовой поток, Лм: \n4765-5277",
+            "parent": {
+                "id": 155,
+                "name": "LAD LED R320-1 Ex (36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/c29/694270c291def722895467.png",
+                "powerDescription": "Мощность, Вт: 35\nСветовой поток, Лм: \n4765-5277"
+            }
+        },
+        {
+            "id": 188,
+            "name": "LAD LED R320-1 Ex",
+            "url": "https://ladzavod.ru/catalog/r320-1-ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/89d/69427089d82bd608127897.png",
+            "powerDescription": "Мощность, Вт: 35 - 165\nСветовой поток, Лм:\n4765-24877",
+            "parent": {
+                "id": 146,
+                "name": "LAD LED R320 Ex 220v",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/cb9/69426fcb9a7bf714990725.png",
+                "powerDescription": "Мощность, Вт: 35 - 165\nСветовой поток, Лм:\n4765-24877"
+            }
+        },
+        {
+            "id": 170,
+            "name": "NL VEGA",
+            "url": "https://ladzavod.ru/catalog/nl-vega",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/bbc/67ce79bbc040d623292067.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 34,
+            "name": "LAD LED R700 PROM",
+            "url": "https://ladzavod.ru/catalog/r700-prom",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/a0c/6943dca0cfc50260987761.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 80,
+                "name": "LAD LED R700",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/a95/67ce79a95f23a357200790.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 12,
+            "name": "Архитектурное освещение",
+            "url": "https://ladzavod.ru/catalog/arhitekturnoe-osveshchenie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 15,
+            "name": "NL VEGA-12-36",
+            "url": "https://ladzavod.ru/catalog/nl-vega-12-36",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/679/2ea/9dd/6792ea9dd1612510083170.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 162,
+            "name": "Светильники на лире",
+            "url": "https://ladzavod.ru/catalog/svetilniki-na-lire",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d9e/2dc/67cd9e2dc0767042817527.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 33,
+            "name": "LAD LED R700 ST",
+            "url": "https://ladzavod.ru/catalog/r700-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 80,
+                "name": "LAD LED R700",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/a95/67ce79a95f23a357200790.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 174,
+            "name": "10W",
+            "url": "https://ladzavod.ru/catalog/10w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 6-10\nСветовой поток светильника, Лм:\n 900 - 1005",
+            "parent": {
+                "id": 171,
+                "name": "NL VEGA",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d97/fda/67cd97fdad711791759393.png",
+                "powerDescription": "Мощность, Вт: 6-10\nСветовой поток светильника, Лм:\n 900 - 1005"
+            }
+        },
+        {
+            "id": 153,
+            "name": "110W",
+            "url": "https://ladzavod.ru/catalog/r320-2-ex-110w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 110 \nСветовой поток светильника, Лм: \n14977-16585",
+            "parent": {
+                "id": 149,
+                "name": "LAD LED R320-2 Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/92e/69427092e761a580104486.png",
+                "powerDescription": "Мощность, Вт: 110 \nСветовой поток светильника, Лм: \n14977-16585"
+            }
+        },
+        {
+            "id": 111,
+            "name": "LAD LED LINE-1000-60",
+            "url": "https://ladzavod.ru/catalog/line-60",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fd3/d2b/692fd3d2b5904531765052.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 13,
+                "name": "LAD LED LINE",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/3c5/67ce793c56d85506457229.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 97,
+            "name": "LAD LED R700-12 ST",
+            "url": "https://ladzavod.ru/catalog/r700-12-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/cd8/6943decd84660495098113.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 116,
+            "name": "10W",
+            "url": "https://ladzavod.ru/catalog/vega-220-10w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": {
+                "id": 17,
+                "name": "NL VEGA 220",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/679/2ea/e45/6792eae45e16c272650757.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 93,
+            "name": "LAD LED R700-7 ST",
+            "url": "https://ladzavod.ru/catalog/r700-7-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/8b1/6943de8b1149f496569500.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 84,
+            "name": "LAD LED R700-4 PROM",
+            "url": "https://ladzavod.ru/catalog/r700-4-prom",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/cf5/6943ddcf5b365946147635.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 34,
+                "name": "LAD LED R700 PROM",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/a0c/6943dca0cfc50260987761.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 99,
+            "name": "LAD LED R700-16 ST",
+            "url": "https://ladzavod.ru/catalog/r700-16-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/ed9/6943deed914ea985232860.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 82,
+            "name": "LAD LED R700-2 PROM",
+            "url": "https://ladzavod.ru/catalog/r700-2-prom",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/ac9/6943ddac98d4a519436170.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 34,
+                "name": "LAD LED R700 PROM",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/a0c/6943dca0cfc50260987761.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 71,
+            "name": "55W",
+            "url": "https://ladzavod.ru/catalog/r500-a-55w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": {
+                "id": 189,
+                "name": "LAD LED R500 A",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67d/00a/666/67d00a66658a9411639903.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 80,
+            "name": "LAD LED R700",
+            "url": "https://ladzavod.ru/catalog/lad-led-r700",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/a95/67ce79a95f23a357200790.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 108,
+            "name": "LAD LED LINE-300-15",
+            "url": "https://ladzavod.ru/catalog/line-15",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fd3/9a0/692fd39a02796670281314.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 13,
+                "name": "LAD LED LINE",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/3c5/67ce793c56d85506457229.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 65,
+            "name": "LAD LED R500-2 ZD",
+            "url": "https://ladzavod.ru/catalog/zd-90w",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d9d/5bd/67cd9d5bd0b9c651781446.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 63,
+                "name": "LAD LED R500 ZD",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3a5/dda/6943a5ddadfd6717598362.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 74,
+            "name": "LAD LED R500 12/24V",
+            "url": "https://ladzavod.ru/catalog/r500-12-24v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/da2/6d1/67cda26d1566c846978324.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 73,
+                "name": "LAD LED R500 12/24/36V",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67d/008/ab3/67d008ab34adc999307357.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 152,
+            "name": "55W",
+            "url": "https://ladzavod.ru/catalog/r320-1-ex-55w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-55\nСветовой поток светильника, Лм: \n4765-5277",
+            "parent": {
+                "id": 188,
+                "name": "LAD LED R320-1 Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/89d/69427089d82bd608127897.png",
+                "powerDescription": "Мощность, Вт: 35-55\nСветовой поток светильника, Лм: \n4765-5277"
+            }
+        },
+        {
+            "id": 151,
+            "name": "35W",
+            "url": "https://ladzavod.ru/catalog/r320-1-ex-35w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-55\nСветовой поток светильника, Лм: \n4765-5277",
+            "parent": {
+                "id": 188,
+                "name": "LAD LED R320-1 Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/89d/69427089d82bd608127897.png",
+                "powerDescription": "Мощность, Вт: 35-55\nСветовой поток светильника, Лм: \n4765-5277"
+            }
+        },
+        {
+            "id": 150,
+            "name": "LAD LED R320-3 Ex",
+            "url": "https://ladzavod.ru/catalog/r320-3-ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/a26/694270a265872875248916.png",
+            "powerDescription": "Мощность, Вт: 35 - 165\nСветовой поток, Лм:\n4765-24877",
+            "parent": {
+                "id": 146,
+                "name": "LAD LED R320 Ex 220v",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/cb9/69426fcb9a7bf714990725.png",
+                "powerDescription": "Мощность, Вт: 35 - 165\nСветовой поток, Лм:\n4765-24877"
+            }
+        },
+        {
+            "id": 77,
+            "name": "70W",
+            "url": "https://ladzavod.ru/catalog/r500-12-24v-70w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35-70\nСветовой поток светильника, Лм: \n5026-11191",
+            "parent": {
+                "id": 74,
+                "name": "LAD LED R500 12/24V",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/da2/6d1/67cda26d1566c846978324.png",
+                "powerDescription": "Мощность, Вт: 35-70\nСветовой поток светильника, Лм: \n5026-11191"
+            }
+        },
+        {
+            "id": 92,
+            "name": "LAD LED R700-6 ST",
+            "url": "https://ladzavod.ru/catalog/r700-6-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/76c/6943de76c2f1b397178789.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 139,
+            "name": "35W 36V",
+            "url": "https://ladzavod.ru/catalog/r500-1-2ex-36v-35w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35\nСветовой поток, Лм:\n5026 - 5595",
+            "parent": {
+                "id": 180,
+                "name": "LAD LED R500-1 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/593/69426f593a09d460981418.png",
+                "powerDescription": "Мощность, Вт: 35\nСветовой поток, Лм:\n5026 - 5595"
+            }
+        },
+        {
+            "id": 131,
+            "name": "165W",
+            "url": "https://ladzavod.ru/catalog/r500-3-2ex-165w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 105-165 \nСветовой поток светильника, Лм:\n15078-24799",
+            "parent": {
+                "id": 186,
+                "name": "LAD LED R500-3 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26e/9c8/69426e9c8732c096539216.png",
+                "powerDescription": "Мощность, Вт: 105-165 \nСветовой поток светильника, Лм:\n15078-24799"
+            }
+        },
+        {
+            "id": 85,
+            "name": "LAD LED R700-5 PROM",
+            "url": "https://ladzavod.ru/catalog/r700-5-prom",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/dea/6943dddea221b791737372.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 34,
+                "name": "LAD LED R700 PROM",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/a0c/6943dca0cfc50260987761.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 120,
+            "name": "LAD LED R500 2Ex 220v",
+            "url": "https://ladzavod.ru/catalog/r500-2ex-220v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/d13/69426dd133a78701715336.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 119,
+                "name": "LAD LED R500 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/867/67ce7986753e6990189194.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 96,
+            "name": "LAD LED R700-10 ST",
+            "url": "https://ladzavod.ru/catalog/r700-10-st",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3de/ba2/6943deba2244b107259077.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 33,
+                "name": "LAD LED R700 ST",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/b75/6943dcb750cc5200760587.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 119,
+            "name": "LAD LED R500 2Ex",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/867/67ce7986753e6990189194.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 180,
+            "name": "LAD LED R500-1 2Ex (12/24/36V)",
+            "url": "https://ladzavod.ru/catalog/lad-led-r500-1-12-24-36-2ex",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/593/69426f593a09d460981418.png",
+            "powerDescription": "Мощность, Вт: 35 – 140\nСветовой поток светильника, Лм:\n5026-22233",
+            "parent": {
+                "id": 121,
+                "name": "LAD LED R500 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/e59/69426de592395741412334.png",
+                "powerDescription": "Мощность, Вт: 35 – 140\nСветовой поток светильника, Лм:\n5026-22233"
+            }
+        },
+        {
+            "id": 109,
+            "name": "LAD LED LINE-600-25",
+            "url": "https://ladzavod.ru/catalog/line-25",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/692/fd3/b3b/692fd3b3beb2e139746659.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 13,
+                "name": "LAD LED LINE",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/3c5/67ce793c56d85506457229.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 175,
+            "name": "6W",
+            "url": "https://ladzavod.ru/catalog/vega12-36-6w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 6-10\nСветовой поток светильника, Лм:\n900 - 1005",
+            "parent": {
+                "id": 172,
+                "name": "NL VEGA 12/36V",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/d98/15b/67cd9815b9e1c644064197.png",
+                "powerDescription": "Мощность, Вт: 6-10\nСветовой поток светильника, Лм:\n900 - 1005"
+            }
+        },
+        {
+            "id": 154,
+            "name": "165W",
+            "url": "https://ladzavod.ru/catalog/r320-3-ex-165w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 165 \nСветовой поток светильника, Лм: \n22465-24877",
+            "parent": {
+                "id": 150,
+                "name": "LAD LED R320-3 Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/270/a26/694270a265872875248916.png",
+                "powerDescription": "Мощность, Вт: 165 \nСветовой поток светильника, Лм: \n22465-24877"
+            }
+        },
+        {
+            "id": 121,
+            "name": "LAD LED R500 2Ex (12/24/36V)",
+            "url": "https://ladzavod.ru/catalog/r500-2ex-12-24-36v",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/26d/e59/69426de592395741412334.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 119,
+                "name": "LAD LED R500 2Ex",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/867/67ce7986753e6990189194.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 32,
+            "name": "LAD LED R700 HT",
+            "url": "https://ladzavod.ru/catalog/r700-ht",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/7e5/6943dc7e5ea3d086783243.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 80,
+                "name": "LAD LED R700",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/a95/67ce79a95f23a357200790.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 106,
+            "name": "LAD LED R700-5 HT",
+            "url": "https://ladzavod.ru/catalog/r700-5-ht",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dd/446/6943dd446bb2e775371588.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 32,
+                "name": "LAD LED R700 HT",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3dc/7e5/6943dc7e5ea3d086783243.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 141,
+            "name": "70W 36V",
+            "url": "https://ladzavod.ru/catalog/r500-2-2ex-36v-70w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 70\nСветовой поток, Лм:\n10052 - 11191",
+            "parent": {
+                "id": 181,
+                "name": "LAD LED R500-2 2Ex (12/24/36V)",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/26f/6b0/69426f6b04484575358328.png",
+                "powerDescription": "Мощность, Вт: 70\nСветовой поток, Лм:\n10052 - 11191"
+            }
+        },
+        {
+            "id": 13,
+            "name": "LAD LED LINE",
+            "url": "https://ladzavod.ru/catalog/lad-led",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/3c5/67ce793c56d85506457229.png",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 165,
+            "name": "Сельскохозяйственное освещение",
+            "url": "https://ladzavod.ru/catalog/selskohozyajstvennoe-osveshchenie",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": null,
+            "parent": null
+        },
+        {
+            "id": 69,
+            "name": "LAD LED R500-12 LZD",
+            "url": "https://ladzavod.ru/catalog/r500-12-lzd",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/698/2e2/59b/6982e259b229a723970491.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 64,
+                "name": "LAD LED R500 LZD",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/694/3a5/e84/6943a5e84b51d379839444.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 112,
+            "name": "NL Nova30",
+            "url": "https://ladzavod.ru/catalog/nova30",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/8f6/212/6948f6212736a441988378.png",
+            "powerDescription": null,
+            "parent": {
+                "id": 14,
+                "name": "NL Nova",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/5e2/67ce795e24635603640814.png",
+                "powerDescription": null
+            }
+        },
+        {
+            "id": 78,
+            "name": "35W",
+            "url": "https://ladzavod.ru/catalog/r500-36v-35w",
+            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
+            "powerDescription": "Мощность, Вт: 35\nСветовой поток светильника, Лм:\n5026-5595",
+            "parent": {
+                "id": 75,
+                "name": "LAD LED R500 36V",
+                "image": "https://ladzavod.ru/storage/app/uploads/public/67c/da2/ece/67cda2eced573391307931.png",
+                "powerDescription": "Мощность, Вт: 35\nСветовой поток светильника, Лм:\n5026-5595"
+            }
+        },
+        {
+            "id": 191,
+            "name": "LAD LED LINE архитектурное освещение",
+            "url": "https://ladzavod.ru/catalog/lad-led-line-arhitekturnoe-osveshchenie",
+            "image": "https://ladzavod.ru/storage/app/uploads/public/694/a27/98a/694a2798aa344293785282.png",
+            "powerDescription": null,
+            "parent": null
+        }
+    ]
+}
