@@ -4,90 +4,69 @@
             "name": "Промышленное освещение",
             "url": "https://ladzavod.ru/catalog/promyshlennoe-osveshchenie",
             "id": 1,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "LAD LED LINE-OZ",
-                    "url": "https://ladzavod.ru/catalog/lad-led-line-oz"
+                    "id": 39
                 },
                 {
-                    "name": "LAD LED R700-3 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-3-prom"
+                    "id": 83
                 },
                 {
-                    "name": "LAD LED R700-6 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-6-prom"
+                    "id": 86
                 },
                 {
-                    "name": "LAD LED R700-1 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-1-prom"
+                    "id": 81
                 },
                 {
-                    "name": "LAD LED R500",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500"
+                    "id": 37
                 },
                 {
-                    "name": "LAD LED R500-4",
-                    "url": "https://ladzavod.ru/catalog/r500-4"
+                    "id": 23
                 },
                 {
-                    "name": "LAD LED R500-5",
-                    "url": "https://ladzavod.ru/catalog/r500-5"
+                    "id": 24
                 },
                 {
-                    "name": "LAD LED R500-6",
-                    "url": "https://ladzavod.ru/catalog/r500-6"
+                    "id": 25
                 },
                 {
-                    "name": "LAD LED R500-7",
-                    "url": "https://ladzavod.ru/catalog/r500-7"
+                    "id": 26
                 },
                 {
-                    "name": "LAD LED R500-8",
-                    "url": "https://ladzavod.ru/catalog/r500-8"
+                    "id": 27
                 },
                 {
-                    "name": "LAD LED R500-9",
-                    "url": "https://ladzavod.ru/catalog/r500-9"
+                    "id": 28
                 },
                 {
-                    "name": "LAD LED R500-10",
-                    "url": "https://ladzavod.ru/catalog/r500-10"
+                    "id": 29
                 },
                 {
-                    "name": "LAD LED R500-12",
-                    "url": "https://ladzavod.ru/catalog/r500-12"
+                    "id": 30
                 },
                 {
-                    "name": "LAD LED R500-14",
-                    "url": "https://ladzavod.ru/catalog/r500-14"
+                    "id": 31
                 },
                 {
-                    "name": "LAD LED R500-1",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r-500-1"
+                    "id": 19
                 },
                 {
-                    "name": "LAD LED R500-2",
-                    "url": "https://ladzavod.ru/catalog/r500-2"
+                    "id": 20
                 },
                 {
-                    "name": "LAD LED R500-3",
-                    "url": "https://ladzavod.ru/catalog/r500-3"
+                    "id": 22
                 },
                 {
-                    "name": "LAD LED R700 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-prom"
+                    "id": 34
                 },
                 {
-                    "name": "LAD LED R700-4 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-4-prom"
+                    "id": 84
                 },
                 {
-                    "name": "LAD LED R700-2 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-2-prom"
+                    "id": 82
                 },
                 {
-                    "name": "LAD LED R700-5 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-5-prom"
+                    "id": 85
                 }
             ]
         },
@@ -95,34 +74,27 @@
             "name": "Тяжелые условия эксплуатации",
             "url": "https://ladzavod.ru/catalog/tyazhelye-usloviya-ekspluatacii",
             "id": 2,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "LAD LED R700-4 HT",
-                    "url": "https://ladzavod.ru/catalog/r700-4-ht"
+                    "id": 105
                 },
                 {
-                    "name": "LAD LED R700-1 HT",
-                    "url": "https://ladzavod.ru/catalog/r700-1-ht"
+                    "id": 102
                 },
                 {
-                    "name": "LAD LED R700-3 HT",
-                    "url": "https://ladzavod.ru/catalog/r700-3-ht"
+                    "id": 104
                 },
                 {
-                    "name": "LAD LED R700-6 HT",
-                    "url": "https://ladzavod.ru/catalog/r700-6-ht"
+                    "id": 107
                 },
                 {
-                    "name": "LAD LED R700-2 HT",
-                    "url": "https://ladzavod.ru/catalog/r700-2-ht"
+                    "id": 103
                 },
                 {
-                    "name": "LAD LED R700 HT",
-                    "url": "https://ladzavod.ru/catalog/r700-ht"
+                    "id": 32
                 },
                 {
-                    "name": "LAD LED R700-5 HT",
-                    "url": "https://ladzavod.ru/catalog/r700-5-ht"
+                    "id": 106
                 }
             ]
         },
@@ -130,86 +102,66 @@
             "name": "Складские помещения",
             "url": "https://ladzavod.ru/catalog/skladskie-pomeshcheniya",
             "id": 3,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "LAD LED R700-3 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-3-st"
+                    "id": 89
                 },
                 {
-                    "name": "LAD LED R700-1 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-1-st"
+                    "id": 87
                 },
                 {
-                    "name": "LAD LED LINE-OZ",
-                    "url": "https://ladzavod.ru/catalog/lad-led-line-oz"
+                    "id": 39
                 },
                 {
-                    "name": "LAD LED R700-3 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-3-prom"
+                    "id": 83
                 },
                 {
-                    "name": "LAD LED R700-1 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-1-prom"
+                    "id": 81
                 },
                 {
-                    "name": "LAD LED LINE-1000-40",
-                    "url": "https://ladzavod.ru/catalog/line-40"
+                    "id": 110
                 },
                 {
-                    "name": "LAD LED R700-2 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-2-st"
+                    "id": 88
                 },
                 {
-                    "name": "LAD LED R500",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500"
+                    "id": 37
                 },
                 {
-                    "name": "LAD LED R500-4",
-                    "url": "https://ladzavod.ru/catalog/r500-4"
+                    "id": 23
                 },
                 {
-                    "name": "LAD LED R500-5",
-                    "url": "https://ladzavod.ru/catalog/r500-5"
+                    "id": 24
                 },
                 {
-                    "name": "LAD LED R500-1",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r-500-1"
+                    "id": 19
                 },
                 {
-                    "name": "LAD LED R500-2",
-                    "url": "https://ladzavod.ru/catalog/r500-2"
+                    "id": 20
                 },
                 {
-                    "name": "LAD LED R500-3",
-                    "url": "https://ladzavod.ru/catalog/r500-3"
+                    "id": 22
                 },
                 {
-                    "name": "LAD LED R700 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-prom"
+                    "id": 34
                 },
                 {
-                    "name": "LAD LED R700 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-st"
+                    "id": 33
                 },
                 {
-                    "name": "LAD LED LINE-1000-60",
-                    "url": "https://ladzavod.ru/catalog/line-60"
+                    "id": 111
                 },
                 {
-                    "name": "LAD LED R700-2 PROM",
-                    "url": "https://ladzavod.ru/catalog/r700-2-prom"
+                    "id": 82
                 },
                 {
-                    "name": "LAD LED LINE-300-15",
-                    "url": "https://ladzavod.ru/catalog/line-15"
+                    "id": 108
                 },
                 {
-                    "name": "LAD LED LINE-600-25",
-                    "url": "https://ladzavod.ru/catalog/line-25"
+                    "id": 109
                 },
                 {
-                    "name": "LAD LED LINE",
-                    "url": "https://ladzavod.ru/catalog/lad-led"
+                    "id": 13
                 }
             ]
         },
@@ -217,98 +169,75 @@
             "name": "Спортивное и освещение высокой мощности",
             "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie",
             "id": 6,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "LAD LED R500 SPORT",
-                    "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie-lad-led-r500-sport"
+                    "id": 169
                 },
                 {
-                    "name": "LAD LED R700-18 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-18-st"
+                    "id": 100
                 },
                 {
-                    "name": "LAD LED R700-5 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-5-st"
+                    "id": 91
                 },
                 {
-                    "name": "LAD LED R700-4 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-4-st"
+                    "id": 90
                 },
                 {
-                    "name": "LAD LED R700-14 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-14-st"
+                    "id": 98
                 },
                 {
-                    "name": "LAD LED R700-9 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-9-st"
+                    "id": 95
                 },
                 {
-                    "name": "LAD LED R700-8 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-8-st"
+                    "id": 94
                 },
                 {
-                    "name": "LAD LED R700-20 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-20-st"
+                    "id": 101
                 },
                 {
-                    "name": "LAD LED R500",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500"
+                    "id": 37
                 },
                 {
-                    "name": "LAD LED R500-5",
-                    "url": "https://ladzavod.ru/catalog/r500-5"
+                    "id": 24
                 },
                 {
-                    "name": "LAD LED R500-6",
-                    "url": "https://ladzavod.ru/catalog/r500-6"
+                    "id": 25
                 },
                 {
-                    "name": "LAD LED R500-7",
-                    "url": "https://ladzavod.ru/catalog/r500-7"
+                    "id": 26
                 },
                 {
-                    "name": "LAD LED R500-8",
-                    "url": "https://ladzavod.ru/catalog/r500-8"
+                    "id": 27
                 },
                 {
-                    "name": "LAD LED R500-9",
-                    "url": "https://ladzavod.ru/catalog/r500-9"
+                    "id": 28
                 },
                 {
-                    "name": "LAD LED R500-10",
-                    "url": "https://ladzavod.ru/catalog/r500-10"
+                    "id": 29
                 },
                 {
-                    "name": "LAD LED R500-12",
-                    "url": "https://ladzavod.ru/catalog/r500-12"
+                    "id": 30
                 },
                 {
-                    "name": "LAD LED R500-14",
-                    "url": "https://ladzavod.ru/catalog/r500-14"
+                    "id": 31
                 },
                 {
-                    "name": "LAD LED R700 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-st"
+                    "id": 33
                 },
                 {
-                    "name": "LAD LED R700-12 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-12-st"
+                    "id": 97
                 },
                 {
-                    "name": "LAD LED R700-7 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-7-st"
+                    "id": 93
                 },
                 {
-                    "name": "LAD LED R700-16 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-16-st"
+                    "id": 99
                 },
                 {
-                    "name": "LAD LED R700-6 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-6-st"
+                    "id": 92
                 },
                 {
-                    "name": "LAD LED R700-10 ST",
-                    "url": "https://ladzavod.ru/catalog/r700-10-st"
+                    "id": 96
                 }
             ]
         },
@@ -316,38 +245,30 @@
             "name": "РЖД",
             "url": "https://ladzavod.ru/catalog/rzhd",
             "id": 5,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "LAD LED R500-9 LZD",
-                    "url": "https://ladzavod.ru/catalog/r500-9-lzd"
+                    "id": 68
                 },
                 {
-                    "name": "LAD LED R500-3 ZD",
-                    "url": "https://ladzavod.ru/catalog/zd-140w"
+                    "id": 66
                 },
                 {
-                    "name": "LAD LED R500-4 LZD",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-4-lzd"
+                    "id": 178
                 },
                 {
-                    "name": "LAD LED R500 ZD",
-                    "url": "https://ladzavod.ru/catalog/r500-zd"
+                    "id": 63
                 },
                 {
-                    "name": "LAD LED R500 LZD",
-                    "url": "https://ladzavod.ru/catalog/r500-lzd"
+                    "id": 64
                 },
                 {
-                    "name": "LAD LED R500-3 LZD",
-                    "url": "https://ladzavod.ru/catalog/r500-3-lzd"
+                    "id": 67
                 },
                 {
-                    "name": "LAD LED R500-2 ZD",
-                    "url": "https://ladzavod.ru/catalog/zd-90w"
+                    "id": 65
                 },
                 {
-                    "name": "LAD LED R500-12 LZD",
-                    "url": "https://ladzavod.ru/catalog/r500-12-lzd"
+                    "id": 69
                 }
             ]
         },
@@ -355,18 +276,15 @@
             "name": "Периметральное и охранное освещение",
             "url": "https://ladzavod.ru/catalog/perimetralnoe-i-ohrannoe-osveshchenie",
             "id": 159,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "Охранное освещение",
-                    "url": "https://ladzavod.ru/catalog/ohrannoe-osveshchenie"
+                    "id": 168
                 },
                 {
-                    "name": "LAD LED R500 периметральное",
-                    "url": "https://ladzavod.ru/catalog/r500-pr"
+                    "id": 177
                 },
                 {
-                    "name": "Периметральное освещение",
-                    "url": "https://ladzavod.ru/catalog/perimetralnoe-osveshchenie"
+                    "id": 167
                 }
             ]
         },
@@ -374,34 +292,27 @@
             "name": "Наружное, уличное и дорожное освещение",
             "url": "https://ladzavod.ru/catalog/ulichnoe-i-dorozhnoe",
             "id": 7,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "Консольные светильники",
-                    "url": "https://ladzavod.ru/catalog/konsolnye-svetilniki"
+                    "id": 161
                 },
                 {
-                    "name": "Парковые светильники",
-                    "url": "https://ladzavod.ru/catalog/parkovye-svetilniki"
+                    "id": 163
                 },
                 {
-                    "name": "LAD LED R500 G",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-g"
+                    "id": 79
                 },
                 {
-                    "name": "LAD LED R500-1",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r-500-1"
+                    "id": 19
                 },
                 {
-                    "name": "LAD LED R500-2",
-                    "url": "https://ladzavod.ru/catalog/r500-2"
+                    "id": 20
                 },
                 {
-                    "name": "LAD LED R500-3",
-                    "url": "https://ladzavod.ru/catalog/r500-3"
+                    "id": 22
                 },
                 {
-                    "name": "Светильники на лире",
-                    "url": "https://ladzavod.ru/catalog/svetilniki-na-lire"
+                    "id": 162
                 }
             ]
         },
@@ -409,58 +320,45 @@
             "name": "Офисное, торговое, ЖКХ и АБК освещение",
             "url": "https://ladzavod.ru/catalog/ofisnoe-torgovoe-i-zhkh",
             "id": 8,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "NL Nova",
-                    "url": "https://ladzavod.ru/catalog/nl-nova"
+                    "id": 14
                 },
                 {
-                    "name": "LAD LED LINE-OZ",
-                    "url": "https://ladzavod.ru/catalog/lad-led-line-oz"
+                    "id": 39
                 },
                 {
-                    "name": "LAD LED LINE-1000-40",
-                    "url": "https://ladzavod.ru/catalog/line-40"
+                    "id": 110
                 },
                 {
-                    "name": "NL Nova120",
-                    "url": "https://ladzavod.ru/catalog/nova120"
+                    "id": 114
                 },
                 {
-                    "name": "NL Nova60",
-                    "url": "https://ladzavod.ru/catalog/nl-nova60"
+                    "id": 179
                 },
                 {
-                    "name": "NL VEGA",
-                    "url": "https://ladzavod.ru/catalog/vega-220"
+                    "id": 171
                 },
                 {
-                    "name": "NL VEGA 12/36V",
-                    "url": "https://ladzavod.ru/catalog/vega-12-36"
+                    "id": 172
                 },
                 {
-                    "name": "NL VEGA",
-                    "url": "https://ladzavod.ru/catalog/nl-vega"
+                    "id": 170
                 },
                 {
-                    "name": "LAD LED LINE-1000-60",
-                    "url": "https://ladzavod.ru/catalog/line-60"
+                    "id": 111
                 },
                 {
-                    "name": "LAD LED LINE-300-15",
-                    "url": "https://ladzavod.ru/catalog/line-15"
+                    "id": 108
                 },
                 {
-                    "name": "LAD LED LINE-600-25",
-                    "url": "https://ladzavod.ru/catalog/line-25"
+                    "id": 109
                 },
                 {
-                    "name": "LAD LED LINE",
-                    "url": "https://ladzavod.ru/catalog/lad-led"
+                    "id": 13
                 },
                 {
-                    "name": "NL Nova30",
-                    "url": "https://ladzavod.ru/catalog/nova30"
+                    "id": 112
                 }
             ]
         },
@@ -468,74 +366,57 @@
             "name": "Взрывозащищенное оборудование",
             "url": "https://ladzavod.ru/catalog/vzryvozashchishchennoe-oborudovanie",
             "id": 9,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "LAD LED R320-2 Ex",
-                    "url": "https://ladzavod.ru/catalog/r320-2-ex"
+                    "id": 149
                 },
                 {
-                    "name": "LAD LED R500-2 2Ex (12/24/36V)",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-2-12-24-36-2ex"
+                    "id": 181
                 },
                 {
-                    "name": "LAD LED R320-1 Ex (36V)",
-                    "url": "https://ladzavod.ru/catalog/r320-1-ex-36v"
+                    "id": 155
                 },
                 {
-                    "name": "LAD LED R500-1 2Ex",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-1-2ex"
+                    "id": 184
                 },
                 {
-                    "name": "LAD LED R500-3 2Ex (12/24/36V)",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-3-12-24-36-2ex"
+                    "id": 182
                 },
                 {
-                    "name": "LAD LED R320 Ex 220v",
-                    "url": "https://ladzavod.ru/catalog/r320-ex-220v"
+                    "id": 146
                 },
                 {
-                    "name": "LAD LED R500-3 2Ex",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-3-2ex"
+                    "id": 186
                 },
                 {
-                    "name": "LAD LED R320-2 Ex (36V)",
-                    "url": "https://ladzavod.ru/catalog/r320-2-ex-36v"
+                    "id": 156
                 },
                 {
-                    "name": "LAD LED R500-2 2Ex",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-2-2ex"
+                    "id": 185
                 },
                 {
-                    "name": "LAD LED R500-4 2Ex (12/24/36V)",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-4-12-24-36-2ex"
+                    "id": 183
                 },
                 {
-                    "name": "LAD LED R320 Ex (36V)",
-                    "url": "https://ladzavod.ru/catalog/r320-ex-36v"
+                    "id": 147
                 },
                 {
-                    "name": "LAD LED R500-4 2Ex",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-4-2ex"
+                    "id": 187
                 },
                 {
-                    "name": "LAD LED R320-1 Ex",
-                    "url": "https://ladzavod.ru/catalog/r320-1-ex"
+                    "id": 188
                 },
                 {
-                    "name": "LAD LED R320-3 Ex",
-                    "url": "https://ladzavod.ru/catalog/r320-3-ex"
+                    "id": 150
                 },
                 {
-                    "name": "LAD LED R500 2Ex 220v",
-                    "url": "https://ladzavod.ru/catalog/r500-2ex-220v"
+                    "id": 120
                 },
                 {
-                    "name": "LAD LED R500-1 2Ex (12/24/36V)",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-1-12-24-36-2ex"
+                    "id": 180
                 },
                 {
-                    "name": "LAD LED R500 2Ex (12/24/36V)",
-                    "url": "https://ladzavod.ru/catalog/r500-2ex-12-24-36v"
+                    "id": 121
                 }
             ]
         },
@@ -543,30 +424,24 @@
             "name": "Низковольтное оборудование",
             "url": "https://ladzavod.ru/catalog/nizkovoltnoe-oborudovanie",
             "id": 10,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "LAD LED R500 36V",
-                    "url": "https://ladzavod.ru/catalog/r500-36v"
+                    "id": 75
                 },
                 {
-                    "name": "LAD LED R320 Ex (36V)",
-                    "url": "https://ladzavod.ru/catalog/r320-ex-36v"
+                    "id": 147
                 },
                 {
-                    "name": "NL VEGA 12/36V",
-                    "url": "https://ladzavod.ru/catalog/vega-12-36"
+                    "id": 172
                 },
                 {
-                    "name": "NL VEGA",
-                    "url": "https://ladzavod.ru/catalog/nl-vega"
+                    "id": 170
                 },
                 {
-                    "name": "LAD LED R500 12/24V",
-                    "url": "https://ladzavod.ru/catalog/r500-12-24v"
+                    "id": 74
                 },
                 {
-                    "name": "LAD LED R500 2Ex (12/24/36V)",
-                    "url": "https://ladzavod.ru/catalog/r500-2ex-12-24-36v"
+                    "id": 121
                 }
             ]
         },
@@ -574,26 +449,21 @@
             "name": "Светильники специального назначения",
             "url": "https://ladzavod.ru/catalog/svetilniki-specialnogo-naznacheniya",
             "id": 11,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "АЗС",
-                    "url": "https://ladzavod.ru/catalog/azs"
+                    "id": 164
                 },
                 {
-                    "name": "LAD LED LINE-120",
-                    "url": "https://ladzavod.ru/catalog/lad-led-line-120"
+                    "id": 190
                 },
                 {
-                    "name": "LAD LED R500 A",
-                    "url": "https://ladzavod.ru/catalog/lad-led-r500-a"
+                    "id": 189
                 },
                 {
-                    "name": "Специальное освещение",
-                    "url": "https://ladzavod.ru/catalog/specialnoe-osveshchenie"
+                    "id": 166
                 },
                 {
-                    "name": "Сельскохозяйственное освещение",
-                    "url": "https://ladzavod.ru/catalog/selskohozyajstvennoe-osveshchenie"
+                    "id": 165
                 }
             ]
         },
@@ -601,10 +471,9 @@
             "name": "Архитектурное освещение",
             "url": "https://ladzavod.ru/catalog/arhitekturnoe-osveshchenie",
             "id": 12,
-            "categoriesInSphere": [
+            "categoriesId": [
                 {
-                    "name": "LAD LED LINE архитектурное освещение",
-                    "url": "https://ladzavod.ru/catalog/lad-led-line-arhitekturnoe-osveshchenie"
+                    "id": 191
                 }
             ]
         }
