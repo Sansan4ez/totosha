@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 from src.mcp import mcp_cache
 from src.skills import skills_manager
-from src.routes import tools_router, mcp_router, skills_router
+from src.routes import tools_router, mcp_router, skills_router, corp_db_router
 
 
 @asynccontextmanager
@@ -55,6 +55,7 @@ async def health():
 app.include_router(tools_router)
 app.include_router(mcp_router)
 app.include_router(skills_router)
+app.include_router(corp_db_router)
 
 
 if __name__ == "__main__":

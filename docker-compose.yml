@@ -14,6 +14,7 @@ services:
       - ./workspace/_shared:/data
     networks:
       - agent-net
+      - cliproxy-net
     secrets:
       - base_url
       - api_key
@@ -31,6 +32,33 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # ============ CLIPROXYAPI - Local OAuth proxy (Codex/Claude/Gemini) ============
+  cli-proxy-api:
+    image: eceasy/cli-proxy-api:latest
+    container_name: cli-proxy-api
+    restart: unless-stopped
+    profiles:
+      - cliproxy
+    # Local-only bind for Web UI + local testing. Use SSH tunnel for remote access.
+    ports:
+      - "127.0.0.1:8317:8317"
+    volumes:
+      - /opt/cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml:ro
+      - /opt/cliproxyapi/auths:/root/.cli-proxy-api
+      - /opt/cliproxyapi/static:/CLIProxyAPI/static
+      - /opt/cliproxyapi/logs:/CLIProxyAPI/logs
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - cliproxy-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
   # ============ TOOLS API - Single source of truth for tools ============
   tools-api:
     build: ./tools-api
@@ -42,6 +70,9 @@ services:
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - WORKSPACE_ROOT=/workspace
+      - SUPABASE_REST_URL=${SUPABASE_REST_URL:-https://api.llm-studio.pro/rest/v1}
+    secrets:
+      - supabase_key
     volumes:
       - ./workspace/_shared:/data
       - ./workspace:/workspace:ro  # Read-only access to scan for skills
@@ -362,8 +393,15 @@ secrets:
     file: ./secrets/model_name.txt
   admin_password:
     file: ./secrets/admin_password.txt
+  supabase_key:
+    file: ./secrets/supabase_key.txt
 
 networks:
   agent-net:
+    driver: bridge
+    internal: false
+
+  # Dedicated network for CLIProxyAPI (only proxy + cli-proxy-api should join)
+  cliproxy-net:
     driver: bridge
     internal: false
