@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """
-Добавляет `id` и `image` в db/spheres.json на основе db/categories.json.
+Синхронизирует db/spheres.json и db/categories.json.
 
-По умолчанию обновляет файл на месте:
+Что делает:
+1. Добавляет `id` в каждую сферу из подходящей записи в categories.json.
+2. Удаляет `image` из сфер, если поле уже было записано ранее.
+3. Удаляет из списка `categories` те записи, которые соответствуют сферам.
+
+По умолчанию обновляет оба файла на месте:
     python scripts/enrich_spheres_from_categories.py
 
 Можно указать свои пути:
     python scripts/enrich_spheres_from_categories.py \
         --spheres db/spheres.json \
         --categories db/categories.json \
-        --output db/spheres.json
+        --spheres-output db/spheres.json \
+        --categories-output db/categories.json
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ from typing import Any
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Заполняет id и image для сфер из categories.json."
+        description="Добавляет id в сферы и удаляет эти сферы из categories.json."
     )
     parser.add_argument(
         "--spheres",
@@ -39,15 +45,21 @@ def parse_args() -> argparse.Namespace:
         help="Путь до categories.json",
     )
     parser.add_argument(
-        "--output",
+        "--spheres-output",
         type=Path,
         default=None,
-        help="Куда записать результат. По умолчанию обновляет spheres.json на месте.",
+        help="Куда записать обновленный spheres.json. По умолчанию перезаписывает исходный файл.",
+    )
+    parser.add_argument(
+        "--categories-output",
+        type=Path,
+        default=None,
+        help="Куда записать обновленный categories.json. По умолчанию перезаписывает исходный файл.",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Только проверить, что все сферы могут быть сопоставлены.",
+        help="Только проверить соответствия и показать, сколько записей будет изменено.",
     )
     return parser.parse_args()
 
@@ -59,18 +71,6 @@ def load_json(path: Path) -> Any:
         raise SystemExit(f"Файл не найден: {path}") from error
     except json.JSONDecodeError as error:
         raise SystemExit(f"Некорректный JSON в {path}: {error}") from error
-
-
-def build_index(items: list[dict[str, Any]], field: str) -> dict[str, list[dict[str, Any]]]:
-    index: dict[str, list[dict[str, Any]]] = {}
-
-    for item in items:
-        value = item.get(field)
-        if not value:
-            continue
-        index.setdefault(str(value), []).append(item)
-
-    return index
 
 
 def validate_root(data: Any, key: str, path: Path) -> list[dict[str, Any]]:
@@ -86,6 +86,17 @@ def validate_root(data: Any, key: str, path: Path) -> list[dict[str, Any]]:
             raise SystemExit(f"Все элементы {key!r} в {path} должны быть объектами")
 
     return value
+
+
+def build_index(items: list[dict[str, Any]], field: str) -> dict[str, list[dict[str, Any]]]:
+    index: dict[str, list[dict[str, Any]]] = {}
+
+    for item in items:
+        value = item.get(field)
+        if value:
+            index.setdefault(str(value), []).append(item)
+
+    return index
 
 
 def match_category(
@@ -127,9 +138,9 @@ def match_category(
             f"{sphere_name!r} ({sphere_url!r}) с записью в categories.json"
         )
 
-    if "id" not in match or "image" not in match:
+    if "id" not in match:
         raise SystemExit(
-            "В categories.json не хватает id или image для категории "
+            "В categories.json не хватает id для категории "
             f"{match.get('name')!r}"
         )
 
@@ -147,12 +158,10 @@ def enrich_sphere(sphere: dict[str, Any], category: dict[str, Any]) -> dict[str,
         enriched[key] = value
         if key == "sphereUrl":
             enriched["id"] = category["id"]
-            enriched["image"] = category["image"]
             inserted = True
 
     if not inserted:
         enriched["id"] = category["id"]
-        enriched["image"] = category["image"]
 
     return enriched
 
@@ -181,29 +190,57 @@ def main() -> int:
     categories_by_url = build_index(categories, "url")
 
     enriched_spheres: list[dict[str, Any]] = []
-    changed_count = 0
+    matched_category_objects: set[int] = set()
+    updated_spheres = 0
 
     for sphere in spheres:
         category = match_category(sphere, categories_by_name, categories_by_url)
         enriched = enrich_sphere(sphere, category)
-        if sphere.get("id") != category["id"] or sphere.get("image") != category["image"]:
-            changed_count += 1
+        matched_category_objects.add(id(category))
+
+        if enriched != sphere:
+            updated_spheres += 1
+
         enriched_spheres.append(enriched)
 
-    output_data = dict(spheres_data)
-    output_data["spheres"] = enriched_spheres
+    filtered_categories = [
+        category for category in categories if id(category) not in matched_category_objects
+    ]
+    removed_categories = len(categories) - len(filtered_categories)
+
+    if removed_categories != len(spheres):
+        raise SystemExit(
+            "Ожидалось удалить столько же категорий, сколько сфер найдено. "
+            f"Сферы: {len(spheres)}, удалено категорий: {removed_categories}"
+        )
 
     if args.dry_run:
-        print(f"Проверка пройдена: {len(enriched_spheres)} сфер готовы к обновлению.")
+        print(
+            "Проверка пройдена: "
+            f"обновится сфер: {updated_spheres}, "
+            f"удалится категорий: {removed_categories}."
+        )
         return 0
 
-    output_path = args.output or args.spheres
-    write_json(output_path, output_data)
+    spheres_output_path = args.spheres_output or args.spheres
+    categories_output_path = args.categories_output or args.categories
+
+    updated_spheres_data = dict(spheres_data)
+    updated_spheres_data["spheres"] = enriched_spheres
+
+    updated_categories_data = dict(categories_data)
+    updated_categories_data["categories"] = filtered_categories
+
+    write_json(spheres_output_path, updated_spheres_data)
+    write_json(categories_output_path, updated_categories_data)
 
     print(
-        f"Готово: обновлено {changed_count} сфер. "
-        f"Результат записан в {output_path}"
+        "Готово: "
+        f"обновлено сфер: {updated_spheres}, "
+        f"удалено категорий: {removed_categories}."
     )
+    print(f"spheres.json: {spheres_output_path}")
+    print(f"categories.json: {categories_output_path}")
     return 0
 
 

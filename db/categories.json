@@ -1,58 +1,10 @@
 {
     "categories": [
         {
-            "id": 1,
-            "name": "Промышленное освещение",
-            "url": "https://ladzavod.ru/catalog/promyshlennoe-osveshchenie",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 2,
-            "name": "Тяжелые условия эксплуатации",
-            "url": "https://ladzavod.ru/catalog/tyazhelye-usloviya-ekspluatacii",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 3,
-            "name": "Складские помещения",
-            "url": "https://ladzavod.ru/catalog/skladskie-pomeshcheniya",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 6,
-            "name": "Спортивное и освещение высокой мощности",
-            "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
             "id": 169,
             "name": "LAD LED R500 SPORT",
             "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie-lad-led-r500-sport",
             "image": "https://ladzavod.ru/storage/app/uploads/public/692/d2f/b0e/692d2fb0e5a8d436229725.png",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 5,
-            "name": "РЖД",
-            "url": "https://ladzavod.ru/catalog/rzhd",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 159,
-            "name": "Периметральное и охранное освещение",
-            "url": "https://ladzavod.ru/catalog/perimetralnoe-i-ohrannoe-osveshchenie",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
             "powerDescription": null,
             "parent": null
         },
@@ -938,46 +890,6 @@
             "parent": null
         },
         {
-            "id": 7,
-            "name": "Наружное, уличное и дорожное освещение",
-            "url": "https://ladzavod.ru/catalog/ulichnoe-i-dorozhnoe",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 8,
-            "name": "Офисное, торговое, ЖКХ и АБК освещение",
-            "url": "https://ladzavod.ru/catalog/ofisnoe-torgovoe-i-zhkh",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 9,
-            "name": "Взрывозащищенное оборудование",
-            "url": "https://ladzavod.ru/catalog/vzryvozashchishchennoe-oborudovanie",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 10,
-            "name": "Низковольтное оборудование",
-            "url": "https://ladzavod.ru/catalog/nizkovoltnoe-oborudovanie",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
-            "id": 11,
-            "name": "Светильники специального назначения",
-            "url": "https://ladzavod.ru/catalog/svetilniki-specialnogo-naznacheniya",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
-        },
-        {
             "id": 37,
             "name": "LAD LED R500",
             "url": "https://ladzavod.ru/catalog/lad-led-r500",
@@ -1580,14 +1492,6 @@
                 "image": "https://ladzavod.ru/storage/app/uploads/public/67c/e79/a95/67ce79a95f23a357200790.png",
                 "powerDescription": null
             }
-        },
-        {
-            "id": 12,
-            "name": "Архитектурное освещение",
-            "url": "https://ladzavod.ru/catalog/arhitekturnoe-osveshchenie",
-            "image": "https://ladzavod.ru/themes/ladzavod/assets/images/no-photo.jpg",
-            "powerDescription": null,
-            "parent": null
         },
         {
             "id": 15,
