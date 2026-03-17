@@ -410,7 +410,7 @@ async def call_llm(messages: list, tools: list, model_override: str = "") -> dic
     for i, msg in enumerate(messages):
         role = msg.get("role", "?")
         content = msg.get("content", "")
-        tool_calls = msg.get("tool_calls", [])
+        tool_calls = msg.get("tool_calls") or []
         
         if role == "system":
             agent_logger.debug(f"  [{i}] system: ({len(content)} chars)")
@@ -724,7 +724,7 @@ async def run_agent(
         messages.append(msg)
         
         # Check for tool calls
-        tool_calls = msg.get("tool_calls", [])
+        tool_calls = msg.get("tool_calls") or []
         content = msg.get("content", "") or ""
         
         # If no content and no tool_calls - model didn't finish, continue the loop
