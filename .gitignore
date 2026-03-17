@@ -41,3 +41,4 @@ userbot/session/*.session
 # hook-fix
 test_*.txt
 test_*.json
+db/catalog.normalized.json
