@@ -42,3 +42,6 @@ userbot/session/*.session
 test_*.txt
 test_*.json
 db/catalog.normalized.json
+
+# bv (beads viewer) local config and caches
+.bv/
