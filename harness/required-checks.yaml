@@ -1,0 +1,38 @@
+version: 1
+
+# Branch protection contract. These check names should be required on protected branches.
+# Note: GitHub displays check names as "<workflow name> / <job id>".
+
+checks:
+  - id: docs
+    workflow_file: .github/workflows/harness-docs.yml
+    workflow_name: Harness Docs
+    job: docs
+    required: true
+    artifacts: []
+    gating:
+      on_pull_request: required
+      on_push_main: required
+
+  - id: traceability
+    workflow_file: .github/workflows/harness-traceability.yml
+    workflow_name: Harness Traceability
+    job: traceability
+    required: true
+    artifacts: []
+    gating:
+      on_pull_request: required
+      on_push_main: required
+
+  - id: observability_smoke
+    workflow_file: .github/workflows/harness-observability-smoke.yml
+    workflow_name: Harness Observability Smoke
+    job: smoke
+    required: false
+    artifacts:
+      - observability-smoke
+    gating:
+      on_pull_request: label
+      label: observability-smoke
+      on_push_main: manual
+      on_release: required

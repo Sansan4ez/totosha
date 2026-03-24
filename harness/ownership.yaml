@@ -1,0 +1,34 @@
+version: 1
+
+# Defaults should be treated as part of the harness contract.
+# Overrides exist only for atypical repos.
+
+kit_managed:
+  - .github/workflows/harness-*.yml
+  - victoriametrics/**
+  - docs/generated/**
+  - harness/required-checks.yaml
+  - harness/kit-lock.yaml
+
+project_owned:
+  - harness/manifest.yaml
+  - harness/docs.yaml
+  - harness/env-vars.yaml
+  - harness/traceability.yaml
+  - harness/surface-registry.yaml
+  - harness/observability/**
+  - docs/index.md
+  - docs/architecture/**
+  - docs/archive/**
+  - docs/operations/**
+  - docs/plans/**
+  - docs/references/**
+  - docs/requirements/**
+  - docs/services/**
+  - specs/**
+  - src/**
+  - tests/**
+  - docker-compose*.yml
+  - Dockerfile*
+  - .env.example
+  - README.md

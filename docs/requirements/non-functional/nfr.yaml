@@ -1,0 +1,6 @@
+non_functional_requirements:
+- id: NFR-OBS-001
+  title: Observability baseline is installed
+  owners:
+  - repo-harness-kit
+  notes: Bootstrap placeholder NFR for Victoria-based observability.

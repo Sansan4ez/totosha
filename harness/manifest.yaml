@@ -1,0 +1,7 @@
+version: 1
+services:
+- id: platform
+  kind: service
+  path: .
+  compose_service: core
+  otel_service_name: platform

@@ -1,0 +1,30 @@
+version: 1
+resource_attributes:
+  required:
+  - service.name
+signal_kinds:
+  required:
+  - traces
+  - metrics
+  - logs
+correlation:
+  required_log_fields:
+  - trace_id
+  - span_id
+  - request_id
+catalog:
+  - name: platform.observability.baseline
+    kind: log
+    service: platform
+    emitter:
+      path: docker-compose.yml
+      description: Repository-level baseline marker used to keep the observability harness configured for future changes.
+    consumers:
+      - kind: baseline
+        ref: docs/operations/observability-baseline.md
+      - kind: policy
+        ref: docs/operations/observability-policy.md
+    coverage_paths:
+      - path: harness/observability/signals.yaml
+        contains:
+          - platform.observability.baseline

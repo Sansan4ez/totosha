@@ -1,0 +1,15 @@
+groups:
+  - name: repo-harness-observability
+    interval: 30s
+    rules:
+      - alert: ApiTelemetrySilence
+        expr: sum by (service_name) (rate(http_server_duration_milliseconds_count[10m])) < 0.001
+        for: 10m
+        labels:
+          severity: critical
+          alert_id: OBS-ALERT-001
+          service: '{{ $labels.service_name }}'
+        annotations:
+          summary: HTTP service {{ $labels.service_name }} stopped exporting request metrics.
+          impact: Health checks may still pass while telemetry export is broken for a single service.
+          runbook: docs/operations/observability-runbook.md

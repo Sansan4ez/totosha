@@ -1,0 +1,91 @@
+name: ${OBSERVABILITY_PROJECT_NAME:-repo-harness-observability}
+
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.128.0
+    command:
+      - "--storageDataPath=/storage"
+      - "--opentelemetry.usePrometheusNaming=true"
+    ports:
+      - "${VICTORIAMETRICS_PORT:-8428}:8428"
+    volumes:
+      - vmdata:/storage
+
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.36.1
+    command:
+      - "--storageDataPath=/vlogs"
+    ports:
+      - "${VICTORIALOGS_PORT:-9428}:9428"
+    volumes:
+      - vldata:/vlogs
+
+  victoriatraces:
+    image: victoriametrics/victoria-traces:v0.4.0
+    command:
+      - "--storageDataPath=/vtraces"
+    ports:
+      - "${VICTORIATRACES_PORT:-10428}:10428"
+    volumes:
+      - vtdata:/vtraces
+
+  otel-collector:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.133.0
+    command: ["--config=/etc/otel-collector-config.yml"]
+    ports:
+      - "${OTEL_COLLECTOR_PORT_GRPC:-4317}:4317"
+      - "${OTEL_COLLECTOR_PORT_HTTP:-4318}:4318"
+      - "${OTEL_COLLECTOR_HEALTH_PORT:-13133}:13133"
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    depends_on:
+      - victoriametrics
+      - victorialogs
+      - victoriatraces
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.128.0
+    command:
+      - "-rule=/etc/vmalert/rules/vmalert-rules.yaml"
+      - "-datasource.url=http://victoriametrics:8428"
+      - "-remoteWrite.url=http://victoriametrics:8428"
+      - "-remoteRead.url=http://victoriametrics:8428"
+      - "-notifier.url=http://alertmanager:9093"
+      - "-httpListenAddr=:8880"
+    ports:
+      - "${VMALERT_PORT:-8880}:8880"
+    volumes:
+      - ./alerts:/etc/vmalert/rules:ro
+    depends_on:
+      - victoriametrics
+      - alertmanager
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=victoriametrics-metrics-datasource,victoriametrics-logs-datasource
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - victoriametrics
+      - victorialogs
+      - victoriatraces
+      - vmalert
+
+volumes:
+  vmdata: {}
+  vldata: {}
+  vtdata: {}

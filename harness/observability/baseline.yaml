@@ -1,0 +1,13 @@
+version: 1
+stack:
+  victoriametrics_dir: victoriametrics
+  compose_file: victoriametrics/docker-compose.yml
+app:
+  compose_files:
+  - docker-compose.yml
+smoke:
+  pr_label: observability-smoke
+  health_timeout_seconds: 60
+  artifacts_dir: victoriametrics/smoke
+  required_on:
+  - release
