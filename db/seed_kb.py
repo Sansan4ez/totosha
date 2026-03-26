@@ -145,7 +145,7 @@ async def main():
 
     try:
         if args.reset:
-            await conn.execute("TRUNCATE TABLE knowledge_chunks RESTART IDENTITY")
+            await conn.execute("TRUNCATE TABLE knowledge_chunks")
             logger.info("Reset knowledge_chunks table before seeding")
 
         if args.file:

@@ -1,7 +1,7 @@
 """Corporate DB tool executor.
 
 Core executes corp_db_search by calling tools-api over internal network.
-No SUPABASE_KEY is stored in core or sandbox.
+No database credentials are stored in core or sandbox.
 """
 
 from __future__ import annotations
