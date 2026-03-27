@@ -11,4 +11,7 @@ It provides the mechanical mapping between emitted signals, their operational co
 
 | Service | Signal | Kind | Emitter | Consumers | Coverage |
 | --- | --- | --- | --- | --- | --- |
-| platform | `platform.observability.baseline` | log | `docker-compose.yml` | baseline:`docs/operations/observability-baseline.md`; policy:`docs/operations/observability-policy.md` | `harness/observability/signals.yaml` |
+| core | `platform.observability.baseline` | log | `docker-compose.yml` | baseline:`docs/operations/observability-baseline.md`; policy:`docs/operations/observability-policy.md` | `harness/observability/signals.yaml` |
+| shared | `http_server_duration_milliseconds` | metric | `docs/operations/observability-baseline.md` | alert:`OBS-ALERT-001`; smoke:`victoriametrics/smoke_test.sh`; baseline:`docs/operations/observability-baseline.md` | `docs/operations/observability-baseline.md`, `victoriametrics/otel-collector-config.yml` -> `/metrics`, `core/observability.py`, `proxy/observability.py` |
+| shared | `HTTP request completed` | log | `docs/operations/observability-baseline.md` | smoke:`victoriametrics/smoke_test.sh`; runbook:`docs/operations/observability-runbook.md`; policy:`docs/operations/observability-policy.md` | `docs/operations/observability-baseline.md` -> `HTTP request completed`, `request_id`, `trace_id`, `span_id`, `core/observability.py` -> `HTTP request completed`, `request_id`, `trace_id`, `span_id`, `proxy/observability.py` |
+| shared | `api.request` | trace | `docs/operations/observability-baseline.md` | smoke:`victoriametrics/smoke_test.sh`; runbook:`docs/operations/observability-runbook.md` | `docs/operations/observability-baseline.md`, `core/observability.py`, `proxy/observability.py` |

@@ -8,12 +8,14 @@ from typing import Optional
 
 from config import CONFIG
 from logger import api_logger, log_request, log_response
+from observability import instrument_fastapi
 from agent import run_agent, sessions
 from tools.scheduler import scheduler
 from admin_api import router as admin_router, load_config as load_admin_config
 
 
 app = FastAPI(title="Core Agent API")
+instrument_fastapi(app)
 app.include_router(admin_router)
 
 

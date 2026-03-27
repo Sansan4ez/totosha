@@ -8,28 +8,33 @@ Provides:
 - Dynamic tool loading
 """
 
+import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
 from src.mcp import mcp_cache
+from src.observability import instrument_fastapi, setup_observability
 from src.skills import skills_manager
 from src.routes import tools_router, mcp_router, skills_router, corp_db_router
+
+setup_observability("tools-api")
+logger = logging.getLogger("tools-api")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     # Startup
-    print("[tools-api] Starting up...")
+    logger.info("Starting up")
     mcp_cache.load_cache()
     skills_manager.load_cache()
     skills_manager.scan_all()
-    print(f"[tools-api] Loaded {len(mcp_cache.tools)} MCP tools, {len(skills_manager.skills)} skills")
+    logger.info("Loaded %s MCP tools, %s skills", len(mcp_cache.tools), len(skills_manager.skills))
     
     yield
     
     # Shutdown
-    print("[tools-api] Shutting down...")
+    logger.info("Shutting down")
 
 
 app = FastAPI(
@@ -38,6 +43,7 @@ app = FastAPI(
     description="Single source of truth for agent tools, MCP servers, and skills",
     lifespan=lifespan
 )
+instrument_fastapi(app)
 
 
 # Health check

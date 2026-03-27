@@ -5,6 +5,7 @@ stack:
 app:
   compose_files:
   - docker-compose.yml
+  - docker-compose.observability.yml
 smoke:
   pr_label: observability-smoke
   health_timeout_seconds: 60

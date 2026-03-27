@@ -21,7 +21,7 @@ vars:
   relevance: observability smoke vmalert endpoint
   in_env_example: false
 - name: GRAFANA_PORT
-  default: '3000'
+  default: '3003'
   relevance: observability smoke grafana endpoint
   in_env_example: false
 - name: OTEL_COLLECTOR_HEALTH_PORT
@@ -76,6 +76,14 @@ vars:
   default: request
   relevance: observability smoke trace probe
   in_env_example: false
+- name: OTEL_TRACES_SAMPLER_ARG
+  default: '1.0'
+  relevance: observability trace sampling ratio for local overlay
+  in_env_example: true
+- name: OTEL_DEPLOYMENT_ENVIRONMENT
+  default: local
+  relevance: observability resource attribute for exported traces and logs
+  in_env_example: false
 ignored:
 - ACCESS_MODE
 - ADMIN_PORT
@@ -122,6 +130,8 @@ ignored:
 - MCP_SINGLE_USER_MODE
 - MODEL_NAME
 - MODEL_TEMPERATURE
+- OTEL_SERVICE_NAME
+- OTEL_SERVICE_NAMESPACE
 - OAUTHLIB_INSECURE_TRANSPORT
 - OAUTH_ALLOWED_ORIGINS
 - OAUTH_CUSTOM_REDIRECT_URIS

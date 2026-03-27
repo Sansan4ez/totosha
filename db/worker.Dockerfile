@@ -9,6 +9,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY common.py /app/common.py
+COPY observability.py /app/observability.py
 COPY embeddings.py /app/embeddings.py
 COPY catalog_loader.py /app/catalog_loader.py
 COPY kb_loader.py /app/kb_loader.py

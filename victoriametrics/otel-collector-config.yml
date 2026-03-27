@@ -5,6 +5,39 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: core
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["core:4000"]
+              labels:
+                service_name: core
+        - job_name: tools-api
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["tools-api:8100"]
+              labels:
+                service_name: tools-api
+        - job_name: proxy
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["proxy:3200"]
+              labels:
+                service_name: proxy
+        - job_name: bot
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["bot:4001"]
+              labels:
+                service_name: bot
+        - job_name: scheduler
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["scheduler:8400"]
+              labels:
+                service_name: scheduler
 
 processors:
   batch: {}
@@ -29,7 +62,7 @@ service:
       processors: [batch]
       exporters: [otlphttp/victoriatraces]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, prometheus]
       processors: [batch]
       exporters: [otlphttp/victoriametrics]
     logs:

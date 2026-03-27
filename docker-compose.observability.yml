@@ -1,0 +1,70 @@
+services:
+  core:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=core
+      - OTEL_SERVICE_NAMESPACE=totosha
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=parentbased_traceidratio
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+    ports:
+      - "127.0.0.1:${CORE_PORT:-4000}:4000"
+
+  tools-api:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=tools-api
+      - OTEL_SERVICE_NAMESPACE=totosha
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=parentbased_traceidratio
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+    ports:
+      - "127.0.0.1:${TOOLS_API_PORT:-8100}:8100"
+
+  proxy:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=proxy
+      - OTEL_SERVICE_NAMESPACE=totosha
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=parentbased_traceidratio
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+    ports:
+      - "127.0.0.1:${PROXY_PORT:-3200}:3200"
+
+  scheduler:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=scheduler
+      - OTEL_SERVICE_NAMESPACE=totosha
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=parentbased_traceidratio
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+    ports:
+      - "127.0.0.1:${SCHEDULER_PORT:-8400}:8400"
+
+  bot:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=bot
+      - OTEL_SERVICE_NAMESPACE=totosha
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=parentbased_traceidratio
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+    ports:
+      - "127.0.0.1:${BOT_PORT:-4001}:4001"
+
+  corp-db-worker:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=corp-db-worker
+      - OTEL_SERVICE_NAMESPACE=totosha
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=parentbased_traceidratio
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}

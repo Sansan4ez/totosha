@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from time import perf_counter
 from typing import Any, Literal, Optional
 
 import asyncpg
@@ -13,6 +14,9 @@ from fastapi import APIRouter, HTTPException, Request
 from openai import AsyncOpenAI
 from pgvector.asyncpg import register_vector
 from pydantic import BaseModel, Field
+from prometheus_client import Counter, Histogram
+
+from src.observability import REGISTRY
 
 router = APIRouter(prefix="/corp-db", tags=["corp-db"])
 logger = logging.getLogger(__name__)
@@ -45,6 +49,25 @@ ENTITY_TYPE_ALIASES: dict[str, str] = {
 
 _pool: asyncpg.Pool | None = None
 _client: AsyncOpenAI | None = None
+CORP_DB_SEARCH_REQUESTS_TOTAL = Counter(
+    "corp_db_search_requests_total",
+    "Total corp_db search requests handled by tools-api.",
+    labelnames=("kind", "status", "profile"),
+    registry=REGISTRY,
+)
+CORP_DB_SEARCH_DURATION_MS = Histogram(
+    "corp_db_search_duration_milliseconds",
+    "Duration of corp_db search requests in tools-api.",
+    labelnames=("kind", "status", "profile"),
+    registry=REGISTRY,
+    buckets=(5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000),
+)
+CORP_DB_EMBEDDINGS_UNAVAILABLE_TOTAL = Counter(
+    "corp_db_embeddings_unavailable_total",
+    "Total embedding resolution failures in corp-db search requests.",
+    labelnames=("profile",),
+    registry=REGISTRY,
+)
 
 
 class CorpDbSearchRequest(BaseModel):
@@ -248,6 +271,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
     full_text_weight, semantic_weight, fuzzy_weight = preset["weights"]
     embedding = await _get_query_embedding(query)
     if embedding is None:
+        CORP_DB_EMBEDDINGS_UNAVAILABLE_TOTAL.labels(profile_name).inc()
         semantic_weight = 0.0
 
     rows = await conn.fetch(
@@ -566,6 +590,9 @@ async def _lamp_filters(conn: asyncpg.Connection, req: CorpDbSearchRequest, limi
 async def corp_db_search(req: CorpDbSearchRequest, request: Request):
     user_id = request.headers.get("X-User-Id", "")
     limit, offset = _clamp(req.limit, req.offset)
+    started_at = perf_counter()
+    profile_name = req.profile or "none"
+    status = "error"
 
     try:
         pool = await _get_pool()
@@ -595,8 +622,16 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
                 result = await _lamp_filters(conn, req, limit, offset)
 
             result["user_id"] = user_id
+            status = str(result.get("status", "success"))
             return result
     except HTTPException:
+        status = "http_error"
         raise
     except Exception:
+        status = "error"
         return _error(req.kind, "Корпоративная база временно недоступна", query=req.query)
+    finally:
+        CORP_DB_SEARCH_REQUESTS_TOTAL.labels(req.kind, status, profile_name).inc()
+        CORP_DB_SEARCH_DURATION_MS.labels(req.kind, status, profile_name).observe(
+            (perf_counter() - started_at) * 1000
+        )

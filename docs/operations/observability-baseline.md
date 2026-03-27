@@ -11,6 +11,7 @@ Baseline Assets
 
 - Victoria stack root: `victoriametrics/`
 - Stack compose: `victoriametrics/docker-compose.yml`
+- App overlay compose: `docker-compose.observability.yml`
 - OTEL collector config: `victoriametrics/otel-collector-config.yml`
 - Alert catalog: `victoriametrics/alerts/minimum-alerts.yaml`
 - Executable `vmalert` rules: `victoriametrics/alerts/vmalert-rules.yaml`
@@ -22,7 +23,14 @@ Baseline Assets
 Minimum Expectations
 --------------------
 
-- Every HTTP service exports traces, metrics, and logs through the shared OTEL collector.
+- Every HTTP service in the main request path (`core`, `tools-api`, `proxy`, `bot`, `scheduler`) exposes `GET /metrics`.
+- Every HTTP service emits:
+  - metric `http_server_duration_milliseconds`
+  - log line `HTTP request completed`
+  - trace span `api.request`
+- Every instrumented service adds `request_id`, `trace_id`, and `span_id` correlation to logs.
+- Traces and logs are exported through the shared OTEL collector when `docker-compose.observability.yml` is applied.
+- Metrics are scraped by the OTEL collector from each service `/metrics` endpoint and forwarded to VictoriaMetrics.
 - Every service keeps `service.name` stable and aligned with `harness/manifest.yaml`.
 - Signal coverage is catalogued in `harness/observability/signals.yaml`.
 - `harness/observability/baseline.yaml` is the source of truth for PR label gating, compose files, smoke timeout, and artifact location.
@@ -32,4 +40,5 @@ Minimum Expectations
 Notes
 -----
 
+- The observability overlay binds service ports to `127.0.0.1` only, so smoke and local triage work without widening public exposure.
 - Keep repo-specific thresholds and panel details here, but do not move the baseline file paths.

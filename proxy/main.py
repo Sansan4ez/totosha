@@ -10,11 +10,9 @@ import aiohttp
 from aiohttp import web
 import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='[proxy] %(message)s'
-)
+from observability import metrics_handler, observability_middleware, setup_observability
+
+setup_observability("proxy")
 log = logging.getLogger(__name__)
 
 PORT = int(os.getenv("PROXY_PORT", "3200"))
@@ -548,10 +546,11 @@ async def not_found(request: web.Request) -> web.Response:
 
 def create_app() -> web.Application:
     """Create aiohttp application"""
-    app = web.Application()
+    app = web.Application(middlewares=[observability_middleware])
     
     # Routes
     app.router.add_get("/health", health)
+    app.router.add_get("/metrics", metrics_handler)
     app.router.add_route("*", "/v1/{path:.*}", proxy_llm)
     app.router.add_get("/zai/search", zai_search)
     app.router.add_get("/zai/read", zai_read)

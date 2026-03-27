@@ -3,6 +3,7 @@ name: ${OBSERVABILITY_PROJECT_NAME:-repo-harness-observability}
 services:
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.128.0
+    container_name: victoriametrics
     command:
       - "--storageDataPath=/storage"
       - "--opentelemetry.usePrometheusNaming=true"
@@ -10,27 +11,36 @@ services:
       - "${VICTORIAMETRICS_PORT:-8428}:8428"
     volumes:
       - vmdata:/storage
+    networks:
+      - observability-net
 
   victorialogs:
     image: victoriametrics/victoria-logs:v1.36.1
+    container_name: victorialogs
     command:
       - "--storageDataPath=/vlogs"
     ports:
       - "${VICTORIALOGS_PORT:-9428}:9428"
     volumes:
       - vldata:/vlogs
+    networks:
+      - observability-net
 
   victoriatraces:
     image: victoriametrics/victoria-traces:v0.4.0
+    container_name: victoriatraces
     command:
       - "--storageDataPath=/vtraces"
     ports:
       - "${VICTORIATRACES_PORT:-10428}:10428"
     volumes:
       - vtdata:/vtraces
+    networks:
+      - observability-net
 
   otel-collector:
     image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.133.0
+    container_name: otel-collector
     command: ["--config=/etc/otel-collector-config.yml"]
     ports:
       - "${OTEL_COLLECTOR_PORT_GRPC:-4317}:4317"
@@ -42,18 +52,25 @@ services:
       - victoriametrics
       - victorialogs
       - victoriatraces
+    networks:
+      - observability-net
+      - agent-net
 
   alertmanager:
     image: prom/alertmanager:v0.28.1
+    container_name: alertmanager
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
     ports:
       - "${ALERTMANAGER_PORT:-9093}:9093"
     volumes:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks:
+      - observability-net
 
   vmalert:
     image: victoriametrics/vmalert:v1.128.0
+    container_name: vmalert
     command:
       - "-rule=/etc/vmalert/rules/vmalert-rules.yaml"
       - "-datasource.url=http://victoriametrics:8428"
@@ -68,11 +85,14 @@ services:
     depends_on:
       - victoriametrics
       - alertmanager
+    networks:
+      - observability-net
 
   grafana:
     image: grafana/grafana:12.2.0
+    container_name: grafana
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${GRAFANA_PORT:-3003}:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -84,8 +104,17 @@ services:
       - victorialogs
       - victoriatraces
       - vmalert
+    networks:
+      - observability-net
 
 volumes:
   vmdata: {}
   vldata: {}
   vtdata: {}
+
+networks:
+  observability-net:
+    driver: bridge
+  agent-net:
+    external: true
+    name: ${OBSERVABILITY_AGENT_NETWORK:-totosha_agent-net}
