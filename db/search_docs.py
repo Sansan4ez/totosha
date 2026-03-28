@@ -18,12 +18,33 @@ def _json_object(value: object) -> dict:
     raise ValueError(f"Unsupported JSON object payload: {type(value).__name__}")
 
 
+def _numeric_aliases(lamp: dict) -> str:
+    parts = []
+    if lamp.get("power_w") is not None:
+        parts.extend([f"{lamp['power_w']}w", f"{lamp['power_w']} вт"])
+    if lamp.get("luminous_flux_lm") is not None:
+        parts.extend([f"{lamp['luminous_flux_lm']}lm", f"{lamp['luminous_flux_lm']} лм"])
+    if lamp.get("color_temperature_k") is not None:
+        parts.extend([f"{lamp['color_temperature_k']}k", f"{lamp['color_temperature_k']} к"])
+    if lamp.get("ingress_protection"):
+        parts.extend([str(lamp["ingress_protection"]), str(lamp["ingress_protection"]).lower()])
+    if lamp.get("supply_voltage_raw"):
+        parts.extend([lamp["supply_voltage_raw"], tokenize_text(lamp["supply_voltage_raw"])])
+    return join_nonempty(parts, sep=" ")
+
+
 def _lamp_doc(lamp: dict, category_name: str | None, skus: list[dict]) -> dict:
     sku_codes = []
     sku_labels = []
+    etm_codes = []
+    oracl_codes = []
     for sku in skus:
         sku_codes.extend([sku.get("etm_code"), sku.get("oracl_code"), sku.get("short_box_name_wms")])
-        sku_labels.extend([sku.get("catalog_1c"), sku.get("box_name")])
+        sku_labels.extend([sku.get("catalog_1c"), sku.get("box_name"), sku.get("description"), sku.get("comments")])
+        if sku.get("etm_code"):
+            etm_codes.append(sku["etm_code"])
+        if sku.get("oracl_code"):
+            oracl_codes.append(sku["oracl_code"])
 
     content = join_nonempty(
         [
@@ -44,13 +65,22 @@ def _lamp_doc(lamp: dict, category_name: str | None, skus: list[dict]) -> dict:
             " ".join(value for value in sku_labels if value),
             url_tokens(lamp.get("url")),
             category_name,
+            _numeric_aliases(lamp),
         ],
         sep=" ",
     )
     metadata = {
         "lamp_id": lamp["lamp_id"],
+        "name": lamp["name"],
         "category_id": lamp.get("category_id"),
         "category_name": category_name,
+        "url": lamp.get("url"),
+        "mounting_type": lamp.get("mounting_type"),
+        "ingress_protection": lamp.get("ingress_protection"),
+        "power_w": lamp.get("power_w"),
+        "color_temperature_k": lamp.get("color_temperature_k"),
+        "etm_codes": sorted(set(etm_codes)),
+        "oracl_codes": sorted(set(oracl_codes)),
         "has_sku": bool(skus),
     }
     return {
@@ -77,15 +107,18 @@ def _sku_doc(sku: dict, lamp_name: str | None) -> dict:
     aliases = join_nonempty(
         [
             sku.get("comments"),
+            sku.get("description"),
             sku.get("catalog_1c"),
             sku.get("short_box_name_wms"),
             sku.get("box_name"),
+            lamp_name,
         ],
         sep=" ",
     )
     metadata = {
         "sku_id": sku["sku_id"],
         "lamp_id": sku.get("lamp_id"),
+        "lamp_name": lamp_name,
         "etm_code": sku.get("etm_code"),
         "oracl_code": sku.get("oracl_code"),
         "is_active": sku.get("is_active", True),
@@ -106,9 +139,12 @@ def _category_doc(category: dict, sphere_names: list[str]) -> dict:
         "entity_id": str(category["category_id"]),
         "title": category["name"],
         "content": join_nonempty([", ".join(sorted(sphere_names)) if sphere_names else None]),
-        "aliases": join_nonempty([url_tokens(category.get("url"))], sep=" "),
+        "aliases": join_nonempty([tokenize_text(category.get("name")), url_tokens(category.get("url")), " ".join(sorted(sphere_names))], sep=" "),
         "metadata": {
             "category_id": category["category_id"],
+            "name": category["name"],
+            "url": category.get("url"),
+            "sphere_names": sorted(sphere_names),
         },
     }
 
@@ -119,10 +155,22 @@ def _portfolio_doc(portfolio: dict, sphere_name: str | None) -> dict:
         "entity_id": str(portfolio["portfolio_id"]),
         "title": portfolio["name"],
         "content": join_nonempty([portfolio.get("group_name"), sphere_name]),
-        "aliases": join_nonempty([url_tokens(portfolio.get("url"))], sep=" "),
+        "aliases": join_nonempty(
+            [
+                tokenize_text(portfolio.get("name")),
+                portfolio.get("group_name"),
+                sphere_name,
+                url_tokens(portfolio.get("url")),
+            ],
+            sep=" ",
+        ),
         "metadata": {
             "portfolio_id": portfolio["portfolio_id"],
             "sphere_id": portfolio.get("sphere_id"),
+            "name": portfolio["name"],
+            "group_name": portfolio.get("group_name"),
+            "sphere_name": sphere_name,
+            "url": portfolio.get("url"),
         },
     }
 
@@ -138,9 +186,21 @@ def _sphere_doc(sphere: dict, category_names: list[str], portfolio_names: list[s
                 "; ".join(portfolio_names[:3]) if portfolio_names else None,
             ]
         ),
-        "aliases": join_nonempty([url_tokens(sphere.get("url"))], sep=" "),
+        "aliases": join_nonempty(
+            [
+                tokenize_text(sphere.get("name")),
+                url_tokens(sphere.get("url")),
+                " ".join(category_names[:8]),
+                " ".join(portfolio_names[:5]),
+            ],
+            sep=" ",
+        ),
         "metadata": {
             "sphere_id": sphere["sphere_id"],
+            "name": sphere["name"],
+            "url": sphere.get("url"),
+            "category_names": category_names[:8],
+            "portfolio_examples": portfolio_names[:5],
         },
     }
 
@@ -154,7 +214,9 @@ def _mounting_type_doc(mounting_type: dict) -> dict:
         "aliases": join_nonempty([mounting_type.get("mark"), url_tokens(mounting_type.get("url"))], sep=" "),
         "metadata": {
             "mounting_type_id": mounting_type["mounting_type_id"],
+            "name": mounting_type["name"],
             "mark": mounting_type.get("mark"),
+            "description": mounting_type.get("description"),
         },
     }
 
@@ -181,8 +243,12 @@ def _category_mounting_doc(category_mounting: dict, category_name: str | None, m
             sep=" ",
         ),
         "metadata": {
+            "series": category_mounting.get("series"),
             "category_id": category_mounting.get("category_id"),
+            "category_name": category_name,
             "mounting_type_id": category_mounting.get("mounting_type_id"),
+            "mounting_type_name": mounting_type.get("name") if mounting_type else None,
+            "mark": mounting_type.get("mark") if mounting_type else None,
             "is_default": category_mounting.get("is_default", False),
         },
     }

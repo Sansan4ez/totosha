@@ -1354,6 +1354,7 @@ function Config() {
               <div style={{ display: 'flex', gap: '8px' }}>
                 {[
                   { value: 'openai', label: '🔌 OpenAI Compatible', desc: '/v1/audio/transcriptions' },
+                  { value: 'chatgpt', label: '💬 ChatGPT', desc: '/transcribe' },
                   { value: 'faster-whisper', label: '⚡ Faster-Whisper', desc: '/api/v1/transcribe' }
                 ].map(type => (
                   <button
@@ -1370,11 +1371,11 @@ function Config() {
                 ))}
               </div>
               <p style={{ color: '#888', fontSize: '12px', marginTop: '6px' }}>
-                OpenAI Compatible for remote Whisper servers (with Bearer token). Faster-Whisper for local servers.
+                OpenAI Compatible uses /v1/audio/transcriptions. ChatGPT uses /transcribe. Faster-Whisper uses /api/v1/transcribe.
               </p>
             </div>
 
-            {asrConfig.api_type === 'openai' && (
+            {(asrConfig.api_type === 'openai' || asrConfig.api_type === 'chatgpt') && (
               <div className="form-group">
                 <label className="form-label">API Key (Bearer Token)</label>
                 <input

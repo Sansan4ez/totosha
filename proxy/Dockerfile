@@ -9,8 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY observability.py .
 
-# Run as non-root user (uid 1000) - matches Docker secrets ownership
-RUN useradd -u 1000 -m appuser
+# Match the UID/GID used by file-based Docker secrets in this deployment.
+# This keeps the proxy non-root while allowing reads from /run/secrets.
+RUN groupadd -g 1001 appuser && useradd -u 1001 -g 1001 -m appuser
 USER appuser
 
 EXPOSE 3200

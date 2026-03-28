@@ -34,7 +34,7 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "weights": (0.9, 0.55, 1.2),
     },
     "candidate_generation": {
-        "entity_types": ["lamp", "category", "mounting_type", "sphere"],
+        "entity_types": ["lamp", "sku", "category", "mounting_type", "sphere"],
         "weights": (1.0, 0.9, 0.75),
     },
     "related_evidence": {
@@ -45,6 +45,47 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
 
 ENTITY_TYPE_ALIASES: dict[str, str] = {
     "kb": "kb_chunk",
+}
+QUERY_TOKEN_RE = re.compile(r"[0-9A-Za-zА-Яа-я/+.-]+")
+IP_RE = re.compile(r"\bip[\s-]?(\d{2,3})\b", re.IGNORECASE)
+POWER_RE = re.compile(r"\b(\d{1,4})\s*(?:ватт|вт|w)\b", re.IGNORECASE)
+CCT_RE = re.compile(r"\b(\d{4,5})\s*(?:k|к)\b", re.IGNORECASE)
+LUMEN_RE = re.compile(r"\b(\d{3,6})\s*(?:lm|лм)\b", re.IGNORECASE)
+NOISE_TOKENS = {
+    "для",
+    "под",
+    "или",
+    "как",
+    "что",
+    "есть",
+    "нужен",
+    "нужна",
+    "нужно",
+    "мне",
+    "нам",
+    "светильник",
+    "светильники",
+    "лампа",
+    "лампы",
+    "прожектор",
+    "прожекторы",
+    "модель",
+    "модели",
+    "серия",
+    "серии",
+    "проект",
+    "проекты",
+    "портфолио",
+    "объект",
+    "объекты",
+}
+MOUNTING_HINTS = {
+    "подвес": "подвес",
+    "консоль": "консоль",
+    "лира": "лира",
+    "кроншт": "кронштейн",
+    "потолоч": "потол",
+    "настенн": "настен",
 }
 
 _pool: asyncpg.Pool | None = None
@@ -181,15 +222,25 @@ def _json_object(value: Any) -> dict[str, Any]:
     raise ValueError(f"Unsupported metadata payload: {type(value).__name__}")
 
 
-def _success(kind: str, *, query: str | None = None, filters: dict[str, Any] | None = None, results: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _success(
+    kind: str,
+    *,
+    query: str | None = None,
+    filters: dict[str, Any] | None = None,
+    results: list[dict[str, Any]] | None = None,
+    debug: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     rows = results or []
-    return {
+    response = {
         "status": "success" if rows else "empty",
         "kind": kind,
         "query": query,
         "filters": filters or {},
         "results": rows,
     }
+    if debug:
+        response["debug"] = debug
+    return response
 
 
 def _error(kind: str, message: str, *, query: str | None = None) -> dict[str, Any]:
@@ -263,6 +314,251 @@ def _hybrid_row(record: asyncpg.Record) -> dict[str, Any]:
     return result
 
 
+def _debug_info_object(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _rows_have_lexical_signal(rows: list[asyncpg.Record]) -> bool:
+    for row in rows:
+        debug_info = _debug_info_object(row["debug_info"])
+        fts = debug_info.get("fts", {})
+        fuzzy = debug_info.get("fuzzy", {})
+        if fts.get("rank_ix") is not None or fuzzy.get("rank_ix") is not None:
+            return True
+    return False
+
+
+def _request_like(req: CorpDbSearchRequest, **updates: Any) -> CorpDbSearchRequest:
+    if hasattr(req, "model_copy"):
+        return req.model_copy(update=updates)
+    return req.copy(update=updates)
+
+
+def _normalize_query_text(query: str) -> str:
+    text = _normalize_ws(query).lower().replace("\u00a0", " ")
+    text = re.sub(r"\bip[\s-]?(\d{2,3})\b", lambda m: f"ip{m.group(1)}", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\b(\d{1,4})\s*(?:ватт|вт|w)\b",
+        lambda m: f"{m.group(1)}w {m.group(1)} вт",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\b(\d{4,5})\s*(?:k|к)\b",
+        lambda m: f"{m.group(1)}k {m.group(1)} к",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"\b(\d{3,6})\s*(?:lm|лм)\b",
+        lambda m: f"{m.group(1)}lm {m.group(1)} лм",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return _normalize_ws(text)
+
+
+def _strong_query_terms(query: str) -> list[str]:
+    terms: list[str] = []
+    for token in QUERY_TOKEN_RE.findall(_normalize_query_text(query)):
+        normalized = token.lower()
+        if normalized in NOISE_TOKENS:
+            continue
+        if len(normalized) < 2 and not any(char.isdigit() for char in normalized):
+            continue
+        if normalized not in terms:
+            terms.append(normalized)
+    return terms[:6]
+
+
+def _extract_filter_retry(query: str) -> dict[str, Any]:
+    normalized = _normalize_query_text(query)
+    filters: dict[str, Any] = {}
+
+    match = IP_RE.search(normalized)
+    if match:
+        filters["ip"] = f"IP{match.group(1)}"
+
+    match = POWER_RE.search(normalized)
+    if match:
+        value = int(match.group(1))
+        tolerance = max(5, min(20, int(round(value * 0.15))))
+        filters["power_w_min"] = max(0, value - tolerance)
+        filters["power_w_max"] = value + tolerance
+
+    match = CCT_RE.search(normalized)
+    if match:
+        value = int(match.group(1))
+        filters["cct_k_min"] = max(0, value - 250)
+        filters["cct_k_max"] = value + 250
+
+    match = LUMEN_RE.search(normalized)
+    if match:
+        value = int(match.group(1))
+        tolerance = max(250, min(2000, int(round(value * 0.2))))
+        filters["flux_lm_min"] = max(0, value - tolerance)
+        filters["flux_lm_max"] = value + tolerance
+
+    lowered = normalized.lower()
+    for needle, mounting_type in MOUNTING_HINTS.items():
+        if needle in lowered:
+            filters["mounting_type"] = mounting_type
+            break
+
+    if "взрыв" in lowered or "2ex" in lowered or "ex" in lowered:
+        filters["explosion_protected"] = True
+
+    return filters
+
+
+async def _run_hybrid_query(
+    conn: asyncpg.Connection,
+    *,
+    query: str,
+    limit: int,
+    full_text_weight: float,
+    semantic_weight: float,
+    fuzzy_weight: float,
+    entity_types: list[str] | None,
+    include_debug: bool,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        SELECT doc_id, entity_type, entity_id, title, content, metadata, score, debug_info
+        FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        """,
+        query,
+        None,
+        limit,
+        full_text_weight,
+        semantic_weight,
+        fuzzy_weight,
+        60,
+        entity_types,
+        include_debug,
+    )
+
+
+async def _run_alias_fallback_query(
+    conn: asyncpg.Connection,
+    *,
+    token: str,
+    limit: int,
+    entity_types: list[str] | None,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        SELECT
+            d.doc_id,
+            d.entity_type,
+            d.entity_id,
+            d.title,
+            d.content,
+            d.metadata,
+            greatest(
+                similarity(lower(d.title), lower($1)),
+                similarity(lower(d.aliases), lower($1))
+            )::double precision AS score,
+            jsonb_build_object(
+                'fts', jsonb_build_object('rank_ix', null, 'rank_score', null),
+                'fuzzy', jsonb_build_object('rank_ix', 1, 'similarity_score', greatest(
+                    similarity(lower(d.title), lower($1)),
+                    similarity(lower(d.aliases), lower($1))
+                )),
+                'semantic', jsonb_build_object('rank_ix', null, 'cosine_similarity', null)
+            ) AS debug_info
+        FROM corp.corp_search_docs d
+        WHERE ($3::text[] IS NULL OR d.entity_type = ANY($3))
+          AND (
+              lower(d.title) LIKE ('%' || lower($1) || '%')
+              OR lower(d.aliases) LIKE ('%' || lower($1) || '%')
+          )
+        ORDER BY score DESC, d.doc_id
+        LIMIT $2
+        """,
+        token,
+        limit,
+        entity_types,
+    )
+
+
+def _hybrid_row_from_filter(row: dict[str, Any], score: float, strategy: str) -> dict[str, Any]:
+    metadata = {
+        "lamp_id": row["lamp_id"],
+        "category_id": row.get("category_id"),
+        "category_name": row.get("category_name"),
+        "mounting_type": row.get("mounting_type"),
+        "url": row.get("url"),
+        "search_strategy": strategy,
+    }
+    preview = _preview(
+        " | ".join(
+            value
+            for value in [
+                row.get("category_name"),
+                f"{row['power_w']} Вт" if row.get("power_w") is not None else None,
+                f"{row['luminous_flux_lm']} лм" if row.get("luminous_flux_lm") is not None else None,
+                f"{row['color_temperature_k']} K" if row.get("color_temperature_k") is not None else None,
+                row.get("ingress_protection"),
+                row.get("mounting_type"),
+            ]
+            if value
+        )
+    )
+    return {
+        "entity_type": "lamp",
+        "entity_id": str(row["lamp_id"]),
+        "title": row["name"],
+        "score": round(float(score), 6),
+        "metadata": metadata,
+        "preview": preview,
+    }
+
+
+def _merge_hybrid_results(groups: list[tuple[str, list[dict[str, Any]]]], limit: int) -> list[dict[str, Any]]:
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for label, rows in groups:
+        label_bonus = 0.0
+        if label == "filters":
+            label_bonus = 0.2
+        elif label != "primary":
+            label_bonus = 0.05
+        for rank, row in enumerate(rows, start=1):
+            key = (str(row["entity_type"]), str(row["entity_id"]))
+            bonus = label_bonus + (1.0 / (40 + rank))
+            existing = merged.get(key)
+            if existing is None:
+                current = dict(row)
+                current["score"] = round(float(row.get("score", 0.0)) + bonus, 6)
+                current["search_strategy"] = [label]
+                if "debug_info" in current and current["debug_info"] is None:
+                    current.pop("debug_info")
+                merged[key] = current
+                continue
+
+            existing["score"] = round(float(existing.get("score", 0.0)) + bonus, 6)
+            strategies = existing.setdefault("search_strategy", [])
+            if label not in strategies:
+                strategies.append(label)
+
+    ordered = sorted(
+        merged.values(),
+        key=lambda row: (-float(row.get("score", 0.0)), str(row.get("entity_type")), str(row.get("entity_id"))),
+    )
+    return ordered[:limit]
+
+
 async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int) -> dict[str, Any]:
     query = _req_str(req.query, "query", max_len=400)
     profile_name = req.profile or "entity_resolver"
@@ -289,11 +585,113 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
         entity_types,
         req.include_debug,
     )
+    primary_rows = [_hybrid_row(row) for row in rows]
+    primary_has_lexical_signal = _rows_have_lexical_signal(rows)
+    filter_retry = _extract_filter_retry(query) if profile_name == "candidate_generation" else {}
+    should_run_filter_fallback = bool(filter_retry)
+    should_run_token_fallback = bool(_strong_query_terms(query)) and (not rows or not primary_has_lexical_signal)
+
+    if primary_rows and not should_run_filter_fallback and not should_run_token_fallback:
+        return _success(
+            "hybrid_search",
+            query=query,
+            filters={"profile": profile_name, "entity_types": entity_types, "search_strategy": "primary"},
+            results=primary_rows,
+            debug={
+                "strategy": "primary",
+                "semantic_enabled": embedding is not None,
+            }
+            if req.include_debug
+            else None,
+        )
+
+    fallback_groups: list[tuple[str, list[dict[str, Any]]]] = []
+    merged_groups: list[tuple[str, list[dict[str, Any]]]] = [("primary", primary_rows)] if primary_rows else []
+    debug_reason = "semantic_unavailable" if embedding is None else ("primary_empty" if not rows else "semantic_only")
+
+    if should_run_filter_fallback:
+        filter_req = _request_like(req, kind="lamp_filters", **filter_retry)
+        filter_result = await _lamp_filters(conn, filter_req, limit, 0)
+        if filter_result["results"]:
+            fallback_groups.append(
+                (
+                    "filters",
+                    [
+                        _hybrid_row_from_filter(row, 0.95 - index * 0.01, "filters")
+                        for index, row in enumerate(filter_result["results"])
+                    ],
+                )
+            )
+
+    token_queries: list[tuple[str, str]] = []
+    normalized_query = _normalize_query_text(query)
+    if normalized_query and normalized_query != query:
+        token_queries.append(("normalized", normalized_query))
+
+    strong_terms = _strong_query_terms(query)
+    if len(strong_terms) >= 2:
+        token_queries.append(("strong_terms", " ".join(strong_terms[:4])))
+    for token in strong_terms[:4]:
+        token_queries.append((f"token:{token}", token))
+
+    seen_queries: set[str] = set()
+    deduped_token_queries: list[tuple[str, str]] = []
+    for label, token_query in token_queries:
+        if token_query and token_query not in seen_queries:
+            seen_queries.add(token_query)
+            deduped_token_queries.append((label, token_query))
+
+    if should_run_token_fallback:
+        for label, token_query in deduped_token_queries[:5]:
+            retry_rows = await _run_hybrid_query(
+                conn,
+                query=token_query,
+                limit=max(limit, 3),
+                full_text_weight=max(full_text_weight, 1.05),
+                semantic_weight=0.0,
+                fuzzy_weight=max(fuzzy_weight, 1.1),
+                entity_types=entity_types,
+                include_debug=req.include_debug,
+            )
+            formatted = [_hybrid_row(row) for row in retry_rows]
+            if not formatted and label.startswith("token:"):
+                alias_rows = await _run_alias_fallback_query(
+                    conn,
+                    token=token_query,
+                    limit=max(limit, 3),
+                    entity_types=entity_types,
+                )
+                formatted = [_hybrid_row(row) for row in alias_rows]
+            if formatted:
+                fallback_groups.append((label, formatted))
+
+    merged_rows = _merge_hybrid_results([*merged_groups, *fallback_groups], limit)
+    if merged_rows:
+        logger.info(
+            "corp-db hybrid fallback used profile=%s query=%r reason=%s strategy=%s",
+            profile_name,
+            query[:120],
+            debug_reason,
+            ",".join(label for label, _ in [*merged_groups, *fallback_groups]),
+        )
     return _success(
         "hybrid_search",
         query=query,
-        filters={"profile": profile_name, "entity_types": entity_types},
-        results=[_hybrid_row(row) for row in rows],
+        filters={
+            "profile": profile_name,
+            "entity_types": entity_types,
+            "search_strategy": "fallback" if fallback_groups else "primary",
+        },
+        results=merged_rows,
+        debug={
+            "strategy": "fallback" if fallback_groups else "primary",
+            "reason": debug_reason,
+            "queries": [label for label, _ in deduped_token_queries],
+            "primary_has_lexical_signal": primary_has_lexical_signal,
+            "semantic_enabled": embedding is not None,
+        }
+        if (req.include_debug or fallback_groups)
+        else None,
     )
 
 

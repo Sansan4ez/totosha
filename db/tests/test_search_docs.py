@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from search_docs import _kb_chunk_doc, _lamp_doc
+from search_docs import _category_doc, _kb_chunk_doc, _lamp_doc, _portfolio_doc
 
 
 class SearchDocsTests(unittest.TestCase):
@@ -36,6 +36,8 @@ class SearchDocsTests(unittest.TestCase):
         self.assertIn("LINE1132", doc["aliases"])
         self.assertIn("1669705", doc["aliases"])
         self.assertEqual(doc["metadata"]["lamp_id"], 1301)
+        self.assertIn("25w", doc["aliases"])
+        self.assertEqual(doc["metadata"]["etm_codes"], ["LINE1132"])
 
     def test_kb_chunk_doc_keeps_document_title_metadata(self):
         chunk = {
@@ -50,6 +52,28 @@ class SearchDocsTests(unittest.TestCase):
         self.assertEqual(doc["entity_type"], "kb_chunk")
         self.assertEqual(doc["metadata"]["document_title"], chunk["document_title"])
         self.assertTrue(doc["entity_id"].startswith("common_information_about_company.md:"))
+
+    def test_category_doc_keeps_sphere_names_in_metadata(self):
+        doc = _category_doc(
+            {"category_id": 164, "name": "АЗС", "url": "https://ladzavod.ru/catalog/azs"},
+            ["Нефтегазовый комплекс и взрывозащищенное оборудование"],
+        )
+        self.assertIn("Нефтегазовый комплекс", doc["aliases"])
+        self.assertEqual(doc["metadata"]["sphere_names"][0], "Нефтегазовый комплекс и взрывозащищенное оборудование")
+
+    def test_portfolio_doc_keeps_group_and_sphere_metadata(self):
+        doc = _portfolio_doc(
+            {
+                "portfolio_id": "portfolio:1",
+                "name": "Освещение установки комплексной подготовки газа",
+                "group_name": "Нефтегазовый комплекс и взрывозащищенное оборудование",
+                "url": "https://ladzavod.ru/portfolio/ukpg",
+                "sphere_id": 8,
+            },
+            "Нефтегазовый комплекс и взрывозащищенное оборудование",
+        )
+        self.assertIn("Нефтегазовый комплекс", doc["aliases"])
+        self.assertEqual(doc["metadata"]["sphere_name"], "Нефтегазовый комплекс и взрывозащищенное оборудование")
 
 
 if __name__ == "__main__":
