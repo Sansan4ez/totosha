@@ -14,27 +14,10 @@
 
 ## Сборка и запуск
 
-Собрать локальный образ patched `CLIProxyAPI`:
+Поднять patched `cli-proxy-api` из локального checkout `../CLIProxyAPI`:
 
 ```bash
-docker build -t eceasy/cli-proxy-api:latest /home/admin/CLIProxyAPI-fork
-```
-
-Поднять patched `cli-proxy-api` с рабочими config/auth:
-
-```bash
-docker rm -f cli-proxy-api || true
-docker run -d \
-  --name cli-proxy-api \
-  --restart unless-stopped \
-  --network totosha_cliproxy-net \
-  --network-alias cli-proxy-api \
-  -p 127.0.0.1:8317:8317 \
-  -v /home/admin/CLIProxyAPI/config.yaml:/CLIProxyAPI/config.yaml:ro \
-  -v /home/admin/CLIProxyAPI/auths:/root/.cli-proxy-api \
-  -v /opt/cliproxyapi/static:/CLIProxyAPI/static \
-  -v /opt/cliproxyapi/logs:/CLIProxyAPI/logs \
-  eceasy/cli-proxy-api:latest
+docker compose -f docker-compose.yml --profile cliproxy up -d --build cli-proxy-api
 ```
 
 Пересобрать проектный `proxy`:
