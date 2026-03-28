@@ -80,6 +80,23 @@ def get_agent_config(key: str, default: Any = None) -> Any:
     return agent_cfg.get(key, default)
 
 
+def get_access_mode() -> str:
+    """Return effective core access mode.
+
+    Priority: admin_config.json > env > default.
+    """
+    admin_cfg = _load_admin_config()
+    access_cfg = admin_cfg.get("access", {})
+    mode = access_cfg.get("mode")
+    if mode:
+        return mode
+
+    env_mode = os.getenv("ACCESS_MODE", "admin_only")
+    if env_mode == "admin":
+        return "admin_only"
+    return env_mode
+
+
 # Base config from env/secrets (defaults)
 _base_model = read_secret("model_name", os.getenv("MODEL_NAME", "gpt-4"))
 

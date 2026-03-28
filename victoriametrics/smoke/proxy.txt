@@ -1,0 +1,10 @@
+service=proxy
+[OK] otel collector: http://localhost:13133/
+[OK] grafana: http://localhost:3003/api/health
+[OK] vmalert rules: http://localhost:8880/api/v1/rules
+[OK] application health: http://127.0.0.1:3200/health
+[OK] trace service observed: proxy
+trace_signal_hint=api.request
+[OK] log signal observed: HTTP request completed
+[OK] metric signal observed: http_server_duration_milliseconds
+smoke_ok=true

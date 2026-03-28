@@ -3,7 +3,8 @@
 import logging
 import sys
 import os
-from datetime import datetime
+
+from observability import setup_observability
 
 
 # Configure logging level from env
@@ -19,6 +20,8 @@ logging.basicConfig(
 
 # Log startup level
 print(f"[logger] Log level: {LOG_LEVEL}")
+
+setup_observability("core")
 
 
 def get_logger(name: str) -> logging.Logger:

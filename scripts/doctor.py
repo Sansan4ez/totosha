@@ -74,6 +74,7 @@ Checking 5 layers of protection:
         self.check_injection_patterns()
         self.check_network_exposure()
         self.check_file_permissions()
+        self.check_workspace_permissions()
         self.check_access_mode()
         self.check_resource_limits()
         
@@ -307,10 +308,37 @@ Checking 5 layers of protection:
                           f"{path}: {actual}" + ("" if is_ok else f" (should be {expected})"),
                           "medium" if not is_ok else "low",
                           f"chmod {expected} {path}")
+
+    def check_workspace_permissions(self):
+        """Check host bind-mount workspace is writable by core."""
+        print(f"\n{BLUE}[7/9] Checking workspace bind mount...{RESET}")
+
+        workspace = self.root / "workspace"
+        shared = workspace / "_shared"
+        for path in (workspace, shared):
+            if not path.exists():
+                self.check(
+                    f"workspace_{path.name}",
+                    False,
+                    f"{path.relative_to(self.root)} missing",
+                    "high",
+                    f"mkdir -p {path.relative_to(self.root)} && chmod 777 {path.relative_to(self.root)}",
+                )
+                continue
+
+            writable = os.access(path, os.W_OK | os.X_OK)
+            mode = oct(path.stat().st_mode & 0o777)
+            self.check(
+                f"workspace_{path.name}",
+                writable,
+                f"{path.relative_to(self.root)} writable ({mode})" if writable else f"{path.relative_to(self.root)} not writable ({mode})",
+                "high" if not writable else "low",
+                f"chmod 777 {path.relative_to(self.root)}",
+            )
     
     def check_access_mode(self):
         """Check access control mode"""
-        print(f"\n{BLUE}[7/8] Checking access control...{RESET}")
+        print(f"\n{BLUE}[8/9] Checking access control...{RESET}")
         
         # Check if access.py exists
         access_file = self.root / "bot" / "access.py"
@@ -350,7 +378,7 @@ Checking 5 layers of protection:
     
     def check_resource_limits(self):
         """Check resource limits in sandbox"""
-        print(f"\n{BLUE}[8/8] Checking sandbox limits...{RESET}")
+        print(f"\n{BLUE}[9/9] Checking sandbox limits...{RESET}")
         
         sandbox_file = self.root / "core" / "tools" / "sandbox.py"
         if not sandbox_file.exists():

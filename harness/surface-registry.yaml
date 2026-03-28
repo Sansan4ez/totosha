@@ -1,0 +1,35 @@
+version: 1
+surfaces:
+  compose_topology:
+    owner: repo-harness-kit
+    summary: Compose topology changes.
+    implementation_patterns:
+    - docker-compose*.yml
+    - docker-compose*.yaml
+    required_alignment_patterns:
+    - harness/manifest.yaml
+    - docs/architecture/c4/l2-containers.md
+  env_vars_catalog:
+    owner: repo-harness-kit
+    summary: Supported env vars and defaults used by the repo.
+    implementation_patterns:
+    - .env.example
+    - harness/env-vars.yaml
+    required_alignment_patterns:
+    - docs/generated/env-matrix.md
+  telemetry_signals_catalog:
+    owner: repo-harness-kit
+    summary: Telemetry signal catalog changes.
+    implementation_patterns:
+    - harness/observability/signals.yaml
+    required_alignment_patterns:
+    - docs/operations/observability-baseline.md
+    - docs/operations/observability-policy.md
+    - docs/operations/observability-runbook.md
+  service_code:
+    owner: repo-harness-kit
+    summary: Generic service implementation surface.
+    implementation_patterns:
+    - ./**
+    required_alignment_patterns:
+    - docs/services/

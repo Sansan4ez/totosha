@@ -1,0 +1,12 @@
+version: 1
+requirements:
+  sources:
+  - docs/requirements/functional/*.yaml
+  - docs/requirements/non-functional/*.yaml
+  id_pattern: ^(FR|NFR-[A-Z]+)-[0-9]{3}$
+openapi:
+  requirement_extension: x-requirements
+tests:
+  marker: req
+  allow_unmarked_tests: true
+  openapi_requirements_coverage: error

@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Harness Service
+    orgId: 1
+    folder: Harness Service
+    type: file
+    disableDeletion: true
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/files

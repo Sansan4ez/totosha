@@ -9,15 +9,32 @@ import asyncio
 import aiohttp
 from aiohttp import web
 import logging
+import hashlib
+import math
+import re
+import time
+from dataclasses import dataclass
+from typing import Any
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='[proxy] %(message)s'
-)
+from observability import metrics_handler, observability_middleware, setup_observability
+
+setup_observability("proxy")
 log = logging.getLogger(__name__)
 
 PORT = int(os.getenv("PROXY_PORT", "3200"))
+LOCAL_EMBEDDING_MODEL = "local-hash-embedding-1536"
+LOCAL_EMBEDDING_DIMENSIONS = 1536
+EMBEDDING_TOKEN_RE = re.compile(r"[0-9A-Za-zА-Яа-я]+")
+READINESS_CACHE_TTL_SECONDS = 5.0
+_readiness_cache: dict[str, tuple[float, bool, str]] = {}
+
+
+@dataclass(frozen=True)
+class ProxyRuntimeConfig:
+    llm_base_url: str
+    llm_api_key: str
+    zai_api_key: str
+    model_name: str
 
 
 def read_secret(name: str) -> str | None:
@@ -34,7 +51,6 @@ def read_secret(name: str) -> str | None:
             with open(path, 'r') as f:
                 value = f.read().strip()
                 if value:
-                    log.info(f"Secret '{name}' loaded from {path}")
                     return value
         except (FileNotFoundError, PermissionError):
             continue
@@ -42,27 +58,168 @@ def read_secret(name: str) -> str | None:
     # Fallback to env (insecure)
     env_name = name.upper()
     if os.getenv(env_name):
-        log.warning(f"Secret '{name}' loaded from env (INSECURE)")
         return os.getenv(env_name)
-    
-    log.warning(f"WARNING: Secret '{name}' not found!")
     return None
 
 
-# Load secrets at startup
-LLM_BASE_URL = read_secret("base_url")
-LLM_API_KEY = read_secret("api_key")
-ZAI_API_KEY = read_secret("zai_api_key")
-MODEL_NAME = read_secret("model_name") or "gpt-4"  # Model for classifier
+def load_runtime_config() -> ProxyRuntimeConfig:
+    return ProxyRuntimeConfig(
+        llm_base_url=(read_secret("base_url") or "").rstrip("/"),
+        llm_api_key=(read_secret("api_key") or "").strip(),
+        zai_api_key=(read_secret("zai_api_key") or "").strip(),
+        model_name=(read_secret("model_name") or "gpt-4").strip(),
+    )
+
+
+def _resolve_target_url(base_url: str, path: str, query_string: str = "") -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/chat/completions") and path == "chat/completions":
+        target_url = base
+    elif base.endswith("/v1"):
+        target_url = base + "/" + path
+    else:
+        target_url = base.rstrip("/v1").rstrip("/") + "/v1/" + path
+    if query_string:
+        target_url += "?" + query_string
+    return target_url
+
+
+def _probe_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        return base + "/models"
+    return base
+
+
+async def _probe_llm_ready(config: ProxyRuntimeConfig) -> tuple[bool, str]:
+    if not config.llm_base_url:
+        return False, "missing_base_url"
+
+    cache_key = hashlib.sha256(
+        f"{config.llm_base_url}|{bool(config.llm_api_key)}".encode("utf-8")
+    ).hexdigest()
+    cached = _readiness_cache.get(cache_key)
+    now = time.monotonic()
+    if cached and (now - cached[0]) < READINESS_CACHE_TTL_SECONDS:
+        return cached[1], cached[2]
+
+    headers = {}
+    if config.llm_api_key:
+        headers["Authorization"] = f"Bearer {config.llm_api_key}"
+
+    probe_url = _probe_url(config.llm_base_url)
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+            async with session.get(probe_url, headers=headers, allow_redirects=False) as resp:
+                ready = resp.status < 500 or resp.status in {401, 403, 404, 405}
+                reason = f"http_{resp.status}"
+    except Exception as exc:
+        ready = False
+        reason = exc.__class__.__name__
+
+    _readiness_cache[cache_key] = (now, ready, reason)
+    return ready, reason
+
+
+def _tokenize_for_embedding(text: str) -> list[str]:
+    return [token.lower() for token in EMBEDDING_TOKEN_RE.findall(text)]
+
+
+def _hash_embedding(text: str, dimensions: int) -> list[float]:
+    tokens = _tokenize_for_embedding(text)
+    if not tokens:
+        vector = [0.0] * dimensions
+        vector[0] = 1.0
+        return vector
+
+    terms = tokens[:128]
+    bigrams = [f"{left}_{right}" for left, right in zip(terms, terms[1:])][:64]
+    vector = [0.0] * dimensions
+    for term in [*terms, *bigrams]:
+        weight = 1.0 if "_" not in term else 0.5
+        for salt in range(3):
+            digest = hashlib.sha256(f"{salt}:{term}".encode("utf-8")).digest()
+            index = int.from_bytes(digest[:4], "big") % dimensions
+            sign = -1.0 if (digest[4] & 1) else 1.0
+            vector[index] += sign * weight / (salt + 1)
+
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm == 0.0:
+        vector[0] = 1.0
+        return vector
+    return [round(value / norm, 8) for value in vector]
+
+
+def _coerce_embedding_inputs(payload: dict[str, Any]) -> list[str]:
+    raw_input = payload.get("input")
+    if isinstance(raw_input, list):
+        return [str(item) for item in raw_input]
+    if raw_input is None:
+        return [""]
+    return [str(raw_input)]
+
+
+def _local_embeddings_response(payload: dict[str, Any]) -> dict[str, Any]:
+    dimensions = int(payload.get("dimensions") or LOCAL_EMBEDDING_DIMENSIONS)
+    if dimensions < 1 or dimensions > LOCAL_EMBEDDING_DIMENSIONS:
+        raise ValueError(f"dimensions must be between 1 and {LOCAL_EMBEDDING_DIMENSIONS}")
+
+    inputs = _coerce_embedding_inputs(payload)
+    data = []
+    prompt_tokens = 0
+    for index, text in enumerate(inputs):
+        prompt_tokens += max(1, len(_tokenize_for_embedding(text)))
+        data.append(
+            {
+                "object": "embedding",
+                "index": index,
+                "embedding": _hash_embedding(text, dimensions),
+            }
+        )
+
+    return {
+        "object": "list",
+        "data": data,
+        "model": payload.get("model") or LOCAL_EMBEDDING_MODEL,
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "total_tokens": prompt_tokens,
+        },
+        "embedding_backend": "local_hash_fallback",
+    }
 
 
 async def health(request: web.Request) -> web.Response:
     """Health check endpoint"""
+    config = load_runtime_config()
+    llm_ready, llm_reason = await _probe_llm_ready(config)
     return web.json_response({
         "status": "ok",
-        "llm": bool(LLM_BASE_URL),
-        "zai": bool(ZAI_API_KEY)
+        "llm": bool(config.llm_base_url),
+        "llm_ready": llm_ready,
+        "llm_reason": llm_reason,
+        "embeddings_ready": True,
+        "embeddings_backend": LOCAL_EMBEDDING_MODEL,
+        "zai": bool(config.zai_api_key)
     })
+
+
+async def ready(request: web.Request) -> web.Response:
+    """Readiness endpoint: proxy is usable for LLM traffic."""
+    config = load_runtime_config()
+    llm_ready, llm_reason = await _probe_llm_ready(config)
+    status = 200 if llm_ready else 503
+    return web.json_response(
+        {
+            "status": "ready" if llm_ready else "not_ready",
+            "llm": bool(config.llm_base_url),
+            "llm_ready": llm_ready,
+            "llm_reason": llm_reason,
+            "embeddings_ready": True,
+            "embeddings_backend": LOCAL_EMBEDDING_MODEL,
+        },
+        status=status,
+    )
 
 
 import json
@@ -79,26 +236,14 @@ def pretty_json(data: bytes) -> str:
 
 async def proxy_llm(request: web.Request) -> web.StreamResponse:
     """Proxy /v1/* requests to LLM API with auth"""
-    if not LLM_BASE_URL:
-        return web.json_response({"error": "LLM not configured"}, status=500)
-    
-    # Build target URL
-    # Support both standard OpenAI-style URLs (ending with /v1) and custom URLs
-    # If BASE_URL already contains /chat/completions, use it directly for that path
+    config = load_runtime_config()
     path = request.match_info.get("path", "")
-    base = LLM_BASE_URL.rstrip("/")
+    if path == "embeddings":
+        return await proxy_embeddings(request, config)
+    if not config.llm_base_url:
+        return web.json_response({"error": "LLM not configured"}, status=503)
     
-    if base.endswith("/chat/completions") and path == "chat/completions":
-        # Custom URL that already includes the full path (e.g. Z.AI)
-        target_url = base
-    elif base.endswith("/v1"):
-        # Standard OpenAI-style: base/v1 + /path
-        target_url = base + "/" + path
-    else:
-        # Assume base URL without /v1, add it
-        target_url = base.rstrip("/v1").rstrip("/") + "/v1/" + path
-    if request.query_string:
-        target_url += "?" + request.query_string
+    target_url = _resolve_target_url(config.llm_base_url, path, request.query_string)
     
     log.info(f"LLM: {request.method} /v1/{path}")
     
@@ -106,7 +251,8 @@ async def proxy_llm(request: web.Request) -> web.StreamResponse:
     headers = dict(request.headers)
     headers.pop("Host", None)
     headers.pop("Connection", None)
-    headers["Authorization"] = f"Bearer {LLM_API_KEY}"
+    if config.llm_api_key:
+        headers["Authorization"] = f"Bearer {config.llm_api_key}"
     
     try:
         async with aiohttp.ClientSession() as session:
@@ -162,6 +308,54 @@ async def proxy_llm(request: web.Request) -> web.StreamResponse:
         return web.json_response({"error": "Proxy error", "message": str(e)}, status=502)
 
 
+async def proxy_embeddings(request: web.Request, config: ProxyRuntimeConfig) -> web.Response:
+    """Serve embeddings via upstream when available, else via local hash fallback."""
+    try:
+        body = await request.read()
+        payload = json.loads(body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    if config.llm_base_url:
+        target_url = _resolve_target_url(config.llm_base_url, "embeddings", request.query_string)
+        headers = dict(request.headers)
+        headers.pop("Host", None)
+        headers.pop("Connection", None)
+        if config.llm_api_key:
+            headers["Authorization"] = f"Bearer {config.llm_api_key}"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    target_url,
+                    headers=headers,
+                    data=body,
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    if 200 <= resp.status < 300:
+                        raw = await resp.read()
+                        return web.Response(
+                            status=resp.status,
+                            body=raw,
+                            headers={
+                                key: value
+                                for key, value in resp.headers.items()
+                                if key.lower() not in ("transfer-encoding", "content-encoding")
+                            },
+                        )
+                    log.warning(
+                        "Embeddings upstream unavailable (status=%s), using local fallback",
+                        resp.status,
+                    )
+        except Exception as exc:
+            log.warning("Embeddings upstream probe failed, using local fallback: %s", exc)
+
+    try:
+        return web.json_response(_local_embeddings_response(payload))
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
 # ============ ZAI SEARCH CONFIG ============
 
 SEARCH_CONFIG_FILE = "/data/search_config.json"
@@ -195,12 +389,12 @@ def save_search_config(config: dict):
         json.dump(config, f, indent=2)
 
 
-async def zai_search_coding(query: str, config: dict) -> tuple[int, dict]:
+async def zai_search_coding(query: str, config: dict, api_key: str) -> tuple[int, dict]:
     """ZAI search via Coding Plan (Chat Completions + tools)"""
     url = "https://api.z.ai/api/coding/paas/v4/chat/completions"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {ZAI_API_KEY}"
+        "Authorization": f"Bearer {api_key}"
     }
     body = {
         "model": config.get("model", "glm-4.7-flash"),
@@ -249,12 +443,12 @@ async def zai_search_coding(query: str, config: dict) -> tuple[int, dict]:
             return resp.status, data
 
 
-async def zai_search_legacy(query: str, config: dict) -> tuple[int, dict]:
+async def zai_search_legacy(query: str, config: dict, api_key: str) -> tuple[int, dict]:
     """ZAI search via legacy separate endpoint"""
     url = "https://api.z.ai/api/paas/v4/web_search"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {ZAI_API_KEY}"
+        "Authorization": f"Bearer {api_key}"
     }
     body = {
         "search_engine": "search-prime",
@@ -274,20 +468,21 @@ async def zai_search_legacy(query: str, config: dict) -> tuple[int, dict]:
 
 async def zai_search(request: web.Request) -> web.Response:
     """Z.AI Web Search: /zai/search?q=..."""
-    if not ZAI_API_KEY:
+    runtime = load_runtime_config()
+    if not runtime.zai_api_key:
         return web.json_response({"error": "ZAI not configured"}, status=500)
     
     query = request.query.get("q", "")
-    config = load_search_config()
-    mode = config.get("mode", "coding")
+    search_config = load_search_config()
+    mode = search_config.get("mode", "coding")
     
     log.info(f'ZAI search ({mode}): "{query[:50]}..."')
     
     try:
         if mode == "coding":
-            status, data = await zai_search_coding(query, config)
+            status, data = await zai_search_coding(query, search_config, runtime.zai_api_key)
         else:
-            status, data = await zai_search_legacy(query, config)
+            status, data = await zai_search_legacy(query, search_config, runtime.zai_api_key)
         return web.json_response(data, status=status)
     except asyncio.TimeoutError:
         log.error("ZAI search timeout")
@@ -299,7 +494,8 @@ async def zai_search(request: web.Request) -> web.Response:
 
 async def zai_read(request: web.Request) -> web.Response:
     """Z.AI Web Reader: /zai/read?url=..."""
-    if not ZAI_API_KEY:
+    config = load_runtime_config()
+    if not config.zai_api_key:
         return web.json_response({"error": "ZAI not configured"}, status=500)
     
     page_url = request.query.get("url", "")
@@ -309,7 +505,7 @@ async def zai_read(request: web.Request) -> web.Response:
         url = "https://api.z.ai/api/paas/v4/reader"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {ZAI_API_KEY}"
+            "Authorization": f"Bearer {config.zai_api_key}"
         }
         body = {
             "url": page_url,
@@ -334,8 +530,9 @@ async def classify_response(request: web.Request) -> web.Response:
     LLM-based classifier: should the userbot respond to this message?
     Uses structured output to get a simple yes/no decision with reasoning.
     """
-    if not LLM_BASE_URL:
-        return web.json_response({"error": "LLM not configured"}, status=500)
+    config = load_runtime_config()
+    if not config.llm_base_url:
+        return web.json_response({"error": "LLM not configured"}, status=503)
     
     try:
         data = await request.json()
@@ -396,7 +593,7 @@ Respond ONLY with valid JSON, no other text."""
 
     # Make fast LLM call with low tokens
     llm_payload = {
-        "model": data.get("model", MODEL_NAME),
+        "model": data.get("model", config.model_name),
         "messages": [
             {"role": "system", "content": "You are a response classifier. Output only valid JSON."},
             {"role": "user", "content": classifier_prompt}
@@ -407,7 +604,7 @@ Respond ONLY with valid JSON, no other text."""
     
     # Note: response_format=json_object not always supported, relying on prompt instead
     
-    base = LLM_BASE_URL.rstrip("/")
+    base = config.llm_base_url.rstrip("/")
     if base.endswith("/chat/completions"):
         target_url = base
     elif base.endswith("/v1"):
@@ -416,7 +613,7 @@ Respond ONLY with valid JSON, no other text."""
         target_url = base.rstrip("/v1").rstrip("/") + "/v1/chat/completions"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {LLM_API_KEY}"
+        "Authorization": f"Bearer {config.llm_api_key}"
     }
     
     log.info(f"Classifier: {chat_type} from {sender_name}: {current_message[:50]}...")
@@ -542,16 +739,18 @@ async def not_found(request: web.Request) -> web.Response:
     """Handle unknown routes"""
     return web.json_response({
         "error": "Not found",
-        "routes": ["/v1/*", "/zai/search?q=...", "/zai/read?url=...", "/classify", "/health"]
+        "routes": ["/v1/*", "/zai/search?q=...", "/zai/read?url=...", "/classify", "/health", "/ready"]
     }, status=404)
 
 
 def create_app() -> web.Application:
     """Create aiohttp application"""
-    app = web.Application()
+    app = web.Application(middlewares=[observability_middleware])
     
     # Routes
     app.router.add_get("/health", health)
+    app.router.add_get("/ready", ready)
+    app.router.add_get("/metrics", metrics_handler)
     app.router.add_route("*", "/v1/{path:.*}", proxy_llm)
     app.router.add_get("/zai/search", zai_search)
     app.router.add_get("/zai/read", zai_read)
@@ -565,9 +764,11 @@ def create_app() -> web.Application:
 
 
 def main():
+    config = load_runtime_config()
     log.info("Starting API proxy...")
-    log.info(f"LLM endpoint: {'✓ configured' if LLM_BASE_URL else '✗ NOT SET'}")
-    log.info(f"ZAI API: {'✓ configured' if ZAI_API_KEY else '✗ NOT SET'}")
+    log.info(f"LLM endpoint: {'✓ configured' if config.llm_base_url else '✗ NOT SET'}")
+    log.info(f"ZAI API: {'✓ configured' if config.zai_api_key else '✗ NOT SET'}")
+    log.info("Embeddings backend: %s", LOCAL_EMBEDDING_MODEL)
     
     app = create_app()
     web.run_app(app, host="0.0.0.0", port=PORT, print=lambda x: log.info(x))

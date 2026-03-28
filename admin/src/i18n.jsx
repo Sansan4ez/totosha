@@ -84,13 +84,13 @@ const strings = {
 
     // Config - ASR tab
     'config.asr.title': '🎤 Распознавание речи (ASR)',
-    'config.asr.desc': 'Транскрипция голосовых через Whisper API (OpenAI-compatible или Faster-Whisper).',
+    'config.asr.desc': 'Транскрипция голосовых через Whisper API (OpenAI-compatible, ChatGPT или Faster-Whisper).',
     'config.asr.online': '✅ ASR Онлайн',
     'config.asr.offline': '❌ ASR Офлайн',
     'config.asr.disabled_status': '⏸️ ASR Отключён',
     'config.asr.enable': 'Включить голосовые',
     'config.asr.url': 'URL сервера ASR',
-    'config.asr.url_desc': 'Базовый URL Whisper сервера (без /v1/audio/transcriptions).',
+    'config.asr.url_desc': 'Базовый URL Whisper сервера или полный endpoint транскрибации (/transcribe или /v1/audio/transcriptions).',
     'config.asr.language': 'Язык',
     'config.asr.max_duration': 'Макс. длительность (секунды)',
     'config.asr.timeout': 'Таймаут (секунды)',
@@ -477,13 +477,13 @@ const strings = {
 
     // Config - ASR tab
     'config.asr.title': '🎤 Speech-to-Text (ASR)',
-    'config.asr.desc': 'Voice message transcription via Whisper API (OpenAI-compatible or Faster-Whisper).',
+    'config.asr.desc': 'Voice message transcription via Whisper API (OpenAI-compatible, ChatGPT, or Faster-Whisper).',
     'config.asr.online': '✅ ASR Online',
     'config.asr.offline': '❌ ASR Offline',
     'config.asr.disabled_status': '⏸️ ASR Disabled',
     'config.asr.enable': 'Enable Voice Messages',
     'config.asr.url': 'ASR Server URL',
-    'config.asr.url_desc': 'Base Whisper server URL (without /v1/audio/transcriptions).',
+    'config.asr.url_desc': 'Base Whisper server URL or full transcription endpoint (/transcribe or /v1/audio/transcriptions).',
     'config.asr.language': 'Language',
     'config.asr.max_duration': 'Max Voice Duration (seconds)',
     'config.asr.timeout': 'Timeout (seconds)',

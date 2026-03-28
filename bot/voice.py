@@ -1,9 +1,25 @@
-"""Voice message transcription via Whisper ASR API (OpenAI-compatible or Faster-Whisper)"""
+"""Voice message transcription via Whisper ASR API (OpenAI-compatible, ChatGPT, or Faster-Whisper)"""
 
 import os
 import json
 import aiohttp
 from config import ASR_URL, ASR_TIMEOUT, ASR_LANGUAGE
+
+
+def _resolve_openai_asr_endpoint(asr_url: str) -> str:
+    """Accept either a base URL or a full transcription endpoint."""
+    endpoint = asr_url.rstrip("/")
+    if endpoint.endswith("/transcribe") or endpoint.endswith("/v1/audio/transcriptions"):
+        return endpoint
+    return f"{endpoint}/v1/audio/transcriptions"
+
+
+def _resolve_chatgpt_asr_endpoint(asr_url: str) -> str:
+    """Accept either a base URL or a full ChatGPT transcription endpoint."""
+    endpoint = asr_url.rstrip("/")
+    if endpoint.endswith("/transcribe"):
+        return endpoint
+    return f"{endpoint}/transcribe"
 
 
 def _get_asr_config() -> dict:
@@ -18,7 +34,7 @@ def _get_asr_config() -> dict:
         "language": ASR_LANGUAGE, 
         "enabled": bool(ASR_URL),
         "api_key": "",  # Bearer token для авторизации
-        "api_type": "openai",  # "openai" (OpenAI-compatible) или "faster-whisper" (legacy)
+        "api_type": "openai",  # "openai", "chatgpt" или "faster-whisper" (legacy)
     }
     try:
         path = "/data/asr_config.json"
@@ -34,8 +50,9 @@ def _get_asr_config() -> dict:
 async def transcribe_voice(file_url: str, duration: int) -> str:
     """Download voice from Telegram and transcribe via Whisper API
     
-    Поддерживает два типа API:
+    Поддерживает три типа API:
     - OpenAI-compatible (/v1/audio/transcriptions) - для remote whisper серверов
+    - ChatGPT-compatible (/transcribe)
     - Faster-Whisper (/api/v1/transcribe) - legacy для локального faster-whisper
     
     Args:
@@ -70,7 +87,11 @@ async def transcribe_voice(file_url: str, duration: int) -> str:
         print(f"[voice] Downloaded {len(audio_data) / 1024:.1f}KB, duration: {duration}s, api_type: {api_type}")
 
         # 2. Send to ASR API
-        if api_type == "openai":
+        if api_type == "chatgpt":
+            result = await _transcribe_chatgpt_api(
+                session, asr_url, audio_data, asr_language, api_key
+            )
+        elif api_type == "openai":
             # OpenAI-compatible API (remote Whisper servers)
             result = await _transcribe_openai_api(
                 session, asr_url, audio_data, asr_language, api_key
@@ -117,7 +138,7 @@ async def _transcribe_openai_api(
     if language:
         form.add_field("language", language)
     
-    endpoint = f"{asr_url.rstrip('/')}/v1/audio/transcriptions"
+    endpoint = _resolve_openai_asr_endpoint(asr_url)
     
     async with session.post(endpoint, data=form, headers=headers) as resp:
         if resp.status != 200:
@@ -135,6 +156,38 @@ async def _transcribe_openai_api(
     lang = result.get("language", "?")
     print(f'[voice] Transcribed (openai, lang={lang}, dur={duration_sec:.1f}s): "{text[:80]}{"..." if len(text) > 80 else ""}"')
     
+    return text
+
+
+async def _transcribe_chatgpt_api(
+    session: aiohttp.ClientSession,
+    asr_url: str,
+    audio_data: bytes,
+    language: str,
+    api_key: str
+) -> str:
+    """Transcribe via ChatGPT-compatible API (/transcribe)."""
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    form = aiohttp.FormData()
+    form.add_field("file", audio_data, filename="voice.ogg", content_type="audio/ogg")
+    if language:
+        form.add_field("language", language)
+
+    endpoint = _resolve_chatgpt_asr_endpoint(asr_url)
+
+    async with session.post(endpoint, data=form, headers=headers) as resp:
+        if resp.status != 200:
+            error_text = await resp.text()
+            raise Exception(f"ASR error: {resp.status} {error_text[:200]}")
+        result = await resp.json()
+
+    text = result.get("text", "")
+    if not text:
+        raise Exception("Empty ASR response")
+
     return text
 
 
@@ -185,8 +238,9 @@ async def _transcribe_faster_whisper_api(
 async def check_asr_health() -> dict:
     """Check ASR server health. Returns status dict or error.
     
-    Поддерживает оба типа серверов:
+    Поддерживает три типа серверов:
     - OpenAI-compatible: проверяет /docs или базовый URL
+    - ChatGPT-compatible: использует /transcribe
     - Faster-Whisper: проверяет /health/ready
     
     Returns:
@@ -208,7 +262,23 @@ async def check_asr_health() -> dict:
             headers["Authorization"] = f"Bearer {api_key}"
         
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            if api_type == "chatgpt":
+                return {
+                    "status": "ready",
+                    "url": asr_url,
+                    "api_type": "chatgpt",
+                    "note": "ChatGPT /transcribe endpoint configured"
+                }
             if api_type == "openai":
+                endpoint = _resolve_openai_asr_endpoint(asr_url)
+                if endpoint.endswith("/transcribe"):
+                    return {
+                        "status": "ready",
+                        "url": asr_url,
+                        "api_type": "openai",
+                        "note": "Custom /transcribe endpoint configured"
+                    }
+
                 # OpenAI-compatible: проверяем базовый URL или /docs
                 async with session.get(f"{asr_url}/docs", headers=headers) as resp:
                     if resp.status in (200, 307):

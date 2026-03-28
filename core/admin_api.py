@@ -1459,8 +1459,24 @@ DEFAULT_ASR_CONFIG = {
     "max_duration": 120,
     "timeout": 60,
     "api_key": "",  # Bearer token для авторизации
-    "api_type": "openai",  # "openai" или "faster-whisper"
+    "api_type": "openai",  # "openai", "chatgpt" или "faster-whisper"
 }
+
+
+def _resolve_openai_asr_endpoint(url: str) -> str:
+    """Accept either a base URL or a full transcription endpoint."""
+    endpoint = url.rstrip("/")
+    if endpoint.endswith("/transcribe") or endpoint.endswith("/v1/audio/transcriptions"):
+        return endpoint
+    return f"{endpoint}/v1/audio/transcriptions"
+
+
+def _resolve_chatgpt_asr_endpoint(url: str) -> str:
+    """Accept either a base URL or a full ChatGPT transcription endpoint."""
+    endpoint = url.rstrip("/")
+    if endpoint.endswith("/transcribe"):
+        return endpoint
+    return f"{endpoint}/transcribe"
 
 
 class ASRConfigUpdate(BaseModel):
@@ -1470,7 +1486,7 @@ class ASRConfigUpdate(BaseModel):
     max_duration: Optional[int] = None
     timeout: Optional[int] = None
     api_key: Optional[str] = None  # Bearer token
-    api_type: Optional[str] = None  # "openai" или "faster-whisper"
+    api_type: Optional[str] = None  # "openai", "chatgpt" или "faster-whisper"
 
 
 @router.get("/asr")
@@ -1545,8 +1561,9 @@ async def test_asr_connection(data: ASRTestRequest):
 async def _test_asr_connection(config: dict) -> dict:
     """Internal helper to test ASR connection
     
-    Поддерживает оба типа серверов:
+    Поддерживает три типа серверов:
     - OpenAI-compatible: проверяет /docs или базовый URL  
+    - ChatGPT-compatible: использует /transcribe
     - Faster-Whisper: проверяет /health/ready
     
     Args:
@@ -1571,7 +1588,23 @@ async def _test_asr_connection(config: dict) -> dict:
             headers["Authorization"] = f"Bearer {api_key}"
         
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            if api_type == "chatgpt":
+                return {
+                    "status": "ready",
+                    "url": _resolve_chatgpt_asr_endpoint(url),
+                    "api_type": "chatgpt",
+                    "note": "ChatGPT /transcribe endpoint configured"
+                }
             if api_type == "openai":
+                endpoint = _resolve_openai_asr_endpoint(url)
+                if endpoint.endswith("/transcribe"):
+                    return {
+                        "status": "ready",
+                        "url": url,
+                        "api_type": "openai",
+                        "note": "Custom /transcribe endpoint configured"
+                    }
+
                 # OpenAI-compatible: проверяем /docs (FastAPI swagger)
                 async with session.get(f"{url}/docs", headers=headers) as resp:
                     if resp.status in (200, 307):
@@ -2022,5 +2055,3 @@ async def get_google_tokens():
             pass
     
     return tokens
-
-

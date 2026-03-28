@@ -15,10 +15,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import logging
 
-logging.basicConfig(level=logging.INFO)
+from observability import instrument_fastapi, setup_observability
+
+setup_observability("scheduler")
 logger = logging.getLogger("scheduler")
 
 app = FastAPI(title="Scheduler Service", version="1.0")
+instrument_fastapi(app)
 
 # ============ Configuration ============
 

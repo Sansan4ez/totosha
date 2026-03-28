@@ -1,0 +1,50 @@
+{
+  "uid": "harness-service-overview",
+  "title": "Harness Service Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP Throughput",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=\"$service\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP 5xx Ratio",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=\"$service\",http_status_code=~\"5..\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Telemetry Pipeline Checks",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=\"$service\"}[5m]))"
+        }
+      ]
+    }
+  ]
+}

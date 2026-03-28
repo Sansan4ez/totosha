@@ -1,3 +1,5 @@
+name: totosha
+
 services:
   # ============ PROXY - holds all API secrets ============
   proxy:
@@ -12,16 +14,22 @@ services:
       - LOG_RAW=${LOG_RAW:-false}
     volumes:
       - ./workspace/_shared:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - agent-net
       - cliproxy-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     secrets:
       - base_url
       - api_key
       - zai_api_key
       - model_name
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3200/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3200/ready')"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -64,15 +72,21 @@ services:
     build: ./tools-api
     container_name: tools-api
     restart: unless-stopped
+    depends_on:
+      proxy:
+        condition: service_healthy
+      corp-db:
+        condition: service_healthy
     # Uncomment to expose port (set TOOLS_API_PORT in .env):
     # ports:
     #   - "${TOOLS_API_PORT:-8100}:8100"
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - WORKSPACE_ROOT=/workspace
-      - SUPABASE_REST_URL=${SUPABASE_REST_URL:-https://api.llm-studio.pro/rest/v1}
+      - PROXY_URL=http://proxy:3200/v1
+      - CORP_DB_STATEMENT_TIMEOUT_MS=${CORP_DB_STATEMENT_TIMEOUT_MS:-10000}
     secrets:
-      - supabase_key
+      - corp_db_ro_dsn
     volumes:
       - ./workspace/_shared:/data
       - ./workspace:/workspace:ro  # Read-only access to scan for skills
@@ -89,6 +103,66 @@ services:
         limits:
           cpus: '0.3'
           memory: 192M
+
+  # ============ CORP DB - Internal PostgreSQL with pgvector ============
+  corp-db:
+    build: ./db
+    container_name: corp-db
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - POSTGRES_DB=${CORP_DB_NAME:-corp_pg_db}
+      - POSTGRES_USER=${CORP_DB_ADMIN_USER:-postgres}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+    secrets:
+      - postgres_password
+      - corp_db_rw_dsn
+      - corp_db_ro_dsn
+    volumes:
+      - corp-db-data:/var/lib/postgresql/data
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CORP_DB_ADMIN_USER:-postgres} -d ${CORP_DB_NAME:-corp_pg_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # ============ CORP DB WORKER - Operator-only rebuild flow ============
+  corp-db-worker:
+    build:
+      context: ./db
+      dockerfile: worker.Dockerfile
+    container_name: corp-db-worker
+    profiles:
+      - operator
+    depends_on:
+      proxy:
+        condition: service_healthy
+      corp-db:
+        condition: service_healthy
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - PROXY_URL=http://proxy:3200/v1
+      - CORP_DB_RW_STATEMENT_TIMEOUT_MS=${CORP_DB_RW_STATEMENT_TIMEOUT_MS:-120000}
+    secrets:
+      - corp_db_rw_dsn
+    volumes:
+      - ./workspace/_shared:/data:ro
+    networks:
+      - agent-net
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   # ============ MCP TEST SERVER ============
   mcp-test:
@@ -212,6 +286,7 @@ services:
       - SCHEDULER_URL=http://scheduler:8400
       - WORKSPACE=/workspace
       - WORKSPACE_HOST_PATH=${PWD}/workspace
+      - SANDBOX_NETWORK=${SANDBOX_NETWORK:-totosha_agent-net}
       - EXPOSED_PORTS=5000-5099
       - AGENT_CWD=/workspace
       - API_PORT=4000
@@ -220,6 +295,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - ADMIN_USER_ID=${ADMIN_USER_ID:-809532582}
       - ACCESS_MODE=${ACCESS_MODE:-public}
+      - MODEL_NAME=${MODEL_NAME:-gpt-5.4}
     secrets:
       - model_name
     volumes:
@@ -393,8 +469,15 @@ secrets:
     file: ./secrets/model_name.txt
   admin_password:
     file: ./secrets/admin_password.txt
-  supabase_key:
-    file: ./secrets/supabase_key.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  corp_db_rw_dsn:
+    file: ./secrets/corp_db_rw_dsn.txt
+  corp_db_ro_dsn:
+    file: ./secrets/corp_db_ro_dsn.txt
+
+volumes:
+  corp-db-data:
 
 networks:
   agent-net:

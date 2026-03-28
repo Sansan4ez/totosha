@@ -1,0 +1,103 @@
+version: 1
+resource_attributes:
+  required:
+  - service.name
+signal_kinds:
+  required:
+  - traces
+  - metrics
+  - logs
+correlation:
+  required_log_fields:
+  - trace_id
+  - span_id
+  - request_id
+catalog:
+  - name: platform.observability.baseline
+    kind: log
+    service: core
+    emitter:
+      path: docker-compose.yml
+      description: Repository-level baseline marker used to keep the observability harness configured for future changes.
+    consumers:
+      - kind: baseline
+        ref: docs/operations/observability-baseline.md
+      - kind: policy
+        ref: docs/operations/observability-policy.md
+    coverage_paths:
+      - path: harness/observability/signals.yaml
+        contains:
+          - platform.observability.baseline
+  - name: http_server_duration_milliseconds
+    kind: metric
+    emitter:
+      path: docs/operations/observability-baseline.md
+      description: Shared HTTP request latency histogram exported by instrumented services and scraped by the OTEL collector.
+    consumers:
+      - kind: alert
+        ref: OBS-ALERT-001
+      - kind: smoke
+        ref: victoriametrics/smoke_test.sh
+      - kind: baseline
+        ref: docs/operations/observability-baseline.md
+    coverage_paths:
+      - path: docs/operations/observability-baseline.md
+        contains:
+          - http_server_duration_milliseconds
+      - path: victoriametrics/otel-collector-config.yml
+        contains:
+          - /metrics
+      - path: core/observability.py
+        contains:
+          - http_server_duration_milliseconds
+      - path: proxy/observability.py
+        contains:
+          - http_server_duration_milliseconds
+  - name: HTTP request completed
+    kind: log
+    emitter:
+      path: docs/operations/observability-baseline.md
+      description: Shared request completion log line emitted by instrumented HTTP services with request_id, trace_id and span_id correlation.
+    consumers:
+      - kind: smoke
+        ref: victoriametrics/smoke_test.sh
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+      - kind: policy
+        ref: docs/operations/observability-policy.md
+    coverage_paths:
+      - path: docs/operations/observability-baseline.md
+        contains:
+          - HTTP request completed
+          - request_id
+          - trace_id
+          - span_id
+      - path: core/observability.py
+        contains:
+          - HTTP request completed
+          - request_id
+          - trace_id
+          - span_id
+      - path: proxy/observability.py
+        contains:
+          - HTTP request completed
+  - name: api.request
+    kind: trace
+    emitter:
+      path: docs/operations/observability-baseline.md
+      description: Shared top-level request span created around inbound HTTP handling and propagated across internal service calls.
+    consumers:
+      - kind: smoke
+        ref: victoriametrics/smoke_test.sh
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: docs/operations/observability-baseline.md
+        contains:
+          - api.request
+      - path: core/observability.py
+        contains:
+          - api.request
+      - path: proxy/observability.py
+        contains:
+          - api.request

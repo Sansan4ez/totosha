@@ -5,9 +5,14 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     fastapi \
     uvicorn \
-    aiohttp
+    aiohttp \
+    prometheus-client \
+    opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-http \
+    opentelemetry-instrumentation-aiohttp-client
 
 COPY main.py .
+COPY observability.py .
 
 EXPOSE 8400
 
