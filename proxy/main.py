@@ -84,6 +84,17 @@ def _resolve_target_url(base_url: str, path: str, query_string: str = "") -> str
     return target_url
 
 
+def _resolve_transcribe_target_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[: -len("/chat/completions")]
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+    elif "/v1/" in base:
+        base = base.split("/v1/", 1)[0]
+    return base.rstrip("/") + "/transcribe"
+
+
 def _probe_url(base_url: str) -> str:
     base = base_url.rstrip("/")
     if base.endswith("/v1"):
@@ -305,6 +316,45 @@ async def proxy_llm(request: web.Request) -> web.StreamResponse:
         return web.json_response({"error": "LLM request timeout"}, status=504)
     except Exception as e:
         log.error(f"LLM proxy error: {e}")
+        return web.json_response({"error": "Proxy error", "message": str(e)}, status=502)
+
+
+async def proxy_transcribe(request: web.Request) -> web.Response:
+    """Proxy /transcribe requests to the internal CLIProxyAPI transcription endpoint."""
+    config = load_runtime_config()
+    if not config.llm_base_url:
+        return web.json_response({"error": "LLM not configured"}, status=503)
+
+    target_url = _resolve_transcribe_target_url(config.llm_base_url)
+    headers = dict(request.headers)
+    headers.pop("Host", None)
+    headers.pop("Connection", None)
+    if config.llm_api_key:
+        headers["Authorization"] = f"Bearer {config.llm_api_key}"
+
+    try:
+        body = await request.read()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                target_url,
+                headers=headers,
+                data=body,
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as resp:
+                raw = await resp.read()
+                return web.Response(
+                    status=resp.status,
+                    body=raw,
+                    headers={
+                        key: value
+                        for key, value in resp.headers.items()
+                        if key.lower() not in ("transfer-encoding", "content-encoding")
+                    },
+                )
+    except asyncio.TimeoutError:
+        return web.json_response({"error": "Transcribe request timeout"}, status=504)
+    except Exception as e:
+        log.error(f"Transcribe proxy error: {e}")
         return web.json_response({"error": "Proxy error", "message": str(e)}, status=502)
 
 
@@ -739,7 +789,7 @@ async def not_found(request: web.Request) -> web.Response:
     """Handle unknown routes"""
     return web.json_response({
         "error": "Not found",
-        "routes": ["/v1/*", "/zai/search?q=...", "/zai/read?url=...", "/classify", "/health", "/ready"]
+        "routes": ["/v1/*", "/transcribe", "/zai/search?q=...", "/zai/read?url=...", "/classify", "/health", "/ready"]
     }, status=404)
 
 
@@ -752,6 +802,7 @@ def create_app() -> web.Application:
     app.router.add_get("/ready", ready)
     app.router.add_get("/metrics", metrics_handler)
     app.router.add_route("*", "/v1/{path:.*}", proxy_llm)
+    app.router.add_post("/transcribe", proxy_transcribe)
     app.router.add_get("/zai/search", zai_search)
     app.router.add_get("/zai/read", zai_read)
     app.router.add_post("/classify", classify_response)
