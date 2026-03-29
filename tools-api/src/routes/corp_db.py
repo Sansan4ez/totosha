@@ -6,23 +6,44 @@ import json
 import logging
 import os
 import re
+from contextlib import asynccontextmanager
+from decimal import Decimal
 from time import perf_counter
 from typing import Any, Literal, Optional
 
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request
 from openai import AsyncOpenAI
+from opentelemetry import trace
 from pgvector.asyncpg import register_vector
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram
 
-from src.observability import REGISTRY
+from src.observability import REGISTRY, REQUEST_ID
 
 router = APIRouter(prefix="/corp-db", tags=["corp-db"])
 logger = logging.getLogger(__name__)
 
 CORP_DB_RO_SECRET_PATH = "/run/secrets/corp_db_ro_dsn"
 DEFAULT_PROXY_URL = "http://proxy:3200/v1"
+LATENCY_BUCKETS_MS = (
+    5,
+    10,
+    25,
+    50,
+    100,
+    250,
+    500,
+    1000,
+    2500,
+    5000,
+    10000,
+    15000,
+    20000,
+    30000,
+    45000,
+    60000,
+)
 
 PROFILE_PRESETS: dict[str, dict[str, Any]] = {
     "kb_search": {
@@ -87,6 +108,112 @@ MOUNTING_HINTS = {
     "потолоч": "потол",
     "настенн": "настен",
 }
+LAMP_RESPONSE_FIELDS = (
+    "power_w",
+    "luminous_flux_lm",
+    "beam_pattern",
+    "mounting_type",
+    "explosion_protection_marking",
+    "is_explosion_protected",
+    "color_temperature_k",
+    "color_rendering_index_ra",
+    "power_factor_operator",
+    "power_factor_min",
+    "climate_execution",
+    "operating_temperature_range_raw",
+    "operating_temperature_min_c",
+    "operating_temperature_max_c",
+    "ingress_protection",
+    "electrical_protection_class",
+    "supply_voltage_raw",
+    "supply_voltage_kind",
+    "supply_voltage_nominal_v",
+    "supply_voltage_min_v",
+    "supply_voltage_max_v",
+    "supply_voltage_tolerance_minus_pct",
+    "supply_voltage_tolerance_plus_pct",
+    "dimensions_raw",
+    "length_mm",
+    "width_mm",
+    "height_mm",
+    "warranty_years",
+    "weight_kg",
+)
+LAMP_TEXT_FILTER_SPECS = (
+    ("category", "category_name"),
+    ("mounting_type", "mounting_type"),
+    ("ip", "ingress_protection"),
+    ("beam_pattern", "beam_pattern"),
+    ("climate_execution", "climate_execution"),
+    ("electrical_protection_class", "electrical_protection_class"),
+    ("explosion_protection_marking", "explosion_protection_marking"),
+    ("supply_voltage_raw", "supply_voltage_raw"),
+    ("dimensions_raw", "dimensions_raw"),
+)
+LAMP_EXACT_FILTER_SPECS = (
+    ("voltage_kind", "supply_voltage_kind"),
+    ("power_factor_operator", "power_factor_operator"),
+)
+LAMP_BOOLEAN_FILTER_SPECS = (("explosion_protected", "is_explosion_protected"),)
+LAMP_RANGE_FILTER_SPECS = (
+    ("power_w_min", "power_w_max", "power_w"),
+    ("flux_lm_min", "flux_lm_max", "luminous_flux_lm"),
+    ("cct_k_min", "cct_k_max", "color_temperature_k"),
+    ("weight_kg_min", "weight_kg_max", "weight_kg"),
+    ("cri_ra_min", "cri_ra_max", "color_rendering_index_ra"),
+    ("power_factor_min_min", "power_factor_min_max", "power_factor_min"),
+    ("voltage_nominal_v_min", "voltage_nominal_v_max", "supply_voltage_nominal_v"),
+    ("voltage_min_v_min", "voltage_min_v_max", "supply_voltage_min_v"),
+    ("voltage_max_v_min", "voltage_max_v_max", "supply_voltage_max_v"),
+    ("voltage_tol_minus_pct_min", "voltage_tol_minus_pct_max", "supply_voltage_tolerance_minus_pct"),
+    ("voltage_tol_plus_pct_min", "voltage_tol_plus_pct_max", "supply_voltage_tolerance_plus_pct"),
+    ("length_mm_min", "length_mm_max", "length_mm"),
+    ("width_mm_min", "width_mm_max", "width_mm"),
+    ("height_mm_min", "height_mm_max", "height_mm"),
+    ("warranty_years_min", "warranty_years_max", "warranty_years"),
+)
+HYBRID_ZERO_AS_UNSET_FIELDS = {
+    "power_w_min",
+    "power_w_max",
+    "flux_lm_min",
+    "flux_lm_max",
+    "cct_k_min",
+    "cct_k_max",
+    "weight_kg_min",
+    "weight_kg_max",
+    "cri_ra_min",
+    "cri_ra_max",
+    "power_factor_min_min",
+    "power_factor_min_max",
+    "voltage_nominal_v_min",
+    "voltage_nominal_v_max",
+    "voltage_min_v_min",
+    "voltage_min_v_max",
+    "voltage_max_v_min",
+    "voltage_max_v_max",
+    "voltage_tol_minus_pct_min",
+    "voltage_tol_minus_pct_max",
+    "voltage_tol_plus_pct_min",
+    "voltage_tol_plus_pct_max",
+    "length_mm_min",
+    "length_mm_max",
+    "width_mm_min",
+    "width_mm_max",
+    "height_mm_min",
+    "height_mm_max",
+    "warranty_years_min",
+    "warranty_years_max",
+}
+DECIMAL_RANGE_COLUMNS = {
+    "weight_kg",
+    "power_factor_min",
+    "supply_voltage_tolerance_minus_pct",
+    "supply_voltage_tolerance_plus_pct",
+    "length_mm",
+    "width_mm",
+    "height_mm",
+}
+DECIMAL_EQUALITY_TOLERANCE = Decimal("0.0005")
 
 _pool: asyncpg.Pool | None = None
 _client: AsyncOpenAI | None = None
@@ -101,7 +228,14 @@ CORP_DB_SEARCH_DURATION_MS = Histogram(
     "Duration of corp_db search requests in tools-api.",
     labelnames=("kind", "status", "profile"),
     registry=REGISTRY,
-    buckets=(5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000),
+    buckets=LATENCY_BUCKETS_MS,
+)
+CORP_DB_SEARCH_PHASE_DURATION_MS = Histogram(
+    "corp_db_search_phase_duration_milliseconds",
+    "Duration of individual corp-db search phases in tools-api.",
+    labelnames=("kind", "profile", "phase", "status"),
+    registry=REGISTRY,
+    buckets=LATENCY_BUCKETS_MS,
 )
 CORP_DB_EMBEDDINGS_UNAVAILABLE_TOTAL = Counter(
     "corp_db_embeddings_unavailable_total",
@@ -138,6 +272,13 @@ class CorpDbSearchRequest(BaseModel):
     category: Optional[str] = None
     sphere: Optional[str] = None
     mounting_type: Optional[str] = None
+    beam_pattern: Optional[str] = None
+    climate_execution: Optional[str] = None
+    electrical_protection_class: Optional[str] = None
+    explosion_protection_marking: Optional[str] = None
+    supply_voltage_raw: Optional[str] = None
+    dimensions_raw: Optional[str] = None
+    power_factor_operator: Optional[str] = None
     ip: Optional[str] = None
     voltage_kind: Optional[Literal["AC", "DC", "AC/DC"]] = None
     explosion_protected: Optional[bool] = None
@@ -149,8 +290,32 @@ class CorpDbSearchRequest(BaseModel):
     flux_lm_max: Optional[int] = None
     cct_k_min: Optional[int] = None
     cct_k_max: Optional[int] = None
+    weight_kg_min: Optional[float] = None
+    weight_kg_max: Optional[float] = None
+    cri_ra_min: Optional[int] = None
+    cri_ra_max: Optional[int] = None
+    power_factor_min_min: Optional[float] = None
+    power_factor_min_max: Optional[float] = None
     temp_c_min: Optional[int] = None
     temp_c_max: Optional[int] = None
+    voltage_nominal_v_min: Optional[int] = None
+    voltage_nominal_v_max: Optional[int] = None
+    voltage_min_v_min: Optional[int] = None
+    voltage_min_v_max: Optional[int] = None
+    voltage_max_v_min: Optional[int] = None
+    voltage_max_v_max: Optional[int] = None
+    voltage_tol_minus_pct_min: Optional[float] = None
+    voltage_tol_minus_pct_max: Optional[float] = None
+    voltage_tol_plus_pct_min: Optional[float] = None
+    voltage_tol_plus_pct_max: Optional[float] = None
+    length_mm_min: Optional[float] = None
+    length_mm_max: Optional[float] = None
+    width_mm_min: Optional[float] = None
+    width_mm_max: Optional[float] = None
+    height_mm_min: Optional[float] = None
+    height_mm_max: Optional[float] = None
+    warranty_years_min: Optional[int] = None
+    warranty_years_max: Optional[int] = None
 
 
 def _read_secret(path: str) -> str:
@@ -220,6 +385,136 @@ def _json_object(value: Any) -> dict[str, Any]:
         if isinstance(parsed, dict):
             return parsed
     raise ValueError(f"Unsupported metadata payload: {type(value).__name__}")
+
+
+def _row_get(row: dict[str, Any] | asyncpg.Record, key: str) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
+
+
+def _lamp_facts(row: dict[str, Any] | asyncpg.Record) -> dict[str, Any]:
+    return _json_object(_row_get(row, "agent_facts"))
+
+
+def _lamp_metadata(row: dict[str, Any] | asyncpg.Record, *, search_strategy: str | None = None) -> dict[str, Any]:
+    metadata = {
+        "lamp_id": row["lamp_id"],
+        "name": row["name"],
+        "category_id": _row_get(row, "category_id"),
+        "category_name": _row_get(row, "category_name"),
+        "url": _row_get(row, "url"),
+        "image_url": _row_get(row, "image_url"),
+        "preview": _row_get(row, "preview"),
+        "agent_summary": _row_get(row, "agent_summary"),
+        "facts": _lamp_facts(row),
+    }
+    for field in LAMP_RESPONSE_FIELDS:
+        value = _row_get(row, field)
+        if value is not None:
+            metadata[field] = value
+    if search_strategy:
+        metadata["search_strategy"] = search_strategy
+    return metadata
+
+
+def _serialize_lamp_row(
+    row: dict[str, Any] | asyncpg.Record,
+    *,
+    documents: dict[str, Any] | None = None,
+    sku: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    facts = _lamp_facts(row)
+    payload = {
+        "lamp_id": row["lamp_id"],
+        "name": row["name"],
+        "category_id": _row_get(row, "category_id"),
+        "category_name": _row_get(row, "category_name"),
+        "url": _row_get(row, "url"),
+        "image_url": _row_get(row, "image_url"),
+        "preview": _row_get(row, "preview") or _preview(_row_get(row, "agent_summary") or row["name"]),
+        "agent_summary": _row_get(row, "agent_summary"),
+        "facts": facts,
+        "metadata": _lamp_metadata(row),
+    }
+    for field in LAMP_RESPONSE_FIELDS:
+        payload[field] = _row_get(row, field)
+    if documents is not None:
+        payload["documents"] = documents
+    if sku is not None:
+        payload["sku"] = sku
+    return payload
+
+
+def _hybrid_row_from_lamp_payload(payload: dict[str, Any], score: float, strategy: str) -> dict[str, Any]:
+    metadata = dict(payload.get("metadata") or {})
+    metadata["search_strategy"] = strategy
+    return {
+        "entity_type": "lamp",
+        "entity_id": str(payload["lamp_id"]),
+        "title": payload["name"],
+        "score": round(float(score), 6),
+        "metadata": metadata,
+        "preview": payload.get("preview"),
+        "agent_summary": payload.get("agent_summary"),
+        "facts": payload.get("facts", {}),
+    }
+
+
+def _hybrid_response_filters(
+    *,
+    profile_name: str,
+    entity_types: list[str] | None,
+    explicit_lamp_filters: bool,
+    search_strategy: str,
+) -> dict[str, Any]:
+    return {
+        "profile": profile_name,
+        "entity_types": entity_types,
+        "search_strategy": search_strategy,
+        "lamp_filters_applied": explicit_lamp_filters,
+    }
+
+
+def _get_tracer():
+    return trace.get_tracer("tools-api.corp_db")
+
+
+@asynccontextmanager
+async def _observe_search_phase(
+    *,
+    kind: str,
+    profile: str,
+    phase: str,
+    attributes: dict[str, Any] | None = None,
+):
+    started_at = perf_counter()
+    status = "success"
+    request_id = REQUEST_ID.get("-")
+    with _get_tracer().start_as_current_span(f"corp_db.{phase}") as span:
+        span.set_attribute("corp_db.kind", kind)
+        span.set_attribute("corp_db.profile", profile)
+        span.set_attribute("corp_db.phase", phase)
+        if request_id and request_id != "-":
+            span.set_attribute("request_id", request_id)
+        for key, value in (attributes or {}).items():
+            if value is None:
+                continue
+            span.set_attribute(key, value)
+        try:
+            yield span
+        except Exception as exc:
+            status = "error"
+            span.record_exception(exc)
+            raise
+        finally:
+            duration_ms = (perf_counter() - started_at) * 1000
+            span.set_attribute("corp_db.status", status)
+            span.set_attribute("corp_db.duration_ms", duration_ms)
+            CORP_DB_SEARCH_PHASE_DURATION_MS.labels(kind, profile, phase, status).observe(duration_ms)
 
 
 def _success(
@@ -307,6 +602,10 @@ def _hybrid_row(record: asyncpg.Record) -> dict[str, Any]:
         result["document_title"] = metadata.get("document_title")
         result["heading"] = record["title"]
         result["preview"] = _preview(record["content"])
+    elif record["entity_type"] == "lamp":
+        result["preview"] = metadata.get("preview") or _preview(record["content"])
+        result["agent_summary"] = metadata.get("agent_summary")
+        result["facts"] = _json_object(metadata.get("facts"))
     else:
         result["preview"] = _preview(record["content"])
     if record["debug_info"] is not None:
@@ -345,6 +644,46 @@ def _request_like(req: CorpDbSearchRequest, **updates: Any) -> CorpDbSearchReque
     return req.copy(update=updates)
 
 
+def _sanitize_filter_defaults(req: CorpDbSearchRequest) -> CorpDbSearchRequest:
+    updates: dict[str, Any] = {}
+    for field_name, value in req.__dict__.items():
+        if field_name == "kind":
+            continue
+        if isinstance(value, str) and not value.strip():
+            updates[field_name] = None
+    for field_name in HYBRID_ZERO_AS_UNSET_FIELDS:
+        value = getattr(req, field_name)
+        if value == 0 or value == 0.0:
+            updates[field_name] = None
+    if req.temp_c_min == 0:
+        updates["temp_c_min"] = None
+    if req.temp_c_max == 0:
+        updates["temp_c_max"] = None
+    if req.explosion_protected is False:
+        updates["explosion_protected"] = None
+    if not updates:
+        return req
+    return _request_like(req, **updates)
+
+
+def _normalize_dimension_filter(text: str) -> str:
+    return re.sub(r"[^0-9x]+", "", text.lower().replace("х", "x"))
+
+
+def _normalize_range_bound(value: Any, *, column: str) -> Any:
+    if value is None:
+        return None
+    if column in DECIMAL_RANGE_COLUMNS and isinstance(value, (float, Decimal)):
+        return Decimal(str(value))
+    return value
+
+
+def _is_decimal_equality_range(minimum: Any, maximum: Any, *, column: str) -> bool:
+    if column not in DECIMAL_RANGE_COLUMNS or minimum is None or maximum is None:
+        return False
+    return Decimal(str(minimum)) == Decimal(str(maximum))
+
+
 def _normalize_query_text(query: str) -> str:
     text = _normalize_ws(query).lower().replace("\u00a0", " ")
     text = re.sub(r"\bip[\s-]?(\d{2,3})\b", lambda m: f"ip{m.group(1)}", text, flags=re.IGNORECASE)
@@ -380,6 +719,114 @@ def _strong_query_terms(query: str) -> list[str]:
         if normalized not in terms:
             terms.append(normalized)
     return terms[:6]
+
+
+def _query_has_identifier_terms(query: str) -> bool:
+    for token in QUERY_TOKEN_RE.findall(_normalize_query_text(query)):
+        normalized = token.lower()
+        if len(normalized) < 3:
+            continue
+        if re.fullmatch(r"ip\d{2,3}", normalized):
+            continue
+        if re.fullmatch(r"\d+(?:w|k|lm)", normalized):
+            continue
+        has_alpha = any(char.isalpha() for char in normalized)
+        has_digit = any(char.isdigit() for char in normalized)
+        if has_alpha and has_digit:
+            return True
+        if has_digit and "-" in normalized:
+            return True
+    return False
+
+
+def _explicit_lamp_filter_count(req: CorpDbSearchRequest) -> int:
+    count = 0
+    for field_name, _ in LAMP_TEXT_FILTER_SPECS:
+        if getattr(req, field_name) not in (None, ""):
+            count += 1
+    for field_name, _ in LAMP_EXACT_FILTER_SPECS:
+        if getattr(req, field_name) not in (None, ""):
+            count += 1
+    for field_name, _ in LAMP_BOOLEAN_FILTER_SPECS:
+        if getattr(req, field_name) is not None:
+            count += 1
+    for min_field, max_field, _ in LAMP_RANGE_FILTER_SPECS:
+        if getattr(req, min_field) is not None or getattr(req, max_field) is not None:
+            count += 1
+    if req.temp_c_min is not None or req.temp_c_max is not None:
+        count += 1
+    return count
+
+
+def _is_filter_heavy_query(req: CorpDbSearchRequest, query: str) -> bool:
+    if not _has_explicit_lamp_filters(req):
+        return False
+    strong_terms = _strong_query_terms(query)
+    return _explicit_lamp_filter_count(req) >= 2 or len(strong_terms) >= 4 or len(query) >= 48
+
+
+def _should_short_circuit_lamp_filters(
+    req: CorpDbSearchRequest,
+    *,
+    query: str,
+    entity_types: list[str] | None,
+    direct_filter_rows: list[dict[str, Any]],
+) -> bool:
+    if not direct_filter_rows:
+        return False
+    if entity_types and any(entity_type != "lamp" for entity_type in entity_types):
+        return False
+    return _is_filter_heavy_query(req, query) and not _query_has_identifier_terms(query)
+
+
+def _should_enable_fuzzy(req: CorpDbSearchRequest, query: str, profile_name: str) -> bool:
+    if req.fuzzy:
+        return not _is_filter_heavy_query(req, query)
+    strong_terms = _strong_query_terms(query)
+    if _is_filter_heavy_query(req, query):
+        return False
+    if profile_name == "candidate_generation" and len(strong_terms) >= 4:
+        return False
+    return len(strong_terms) <= 3 and len(query) <= 64
+
+
+def _should_run_semantic_fallback(
+    *,
+    explicit_lamp_filters: bool,
+    direct_filter_rows: list[dict[str, Any]],
+    primary_rows: list[dict[str, Any]],
+    primary_has_lexical_signal: bool,
+) -> bool:
+    if direct_filter_rows:
+        return False
+    if explicit_lamp_filters and primary_rows:
+        return False
+    return not primary_rows or not primary_has_lexical_signal
+
+
+def _should_run_token_fallback(
+    *,
+    query: str,
+    explicit_lamp_filters: bool,
+    direct_filter_rows: list[dict[str, Any]],
+    primary_rows: list[dict[str, Any]],
+    primary_has_lexical_signal: bool,
+) -> bool:
+    strong_terms = _strong_query_terms(query)
+    if not strong_terms:
+        return False
+    if explicit_lamp_filters or direct_filter_rows:
+        return False
+    if len(strong_terms) > 4 or len(query) > 72:
+        return False
+    return not primary_rows or not primary_has_lexical_signal
+
+
+def _should_run_alias_fallback_for_token(token: str) -> bool:
+    normalized = token.strip().lower()
+    if not normalized:
+        return False
+    return _query_has_identifier_terms(normalized) or len(normalized) <= 5
 
 
 def _extract_filter_retry(query: str) -> dict[str, Any]:
@@ -422,10 +869,129 @@ def _extract_filter_retry(query: str) -> dict[str, Any]:
     return filters
 
 
+def _has_explicit_lamp_filters(req: CorpDbSearchRequest) -> bool:
+    for field_name, _ in LAMP_TEXT_FILTER_SPECS:
+        if getattr(req, field_name) not in (None, ""):
+            return True
+    for field_name, _ in LAMP_EXACT_FILTER_SPECS:
+        if getattr(req, field_name) not in (None, ""):
+            return True
+    for field_name, _ in LAMP_BOOLEAN_FILTER_SPECS:
+        if getattr(req, field_name) is not None:
+            return True
+    for min_field, max_field, _ in LAMP_RANGE_FILTER_SPECS:
+        if getattr(req, min_field) is not None or getattr(req, max_field) is not None:
+            return True
+    return req.temp_c_min is not None or req.temp_c_max is not None
+
+
+def _build_lamp_conditions(
+    req: CorpDbSearchRequest,
+    *,
+    alias: str = "l",
+    param_offset: int = 0,
+) -> tuple[list[str], list[Any], dict[str, Any]]:
+    conditions = ["TRUE"]
+    args: list[Any] = []
+    filters: dict[str, Any] = {}
+
+    for field_name, column in LAMP_TEXT_FILTER_SPECS:
+        value = getattr(req, field_name)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        if field_name == "dimensions_raw":
+            normalized = _normalize_dimension_filter(text)
+            if not normalized:
+                continue
+            args.append(normalized)
+            filters[field_name] = text
+            conditions.append(
+                "regexp_replace(lower(coalesce("
+                f"{alias}.{column}, '')), '[^0-9x]+', '', 'g') LIKE ('%' || ${len(args) + param_offset} || '%')"
+            )
+            continue
+        args.append(text)
+        filters[field_name] = text
+        conditions.append(f"coalesce({alias}.{column}, '') ILIKE ('%' || ${len(args) + param_offset} || '%')")
+
+    for field_name, column in LAMP_EXACT_FILTER_SPECS:
+        value = getattr(req, field_name)
+        if value is None:
+            continue
+        if field_name == "voltage_kind":
+            normalized = str(value).strip().upper()
+            if not normalized:
+                continue
+            args.append(normalized)
+            filters[field_name] = normalized
+            param_ref = f"${len(args) + param_offset}"
+            conditions.append(
+                "("
+                f"nullif(trim(coalesce({alias}.{column}, '')), '') IS NULL "
+                f"OR upper({alias}.{column}) = {param_ref} "
+                f"OR upper({alias}.{column}) = 'AC/DC' "
+                f"OR ({param_ref} = 'AC/DC' AND upper({alias}.{column}) IN ('AC', 'DC'))"
+                ")"
+            )
+            continue
+        args.append(value)
+        filters[field_name] = value
+        conditions.append(f"{alias}.{column} = ${len(args) + param_offset}")
+
+    for field_name, column in LAMP_BOOLEAN_FILTER_SPECS:
+        value = getattr(req, field_name)
+        if value is None:
+            continue
+        args.append(value)
+        filters[field_name] = value
+        conditions.append(f"{alias}.{column} = ${len(args) + param_offset}")
+
+    for min_field, max_field, column in LAMP_RANGE_FILTER_SPECS:
+        minimum = getattr(req, min_field)
+        maximum = getattr(req, max_field)
+        normalized_min = _normalize_range_bound(minimum, column=column)
+        normalized_max = _normalize_range_bound(maximum, column=column)
+
+        # Treat exact equality-style ranges on numeric columns as a tiny closed interval.
+        # This avoids false empties from float -> SQL transport while keeping normal ranges unchanged.
+        if _is_decimal_equality_range(normalized_min, normalized_max, column=column):
+            args.append(normalized_min - DECIMAL_EQUALITY_TOLERANCE)
+            filters[min_field] = minimum
+            conditions.append(f"{alias}.{column} >= ${len(args) + param_offset}")
+            args.append(normalized_max + DECIMAL_EQUALITY_TOLERANCE)
+            filters[max_field] = maximum
+            conditions.append(f"{alias}.{column} <= ${len(args) + param_offset}")
+            continue
+
+        if minimum is not None:
+            args.append(normalized_min)
+            filters[min_field] = minimum
+            conditions.append(f"{alias}.{column} >= ${len(args) + param_offset}")
+        if maximum is not None:
+            args.append(normalized_max)
+            filters[max_field] = maximum
+            conditions.append(f"{alias}.{column} <= ${len(args) + param_offset}")
+
+    if req.temp_c_min is not None:
+        args.append(req.temp_c_min)
+        filters["temp_c_min"] = req.temp_c_min
+        conditions.append(f"{alias}.operating_temperature_max_c >= ${len(args) + param_offset}")
+    if req.temp_c_max is not None:
+        args.append(req.temp_c_max)
+        filters["temp_c_max"] = req.temp_c_max
+        conditions.append(f"{alias}.operating_temperature_min_c <= ${len(args) + param_offset}")
+
+    return conditions, args, filters
+
+
 async def _run_hybrid_query(
     conn: asyncpg.Connection,
     *,
     query: str,
+    embedding: list[float] | None,
     limit: int,
     full_text_weight: float,
     semantic_weight: float,
@@ -439,7 +1005,7 @@ async def _run_hybrid_query(
         FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
         query,
-        None,
+        embedding,
         limit,
         full_text_weight,
         semantic_weight,
@@ -492,40 +1058,6 @@ async def _run_alias_fallback_query(
         entity_types,
     )
 
-
-def _hybrid_row_from_filter(row: dict[str, Any], score: float, strategy: str) -> dict[str, Any]:
-    metadata = {
-        "lamp_id": row["lamp_id"],
-        "category_id": row.get("category_id"),
-        "category_name": row.get("category_name"),
-        "mounting_type": row.get("mounting_type"),
-        "url": row.get("url"),
-        "search_strategy": strategy,
-    }
-    preview = _preview(
-        " | ".join(
-            value
-            for value in [
-                row.get("category_name"),
-                f"{row['power_w']} Вт" if row.get("power_w") is not None else None,
-                f"{row['luminous_flux_lm']} лм" if row.get("luminous_flux_lm") is not None else None,
-                f"{row['color_temperature_k']} K" if row.get("color_temperature_k") is not None else None,
-                row.get("ingress_protection"),
-                row.get("mounting_type"),
-            ]
-            if value
-        )
-    )
-    return {
-        "entity_type": "lamp",
-        "entity_id": str(row["lamp_id"]),
-        "title": row["name"],
-        "score": round(float(score), 6),
-        "metadata": metadata,
-        "preview": preview,
-    }
-
-
 def _merge_hybrid_results(groups: list[tuple[str, list[dict[str, Any]]]], limit: int) -> list[dict[str, Any]]:
     merged: dict[tuple[str, str], dict[str, Any]] = {}
     for label, rows in groups:
@@ -559,47 +1091,177 @@ def _merge_hybrid_results(groups: list[tuple[str, list[dict[str, Any]]]], limit:
     return ordered[:limit]
 
 
+async def _filter_hybrid_lamp_rows(
+    conn: asyncpg.Connection,
+    rows: list[dict[str, Any]],
+    req: CorpDbSearchRequest,
+) -> list[dict[str, Any]]:
+    lamp_ids = [int(row["entity_id"]) for row in rows if row.get("entity_type") == "lamp" and str(row.get("entity_id", "")).isdigit()]
+    if not lamp_ids:
+        return [row for row in rows if row.get("entity_type") != "lamp" and not _has_explicit_lamp_filters(req)]
+
+    conditions, args, _ = _build_lamp_conditions(req, alias="l", param_offset=1)
+    filtered_rows = await conn.fetch(
+        f"""
+        SELECT *
+        FROM corp.v_catalog_lamps_agent l
+        WHERE l.lamp_id = ANY($1::bigint[])
+          AND {' AND '.join(conditions)}
+        """,
+        lamp_ids,
+        *args,
+    )
+    payload_by_id = {str(row["lamp_id"]): _serialize_lamp_row(row) for row in filtered_rows}
+
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        if row.get("entity_type") != "lamp":
+            if not _has_explicit_lamp_filters(req):
+                enriched.append(row)
+            continue
+        payload = payload_by_id.get(str(row.get("entity_id")))
+        if not payload:
+            continue
+        updated = dict(row)
+        updated["metadata"] = payload["metadata"]
+        updated["preview"] = payload["preview"]
+        updated["agent_summary"] = payload["agent_summary"]
+        updated["facts"] = payload["facts"]
+        enriched.append(updated)
+    return enriched
+
+
 async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int) -> dict[str, Any]:
+    # Strategy:
+    # 1) explicit structured lamp filters get the first, authoritative cheap path via lamp_filters;
+    # 2) hybrid starts with lexical-only search and delays embeddings until lexical evidence is weak;
+    # 3) token/alias fallback is skipped once structured filters already produced usable lamp results.
+    req = _sanitize_filter_defaults(req)
     query = _req_str(req.query, "query", max_len=400)
     profile_name = req.profile or "entity_resolver"
     preset = PROFILE_PRESETS[profile_name]
-    entity_types = _normalize_entity_types(req.entity_types or preset["entity_types"])
-    full_text_weight, semantic_weight, fuzzy_weight = preset["weights"]
-    embedding = await _get_query_embedding(query)
-    if embedding is None:
-        CORP_DB_EMBEDDINGS_UNAVAILABLE_TOTAL.labels(profile_name).inc()
-        semantic_weight = 0.0
-
-    rows = await conn.fetch(
-        """
-        SELECT doc_id, entity_type, entity_id, title, content, metadata, score, debug_info
-        FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        """,
-        query,
-        embedding,
-        limit,
-        full_text_weight,
-        semantic_weight,
-        fuzzy_weight,
-        60,
-        entity_types,
-        req.include_debug,
+    explicit_lamp_filters = _has_explicit_lamp_filters(req)
+    requested_entity_types = req.entity_types or preset["entity_types"]
+    if explicit_lamp_filters and not req.entity_types:
+        requested_entity_types = ["lamp"]
+    entity_types = _normalize_entity_types(requested_entity_types)
+    response_filters = _hybrid_response_filters(
+        profile_name=profile_name,
+        entity_types=entity_types,
+        explicit_lamp_filters=explicit_lamp_filters,
+        search_strategy="primary",
     )
+    full_text_weight, semantic_weight, fuzzy_weight = preset["weights"]
+    fuzzy_enabled = _should_enable_fuzzy(req, query, profile_name)
+    lexical_fuzzy_weight = fuzzy_weight if fuzzy_enabled else 0.0
+
+    query_limit = limit
+    if explicit_lamp_filters:
+        query_limit = max(limit, 10)
+
+    direct_filter_rows: list[dict[str, Any]] = []
+    if explicit_lamp_filters:
+        async with _observe_search_phase(
+            kind="hybrid_search",
+            profile=profile_name,
+            phase="lamp_filters",
+            attributes={"corp_db.fast_path": True},
+        ):
+            direct_filter_result = await _lamp_filters(conn, _request_like(req, kind="lamp_filters"), limit, 0)
+        if direct_filter_result["results"]:
+            direct_filter_rows = [
+                _hybrid_row_from_lamp_payload(row, 0.95 - index * 0.01, "lamp_filters")
+                for index, row in enumerate(direct_filter_result["results"])
+            ]
+            if _should_short_circuit_lamp_filters(
+                req,
+                query=query,
+                entity_types=entity_types,
+                direct_filter_rows=direct_filter_rows,
+            ):
+                response_filters["search_strategy"] = "lamp_filters"
+                return _success(
+                    "hybrid_search",
+                    query=query,
+                    filters=response_filters,
+                    results=direct_filter_rows[:limit],
+                    debug={
+                        "strategy": "lamp_filters",
+                        "reason": "explicit_filter_fast_path",
+                        "semantic_enabled": False,
+                        "fuzzy_enabled": False,
+                    }
+                    if req.include_debug
+                    else None,
+                )
+
+    async with _observe_search_phase(
+        kind="hybrid_search",
+        profile=profile_name,
+        phase="hybrid_primary",
+        attributes={
+            "corp_db.semantic_enabled": False,
+            "corp_db.fuzzy_enabled": fuzzy_enabled,
+            "corp_db.entity_types": ",".join(entity_types or []),
+        },
+    ):
+        rows = await _run_hybrid_query(
+            conn,
+            query=query,
+            embedding=None,
+            limit=query_limit,
+            full_text_weight=full_text_weight,
+            semantic_weight=0.0,
+            fuzzy_weight=lexical_fuzzy_weight,
+            entity_types=entity_types,
+            include_debug=req.include_debug,
+        )
     primary_rows = [_hybrid_row(row) for row in rows]
+    if explicit_lamp_filters and primary_rows:
+        primary_rows = await _filter_hybrid_lamp_rows(conn, primary_rows, req)
+
+    if direct_filter_rows:
+        async with _observe_search_phase(kind="hybrid_search", profile=profile_name, phase="merge"):
+            groups: list[tuple[str, list[dict[str, Any]]]] = []
+            if primary_rows:
+                groups.append(("primary", primary_rows))
+            groups.append(("lamp_filters", direct_filter_rows))
+            primary_rows = _merge_hybrid_results(groups, limit)
+
     primary_has_lexical_signal = _rows_have_lexical_signal(rows)
     filter_retry = _extract_filter_retry(query) if profile_name == "candidate_generation" else {}
-    should_run_filter_fallback = bool(filter_retry)
-    should_run_token_fallback = bool(_strong_query_terms(query)) and (not rows or not primary_has_lexical_signal)
+    should_run_filter_fallback = bool(filter_retry) and not direct_filter_rows
+    should_run_semantic = _should_run_semantic_fallback(
+        explicit_lamp_filters=explicit_lamp_filters,
+        direct_filter_rows=direct_filter_rows,
+        primary_rows=primary_rows,
+        primary_has_lexical_signal=primary_has_lexical_signal,
+    )
+    should_run_token_fallback = _should_run_token_fallback(
+        query=query,
+        explicit_lamp_filters=explicit_lamp_filters,
+        direct_filter_rows=direct_filter_rows,
+        primary_rows=primary_rows,
+        primary_has_lexical_signal=primary_has_lexical_signal,
+    )
 
-    if primary_rows and not should_run_filter_fallback and not should_run_token_fallback:
+    primary_strategy = "lamp_filters" if direct_filter_rows and not rows else "primary"
+
+    if primary_rows and not should_run_filter_fallback and not should_run_semantic and not should_run_token_fallback:
         return _success(
             "hybrid_search",
             query=query,
-            filters={"profile": profile_name, "entity_types": entity_types, "search_strategy": "primary"},
+            filters=_hybrid_response_filters(
+                profile_name=profile_name,
+                entity_types=entity_types,
+                explicit_lamp_filters=explicit_lamp_filters,
+                search_strategy=primary_strategy,
+            ),
             results=primary_rows,
             debug={
-                "strategy": "primary",
-                "semantic_enabled": embedding is not None,
+                "strategy": primary_strategy,
+                "semantic_enabled": False,
+                "fuzzy_enabled": fuzzy_enabled,
             }
             if req.include_debug
             else None,
@@ -607,17 +1269,54 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
 
     fallback_groups: list[tuple[str, list[dict[str, Any]]]] = []
     merged_groups: list[tuple[str, list[dict[str, Any]]]] = [("primary", primary_rows)] if primary_rows else []
-    debug_reason = "semantic_unavailable" if embedding is None else ("primary_empty" if not rows else "semantic_only")
+    debug_reason = "primary_empty" if not rows else "lexical_only"
+
+    if should_run_semantic:
+        embedding: list[float] | None = None
+        async with _observe_search_phase(kind="hybrid_search", profile=profile_name, phase="embedding"):
+            embedding = await _get_query_embedding(query)
+        if embedding is None:
+            CORP_DB_EMBEDDINGS_UNAVAILABLE_TOTAL.labels(profile_name).inc()
+            debug_reason = "semantic_unavailable"
+        else:
+            async with _observe_search_phase(
+                kind="hybrid_search",
+                profile=profile_name,
+                phase="hybrid_primary",
+                attributes={
+                    "corp_db.semantic_enabled": True,
+                    "corp_db.fuzzy_enabled": fuzzy_enabled,
+                    "corp_db.entity_types": ",".join(entity_types or []),
+                },
+            ):
+                semantic_rows = await _run_hybrid_query(
+                    conn,
+                    query=query,
+                    embedding=embedding,
+                    limit=query_limit,
+                    full_text_weight=full_text_weight,
+                    semantic_weight=semantic_weight,
+                    fuzzy_weight=lexical_fuzzy_weight,
+                    entity_types=entity_types,
+                    include_debug=req.include_debug,
+                )
+            formatted_semantic = [_hybrid_row(row) for row in semantic_rows]
+            if explicit_lamp_filters and formatted_semantic:
+                formatted_semantic = await _filter_hybrid_lamp_rows(conn, formatted_semantic, req)
+            if formatted_semantic:
+                fallback_groups.append(("semantic", formatted_semantic))
+                debug_reason = "semantic_fallback"
 
     if should_run_filter_fallback:
         filter_req = _request_like(req, kind="lamp_filters", **filter_retry)
-        filter_result = await _lamp_filters(conn, filter_req, limit, 0)
+        async with _observe_search_phase(kind="hybrid_search", profile=profile_name, phase="lamp_filters"):
+            filter_result = await _lamp_filters(conn, filter_req, limit, 0)
         if filter_result["results"]:
             fallback_groups.append(
                 (
                     "filters",
                     [
-                        _hybrid_row_from_filter(row, 0.95 - index * 0.01, "filters")
+                        _hybrid_row_from_lamp_payload(row, 0.95 - index * 0.01, "filters")
                         for index, row in enumerate(filter_result["results"])
                     ],
                 )
@@ -643,29 +1342,47 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
 
     if should_run_token_fallback:
         for label, token_query in deduped_token_queries[:5]:
-            retry_rows = await _run_hybrid_query(
-                conn,
-                query=token_query,
-                limit=max(limit, 3),
-                full_text_weight=max(full_text_weight, 1.05),
-                semantic_weight=0.0,
-                fuzzy_weight=max(fuzzy_weight, 1.1),
-                entity_types=entity_types,
-                include_debug=req.include_debug,
-            )
-            formatted = [_hybrid_row(row) for row in retry_rows]
-            if not formatted and label.startswith("token:"):
-                alias_rows = await _run_alias_fallback_query(
+            async with _observe_search_phase(
+                kind="hybrid_search",
+                profile=profile_name,
+                phase="token_fallback",
+                attributes={"corp_db.retry_query": token_query[:120], "corp_db.retry_label": label},
+            ):
+                retry_rows = await _run_hybrid_query(
                     conn,
-                    token=token_query,
+                    query=token_query,
+                    embedding=None,
                     limit=max(limit, 3),
+                    full_text_weight=max(full_text_weight, 1.05),
+                    semantic_weight=0.0,
+                    fuzzy_weight=max(lexical_fuzzy_weight, 1.1 if fuzzy_enabled else 0.0),
                     entity_types=entity_types,
+                    include_debug=req.include_debug,
                 )
+            formatted = [_hybrid_row(row) for row in retry_rows]
+            if explicit_lamp_filters and formatted:
+                formatted = await _filter_hybrid_lamp_rows(conn, formatted, req)
+            if not formatted and label.startswith("token:") and _should_run_alias_fallback_for_token(token_query):
+                async with _observe_search_phase(
+                    kind="hybrid_search",
+                    profile=profile_name,
+                    phase="alias_fallback",
+                    attributes={"corp_db.retry_query": token_query[:120], "corp_db.retry_label": label},
+                ):
+                    alias_rows = await _run_alias_fallback_query(
+                        conn,
+                        token=token_query,
+                        limit=max(limit, 3),
+                        entity_types=entity_types,
+                    )
                 formatted = [_hybrid_row(row) for row in alias_rows]
+                if explicit_lamp_filters and formatted:
+                    formatted = await _filter_hybrid_lamp_rows(conn, formatted, req)
             if formatted:
                 fallback_groups.append((label, formatted))
 
-    merged_rows = _merge_hybrid_results([*merged_groups, *fallback_groups], limit)
+    async with _observe_search_phase(kind="hybrid_search", profile=profile_name, phase="merge"):
+        merged_rows = _merge_hybrid_results([*merged_groups, *fallback_groups], limit)
     if merged_rows:
         logger.info(
             "corp-db hybrid fallback used profile=%s query=%r reason=%s strategy=%s",
@@ -677,18 +1394,20 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
     return _success(
         "hybrid_search",
         query=query,
-        filters={
-            "profile": profile_name,
-            "entity_types": entity_types,
-            "search_strategy": "fallback" if fallback_groups else "primary",
-        },
+        filters=_hybrid_response_filters(
+            profile_name=profile_name,
+            entity_types=entity_types,
+            explicit_lamp_filters=explicit_lamp_filters,
+            search_strategy="fallback" if fallback_groups else primary_strategy,
+        ),
         results=merged_rows,
         debug={
             "strategy": "fallback" if fallback_groups else "primary",
             "reason": debug_reason,
             "queries": [label for label, _ in deduped_token_queries],
             "primary_has_lexical_signal": primary_has_lexical_signal,
-            "semantic_enabled": embedding is not None,
+            "semantic_enabled": any(label == "semantic" for label, _ in fallback_groups),
+            "fuzzy_enabled": fuzzy_enabled,
         }
         if (req.include_debug or fallback_groups)
         else None,
@@ -700,7 +1419,7 @@ async def _lamp_exact(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit:
     rows = await conn.fetch(
         """
         SELECT *
-        FROM corp.catalog_lamps
+        FROM corp.v_catalog_lamps_agent
         WHERE lower(name) = lower($1)
         ORDER BY name
         LIMIT $2 OFFSET $3
@@ -734,22 +1453,11 @@ async def _lamp_exact(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit:
         "lamp_exact",
         query=name,
         results=[
-            {
-                "lamp_id": row["lamp_id"],
-                "name": row["name"],
-                "category_id": row["category_id"],
-                "category_name": row.get("category_name"),
-                "url": row.get("url"),
-                "power_w": row.get("power_w"),
-                "luminous_flux_lm": row.get("luminous_flux_lm"),
-                "color_temperature_k": row.get("color_temperature_k"),
-                "ingress_protection": row.get("ingress_protection"),
-                "mounting_type": row.get("mounting_type"),
-                "supply_voltage_raw": row.get("supply_voltage_raw"),
-                "operating_temperature_range_raw": row.get("operating_temperature_range_raw"),
-                "documents": docs.get(row["lamp_id"], {}),
-                "sku": skus_by_lamp.get(row["lamp_id"], []),
-            }
+            _serialize_lamp_row(
+                row,
+                documents=docs.get(row["lamp_id"], {}),
+                sku=skus_by_lamp.get(row["lamp_id"], []),
+            )
             for row in rows
         ],
     )
@@ -803,13 +1511,11 @@ async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, li
     category = _req_str(req.category, "category")
     rows = await conn.fetch(
         """
-        SELECT l.lamp_id, l.name, l.category_id, l.category_name, l.power_w, l.luminous_flux_lm,
-               l.color_temperature_k, l.ingress_protection, l.mounting_type, l.url
-        FROM corp.catalog_lamps l
-        JOIN corp.categories c ON c.category_id = l.category_id
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
         WHERE CASE
-            WHEN $1 THEN c.name ILIKE ('%' || $2 || '%')
-            ELSE lower(c.name) = lower($2)
+            WHEN $1 THEN coalesce(l.category_name, '') ILIKE ('%' || $2 || '%')
+            ELSE lower(coalesce(l.category_name, '')) = lower($2)
         END
         ORDER BY l.name
         LIMIT $3 OFFSET $4
@@ -822,7 +1528,7 @@ async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, li
     return _success(
         "category_lamps",
         query=category,
-        results=[dict(row) for row in rows],
+        results=[_serialize_lamp_row(row) for row in rows],
     )
 
 
@@ -918,70 +1624,20 @@ async def _category_mountings(conn: asyncpg.Connection, req: CorpDbSearchRequest
 
 
 async def _lamp_filters(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
-    conditions = ["TRUE"]
-    args: list[Any] = []
-    filters: dict[str, Any] = {}
-
-    if req.category:
-        args.append(req.category.strip())
-        filters["category"] = req.category.strip()
-        conditions.append(f"c.name ILIKE ('%' || ${len(args)} || '%')")
-    if req.mounting_type:
-        args.append(req.mounting_type.strip())
-        filters["mounting_type"] = req.mounting_type.strip()
-        conditions.append(f"coalesce(l.mounting_type, '') ILIKE ('%' || ${len(args)} || '%')")
-    if req.ip:
-        args.append(req.ip.strip())
-        filters["ip"] = req.ip.strip()
-        conditions.append(f"coalesce(l.ingress_protection, '') ILIKE ('%' || ${len(args)} || '%')")
-    if req.voltage_kind:
-        args.append(req.voltage_kind)
-        filters["voltage_kind"] = req.voltage_kind
-        conditions.append(f"l.supply_voltage_kind = ${len(args)}")
-    if req.explosion_protected is not None:
-        args.append(req.explosion_protected)
-        filters["explosion_protected"] = req.explosion_protected
-        conditions.append(f"l.is_explosion_protected = ${len(args)}")
-
-    range_specs = [
-        ("power_w", req.power_w_min, req.power_w_max),
-        ("luminous_flux_lm", req.flux_lm_min, req.flux_lm_max),
-        ("color_temperature_k", req.cct_k_min, req.cct_k_max),
-    ]
-    for column, minimum, maximum in range_specs:
-        if minimum is not None:
-            args.append(minimum)
-            filters[f"{column}_min"] = minimum
-            conditions.append(f"l.{column} >= ${len(args)}")
-        if maximum is not None:
-            args.append(maximum)
-            filters[f"{column}_max"] = maximum
-            conditions.append(f"l.{column} <= ${len(args)}")
-
-    if req.temp_c_min is not None:
-        args.append(req.temp_c_min)
-        filters["temp_c_min"] = req.temp_c_min
-        conditions.append(f"l.operating_temperature_max_c >= ${len(args)}")
-    if req.temp_c_max is not None:
-        args.append(req.temp_c_max)
-        filters["temp_c_max"] = req.temp_c_max
-        conditions.append(f"l.operating_temperature_min_c <= ${len(args)}")
+    conditions, args, filters = _build_lamp_conditions(req, alias="l")
 
     args.extend([limit, offset])
     rows = await conn.fetch(
         f"""
-        SELECT l.lamp_id, l.name, l.category_id, c.name AS category_name, l.power_w, l.luminous_flux_lm,
-               l.color_temperature_k, l.ingress_protection, l.mounting_type, l.supply_voltage_kind,
-               l.operating_temperature_range_raw, l.url
-        FROM corp.catalog_lamps l
-        LEFT JOIN corp.categories c ON c.category_id = l.category_id
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
         WHERE {' AND '.join(conditions)}
         ORDER BY l.name
         LIMIT ${len(args) - 1} OFFSET ${len(args)}
         """,
         *args,
     )
-    return _success("lamp_filters", filters=filters, results=[dict(row) for row in rows])
+    return _success("lamp_filters", filters=filters, results=[_serialize_lamp_row(row) for row in rows])
 
 
 @router.post("/search")
@@ -991,6 +1647,7 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
     started_at = perf_counter()
     profile_name = req.profile or "none"
     status = "error"
+    req = _sanitize_filter_defaults(req)
 
     try:
         pool = await _get_pool()

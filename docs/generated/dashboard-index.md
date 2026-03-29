@@ -10,4 +10,4 @@ This inventory is generated from Grafana dashboard JSON assets under `victoriame
 
 | UID | Title | Source file | Panels | Panel titles |
 | --- | --- | --- | --- | --- |
-| `harness-service-overview` | Harness Service Overview | `victoriametrics/grafana/provisioning/dashboards/files/harness-service-overview.json` | 3 | `HTTP Throughput`, `HTTP 5xx Ratio`, `Telemetry Pipeline Checks` |
+| `harness-service-overview` | Harness Service Overview | `victoriametrics/grafana/provisioning/dashboards/files/harness-service-overview.json` | 7 | `HTTP Throughput`, `HTTP p95 Latency`, `HTTP 5xx Ratio`, `Corp DB Search p95`, `Corp DB Search Phases`, `Core vs Tools Route p95`, `Telemetry Pipeline Checks` |

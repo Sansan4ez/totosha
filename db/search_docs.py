@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from decimal import Decimal
 
 from common import batched, join_nonempty, json_hash, tokenize_text, url_tokens
+
+LIVE_SEARCH_DOCS_TABLE = "corp.corp_search_docs"
+STAGE_SEARCH_DOCS_TABLE = "corp.corp_search_docs_stage"
+OLD_SEARCH_DOCS_TABLE = "corp.corp_search_docs_old"
 
 
 def _json_object(value: object) -> dict:
@@ -18,22 +23,68 @@ def _json_object(value: object) -> dict:
     raise ValueError(f"Unsupported JSON object payload: {type(value).__name__}")
 
 
-def _numeric_aliases(lamp: dict) -> str:
-    parts = []
-    if lamp.get("power_w") is not None:
-        parts.extend([f"{lamp['power_w']}w", f"{lamp['power_w']} вт"])
-    if lamp.get("luminous_flux_lm") is not None:
-        parts.extend([f"{lamp['luminous_flux_lm']}lm", f"{lamp['luminous_flux_lm']} лм"])
-    if lamp.get("color_temperature_k") is not None:
-        parts.extend([f"{lamp['color_temperature_k']}k", f"{lamp['color_temperature_k']} к"])
-    if lamp.get("ingress_protection"):
-        parts.extend([str(lamp["ingress_protection"]), str(lamp["ingress_protection"]).lower()])
-    if lamp.get("supply_voltage_raw"):
-        parts.extend([lamp["supply_voltage_raw"], tokenize_text(lamp["supply_voltage_raw"])])
-    return join_nonempty(parts, sep=" ")
+LAMP_METADATA_FIELDS = (
+    "beam_pattern",
+    "mounting_type",
+    "explosion_protection_marking",
+    "is_explosion_protected",
+    "color_temperature_k",
+    "color_rendering_index_ra",
+    "power_factor_operator",
+    "power_factor_min",
+    "climate_execution",
+    "operating_temperature_range_raw",
+    "operating_temperature_min_c",
+    "operating_temperature_max_c",
+    "ingress_protection",
+    "electrical_protection_class",
+    "supply_voltage_raw",
+    "supply_voltage_kind",
+    "supply_voltage_nominal_v",
+    "supply_voltage_min_v",
+    "supply_voltage_max_v",
+    "supply_voltage_tolerance_minus_pct",
+    "supply_voltage_tolerance_plus_pct",
+    "dimensions_raw",
+    "length_mm",
+    "width_mm",
+    "height_mm",
+    "warranty_years",
+    "weight_kg",
+    "power_w",
+    "luminous_flux_lm",
+)
 
 
-def _lamp_doc(lamp: dict, category_name: str | None, skus: list[dict]) -> dict:
+def _json_scalar(value: object) -> object:
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
+def _lamp_metadata(lamp: dict, category_name: str | None, etm_codes: list[str], oracl_codes: list[str], has_sku: bool) -> dict:
+    metadata = {
+        "lamp_id": lamp["lamp_id"],
+        "name": lamp["name"],
+        "category_id": lamp.get("category_id"),
+        "category_name": category_name,
+        "url": lamp.get("url"),
+        "image_url": lamp.get("image_url"),
+        "preview": lamp.get("preview"),
+        "agent_summary": lamp.get("agent_summary"),
+        "facts": _json_object(lamp.get("agent_facts")),
+        "etm_codes": sorted(set(etm_codes)),
+        "oracl_codes": sorted(set(oracl_codes)),
+        "has_sku": has_sku,
+    }
+    for field in LAMP_METADATA_FIELDS:
+        value = lamp.get(field)
+        if value is not None:
+            metadata[field] = _json_scalar(value)
+    return metadata
+
+
+def _lamp_doc(lamp: dict, skus: list[dict]) -> dict:
     sku_codes = []
     sku_labels = []
     etm_codes = []
@@ -46,50 +97,26 @@ def _lamp_doc(lamp: dict, category_name: str | None, skus: list[dict]) -> dict:
         if sku.get("oracl_code"):
             oracl_codes.append(sku["oracl_code"])
 
-    content = join_nonempty(
-        [
-            category_name,
-            f"{lamp['power_w']} Вт" if lamp.get("power_w") is not None else None,
-            f"{lamp['luminous_flux_lm']} лм" if lamp.get("luminous_flux_lm") is not None else None,
-            f"{lamp['color_temperature_k']} K" if lamp.get("color_temperature_k") is not None else None,
-            lamp.get("ingress_protection"),
-            lamp.get("mounting_type"),
-            lamp.get("operating_temperature_range_raw"),
-            lamp.get("supply_voltage_raw"),
-        ]
-    )
+    category_name = lamp.get("category_name")
+    content = lamp.get("search_text") or lamp.get("agent_summary") or lamp.get("preview") or category_name or ""
     aliases = join_nonempty(
         [
+            lamp.get("search_aliases"),
             tokenize_text(lamp.get("name")),
             " ".join(value for value in sku_codes if value),
             " ".join(value for value in sku_labels if value),
             url_tokens(lamp.get("url")),
             category_name,
-            _numeric_aliases(lamp),
         ],
         sep=" ",
     )
-    metadata = {
-        "lamp_id": lamp["lamp_id"],
-        "name": lamp["name"],
-        "category_id": lamp.get("category_id"),
-        "category_name": category_name,
-        "url": lamp.get("url"),
-        "mounting_type": lamp.get("mounting_type"),
-        "ingress_protection": lamp.get("ingress_protection"),
-        "power_w": lamp.get("power_w"),
-        "color_temperature_k": lamp.get("color_temperature_k"),
-        "etm_codes": sorted(set(etm_codes)),
-        "oracl_codes": sorted(set(oracl_codes)),
-        "has_sku": bool(skus),
-    }
     return {
         "entity_type": "lamp",
         "entity_id": str(lamp["lamp_id"]),
         "title": lamp["name"],
         "content": content,
         "aliases": aliases,
-        "metadata": metadata,
+        "metadata": _lamp_metadata(lamp, category_name, etm_codes, oracl_codes, bool(skus)),
     }
 
 
@@ -276,7 +303,7 @@ def _kb_chunk_doc(chunk: dict) -> dict:
 
 async def build_search_docs(conn, *, embeddings_enabled: bool = True) -> dict[str, int]:
     categories = [dict(row) for row in await conn.fetch("SELECT * FROM corp.categories ORDER BY category_id")]
-    lamps = [dict(row) for row in await conn.fetch("SELECT * FROM corp.catalog_lamps ORDER BY lamp_id")]
+    lamps = [dict(row) for row in await conn.fetch("SELECT * FROM corp.v_catalog_lamps_agent ORDER BY lamp_id")]
     skus = [dict(row) for row in await conn.fetch("SELECT * FROM corp.etm_oracl_catalog_sku ORDER BY sku_id")]
     spheres = [dict(row) for row in await conn.fetch("SELECT * FROM corp.spheres ORDER BY sphere_id")]
     sphere_categories = [dict(row) for row in await conn.fetch("SELECT * FROM corp.sphere_categories ORDER BY sphere_id, category_id")]
@@ -310,8 +337,7 @@ async def build_search_docs(conn, *, embeddings_enabled: bool = True) -> dict[st
 
     docs = []
     for lamp in lamps:
-        category = categories_by_id.get(lamp.get("category_id"))
-        docs.append(_lamp_doc(lamp, category["name"] if category else lamp.get("category_name"), skus_by_lamp_id.get(lamp["lamp_id"], [])))
+        docs.append(_lamp_doc(lamp, skus_by_lamp_id.get(lamp["lamp_id"], [])))
 
     lamp_name_by_id = {lamp["lamp_id"]: lamp["name"] for lamp in lamps}
     for sku in skus:
@@ -343,38 +369,54 @@ async def build_search_docs(conn, *, embeddings_enabled: bool = True) -> dict[st
         doc["aliases"] = doc.get("aliases") or ""
         doc["source_hash"] = json_hash(doc)
 
-    async with conn.transaction():
-        await conn.execute("TRUNCATE TABLE corp.corp_search_docs")
-        for batch in batched(docs, 20):
-            batch_items = list(batch)
-            if embeddings_enabled:
-                from embeddings import get_embeddings
-            embeddings = (
-                await get_embeddings([f"{item['title']}\n\n{item['content']}" for item in batch_items])
-                if embeddings_enabled
-                else [None] * len(batch_items)
+    await conn.execute(f"DROP TABLE IF EXISTS {OLD_SEARCH_DOCS_TABLE}")
+    await conn.execute(f"DROP TABLE IF EXISTS {STAGE_SEARCH_DOCS_TABLE}")
+    await conn.execute(
+        f"""
+        CREATE TABLE {STAGE_SEARCH_DOCS_TABLE}
+        (LIKE {LIVE_SEARCH_DOCS_TABLE} INCLUDING ALL)
+        """
+    )
+    await conn.execute(f"REVOKE ALL ON TABLE {STAGE_SEARCH_DOCS_TABLE} FROM PUBLIC")
+    await conn.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON TABLE {STAGE_SEARCH_DOCS_TABLE} TO corp_rw")
+    await conn.execute(f"GRANT SELECT ON TABLE {STAGE_SEARCH_DOCS_TABLE} TO corp_ro")
+
+    for batch in batched(docs, 20):
+        batch_items = list(batch)
+        if embeddings_enabled:
+            from embeddings import get_embeddings
+        embeddings = (
+            await get_embeddings([f"{item['title']}\n\n{item['content']}" for item in batch_items])
+            if embeddings_enabled
+            else [None] * len(batch_items)
+        )
+        await conn.executemany(
+            f"""
+            INSERT INTO {STAGE_SEARCH_DOCS_TABLE} (
+                entity_type, entity_id, title, content, aliases, metadata, source_hash, embedding
             )
-            await conn.executemany(
-                """
-                INSERT INTO corp.corp_search_docs (
-                    entity_type, entity_id, title, content, aliases, metadata, source_hash, embedding
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            """,
+            [
+                (
+                    item["entity_type"],
+                    item["entity_id"],
+                    item["title"],
+                    item["content"],
+                    item["aliases"],
+                    json.dumps(item["metadata"], ensure_ascii=False),
+                    item["source_hash"],
+                    embedding,
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                """,
-                [
-                    (
-                        item["entity_type"],
-                        item["entity_id"],
-                        item["title"],
-                        item["content"],
-                        item["aliases"],
-                        json.dumps(item["metadata"], ensure_ascii=False),
-                        item["source_hash"],
-                        embedding,
-                    )
-                    for item, embedding in zip(batch_items, embeddings, strict=True)
-                ],
-            )
+                for item, embedding in zip(batch_items, embeddings, strict=True)
+            ],
+        )
+
+    async with conn.transaction():
+        await conn.execute(f"LOCK TABLE {LIVE_SEARCH_DOCS_TABLE} IN ACCESS EXCLUSIVE MODE")
+        await conn.execute("ALTER TABLE corp.corp_search_docs RENAME TO corp_search_docs_old")
+        await conn.execute("ALTER TABLE corp.corp_search_docs_stage RENAME TO corp_search_docs")
+        await conn.execute(f"DROP TABLE {OLD_SEARCH_DOCS_TABLE}")
 
     counts: dict[str, int] = defaultdict(int)
     for doc in docs:

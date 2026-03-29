@@ -40,6 +40,24 @@ SERVICE_NAMESPACE = os.getenv("OTEL_SERVICE_NAMESPACE", "totosha")
 DEPLOYMENT_ENVIRONMENT = os.getenv("OTEL_DEPLOYMENT_ENVIRONMENT", "local")
 OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").rstrip("/")
 INITIALIZED = False
+LATENCY_BUCKETS_MS = (
+    5,
+    10,
+    25,
+    50,
+    100,
+    250,
+    500,
+    1000,
+    2500,
+    5000,
+    10000,
+    15000,
+    20000,
+    30000,
+    45000,
+    60000,
+)
 
 REGISTRY = CollectorRegistry()
 ProcessCollector(registry=REGISTRY)
@@ -57,7 +75,7 @@ HTTP_SERVER_DURATION_MS = Histogram(
     "HTTP request duration in milliseconds.",
     labelnames=("service", "method", "route", "status"),
     registry=REGISTRY,
-    buckets=(5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000),
+    buckets=LATENCY_BUCKETS_MS,
 )
 
 

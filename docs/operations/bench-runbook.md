@@ -206,3 +206,82 @@ Recommended workflow:
    - DB data/seed/indexes
    - tool timeouts or error handling
 5) Re-run only the failing subset (`--limit` or a smaller dataset copy) and compare.
+
+RFC-004 Catalog Retrieval Smoke
+-------------------------------
+
+Use the retrieval subset added for RFC-003 and RFC-004 when validating catalog latency and filter routing.
+
+1. Build a temporary dataset with the retrieval cases:
+
+```bash
+SMOKE_DATASET="$(mktemp /tmp/rfc004-smoke.XXXXXX.jsonl)"
+python3 - "$SMOKE_DATASET" <<'PY'
+import sys
+from pathlib import Path
+ids = {
+    "tech-016-retrieval-r500-12-by-power-voltage",
+    "tech-017-retrieval-nova30-by-cri-climate-class",
+    "tech-018-retrieval-r500-9-60-by-angle-size-weight",
+    "tech-019-retrieval-ex-by-marking",
+}
+src = Path("bench/golden/v1.jsonl")
+dst = Path(sys.argv[1])
+rows = [line for line in src.read_text(encoding="utf-8").splitlines() if line and line.split('\"id\":\"', 1)[1].split('\"', 1)[0] in ids]
+dst.write_text("\n".join(rows) + "\n", encoding="utf-8")
+print(dst)
+PY
+```
+
+2. Run the subset against `core`:
+
+```bash
+python3 scripts/bench_run.py --docker-exec --dataset "$SMOKE_DATASET" --timeout-s 180
+```
+
+3. Evaluate and summarize latency:
+
+```bash
+python3 scripts/bench_eval.py --dataset "$SMOKE_DATASET" --results bench/results/<run_id>.jsonl
+python3 - <<'PY'
+import json, statistics
+from pathlib import Path
+path = Path("bench/results/<run_id>.jsonl")
+rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+durations = [row["duration_ms"] for row in rows if row.get("status") == "ok"]
+print({"pass_rate": sum(row.get("status") == "ok" for row in rows) / len(rows), "p50_ms": statistics.median(durations), "p95_ms": max(durations)})
+PY
+```
+
+4. Correlate the slowest case by `request_id` in Victoria:
+
+```bash
+curl -fsS -X POST 'http://127.0.0.1:9428/select/logsql/query' \
+  -d 'query=_time:1h request_id:bench/<run_id>/<case_id>' \
+  -d 'limit=20'
+```
+
+5. Classify upstream LLM quota failures separately from search regressions:
+
+- If the run fails before the first tool call and logs show `usage_limit_reached`, `model_cooldown`, or HTTP `429` from the proxy/LLM path, mark the smoke as `blocked_by_llm_quota` and rerun later.
+- Do not treat those cases as `corp_db` regressions unless the same `request_id` also shows `corp_db_search` transport or application errors.
+- When in doubt, inspect the trace by `request_id`: a quota issue fails in `core` or proxy before `tool.corp_db_search`; a search regression reaches `tools-api /corp-db/search` and usually has spans such as `corp_db.lamp_filters`, `corp_db.hybrid_primary`, or `corp_db.token_fallback`.
+
+Acceptance target for RFC-004:
+
+- pass rate `1.0` on the retrieval smoke subset
+- `tools-api POST /corp-db/search` p95 below `3000 ms`
+- explicit filter cases show `corp_db.lamp_filters` without `corp_db.embedding`
+
+Baseline used for comparison:
+
+- before RFC-004, `POST /api/chat` and `POST /corp-db/search` clipped at `10000 ms` in VictoriaMetrics
+- warm `hybrid_search` on filter-heavy queries could take `7.6s .. 15.5s`
+- after rollout, the same validation should show unclipped route histograms and a fast-path dominated phase profile
+
+Operator sign-off checklist:
+
+1. Save the printed `SMOKE_DATASET` path and `run_id` from the run output.
+2. Reuse the same `SMOKE_DATASET` in both `bench_run.py` and `bench_eval.py`.
+3. Confirm that any failed cases are not explained by upstream LLM `429` / `usage_limit_reached` / `model_cooldown`.
+4. Attach the eval summary plus one Victoria screenshot or query result showing the slowest `request_id`.

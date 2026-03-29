@@ -28,6 +28,10 @@ Minimum Expectations
   - metric `http_server_duration_milliseconds`
   - log line `HTTP request completed`
   - trace span `api.request`
+- Catalog retrieval services additionally emit:
+  - metric `corp_db_search_duration_milliseconds`
+  - metric `corp_db_search_phase_duration_milliseconds`
+  - trace spans `tool.corp_db_search`, `corp_db.lamp_filters`, `corp_db.hybrid_primary`, `corp_db.embedding`, `corp_db.token_fallback`, `corp_db.alias_fallback`
 - Every instrumented service adds `request_id`, `trace_id`, and `span_id` correlation to logs.
 - Traces and logs are exported through the shared OTEL collector when `docker-compose.observability.yml` is applied.
 - Metrics are scraped by the OTEL collector from each service `/metrics` endpoint and forwarded to VictoriaMetrics.
@@ -41,4 +45,5 @@ Notes
 -----
 
 - The observability overlay binds service ports to `127.0.0.1` only, so smoke and local triage work without widening public exposure.
+- Rebuild application services with both compose files: `docker-compose.yml` and `docker-compose.observability.yml`. Rebuilding only the base compose drops OTEL env and breaks request-to-trace correlation.
 - Keep repo-specific thresholds and panel details here, but do not move the baseline file paths.

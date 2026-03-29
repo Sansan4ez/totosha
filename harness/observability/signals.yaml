@@ -101,3 +101,160 @@ catalog:
       - path: proxy/observability.py
         contains:
           - api.request
+  - name: corp_db_search_duration_milliseconds
+    kind: metric
+    service: tools-api
+    emitter:
+      path: tools-api/src/routes/corp_db.py
+      description: End-to-end latency histogram for corp_db_search kinds and profiles.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: docs/operations/observability-baseline.md
+        contains:
+          - corp_db_search_duration_milliseconds
+      - path: tools-api/src/routes/corp_db.py
+        contains:
+          - corp_db_search_duration_milliseconds
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - corp_db_search_duration_milliseconds
+  - name: corp_db_search_phase_duration_milliseconds
+    kind: metric
+    service: tools-api
+    emitter:
+      path: tools-api/src/routes/corp_db.py
+      description: Phase-level latency histogram for lamp_filters, hybrid_primary, embedding, token_fallback, alias_fallback, and merge.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+      - kind: smoke
+        ref: tools-api/tests/test_corp_db.py
+    coverage_paths:
+      - path: docs/operations/observability-baseline.md
+        contains:
+          - corp_db_search_phase_duration_milliseconds
+      - path: tools-api/src/routes/corp_db.py
+        contains:
+          - corp_db_search_phase_duration_milliseconds
+          - lamp_filters
+          - hybrid_primary
+          - embedding
+          - token_fallback
+          - alias_fallback
+          - merge
+      - path: tools-api/tests/test_corp_db.py
+        contains:
+          - corp_db_search_phase_duration_milliseconds_bucket
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - corp_db_search_phase_duration_milliseconds_count
+  - name: tool.corp_db_search
+    kind: trace
+    service: core
+    emitter:
+      path: core/tools/corp_db.py
+      description: Core-side tool span around transport to tools-api for request-level triage.
+    consumers:
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: docs/operations/observability-baseline.md
+        contains:
+          - tool.corp_db_search
+      - path: core/tools/corp_db.py
+        contains:
+          - tool.corp_db_search
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - tool.corp_db_search
+  - name: corp_db.lamp_filters
+    kind: trace
+    service: tools-api
+    emitter:
+      path: tools-api/src/routes/corp_db.py
+      description: Fast-path search span for authoritative lamp filter retrieval.
+    consumers:
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: tools-api/src/routes/corp_db.py
+        contains:
+          - _observe_search_phase
+          - phase="lamp_filters"
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - corp_db.lamp_filters
+  - name: corp_db.hybrid_primary
+    kind: trace
+    service: tools-api
+    emitter:
+      path: tools-api/src/routes/corp_db.py
+      description: Primary lexical hybrid stage executed before semantic fallback.
+    consumers:
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: tools-api/src/routes/corp_db.py
+        contains:
+          - _observe_search_phase
+          - phase="hybrid_primary"
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - corp_db.hybrid_primary
+  - name: corp_db.embedding
+    kind: trace
+    service: tools-api
+    emitter:
+      path: tools-api/src/routes/corp_db.py
+      description: Semantic embedding stage for late fallback in hybrid_search.
+    consumers:
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: tools-api/src/routes/corp_db.py
+        contains:
+          - _observe_search_phase
+          - phase="embedding"
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - corp_db.embedding
+  - name: corp_db.token_fallback
+    kind: trace
+    service: tools-api
+    emitter:
+      path: tools-api/src/routes/corp_db.py
+      description: Token fallback span for degraded hybrid entity resolution.
+    consumers:
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: tools-api/src/routes/corp_db.py
+        contains:
+          - _observe_search_phase
+          - phase="token_fallback"
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - corp_db.token_fallback
+  - name: corp_db.alias_fallback
+    kind: trace
+    service: tools-api
+    emitter:
+      path: tools-api/src/routes/corp_db.py
+      description: Alias fallback span used only for identifier-like token search.
+    consumers:
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: tools-api/src/routes/corp_db.py
+        contains:
+          - _observe_search_phase
+          - phase="alias_fallback"
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - corp_db.alias_fallback
