@@ -42,6 +42,7 @@ services:
 
   # ============ CLIPROXYAPI - Local OAuth proxy (Codex/Claude/Gemini) ============
   cli-proxy-api:
+    build: ../CLIProxyAPI
     image: eceasy/cli-proxy-api:latest
     container_name: cli-proxy-api
     restart: unless-stopped
@@ -51,10 +52,10 @@ services:
     ports:
       - "127.0.0.1:8317:8317"
     volumes:
-      - /opt/cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml:ro
-      - /opt/cliproxyapi/auths:/root/.cli-proxy-api
-      - /opt/cliproxyapi/static:/CLIProxyAPI/static
-      - /opt/cliproxyapi/logs:/CLIProxyAPI/logs
+      - ../CLIProxyAPI/config.yaml:/CLIProxyAPI/config.yaml:ro
+      - ../CLIProxyAPI/auths:/root/.cli-proxy-api
+      - ../CLIProxyAPI/static:/CLIProxyAPI/static
+      - ../CLIProxyAPI/logs:/CLIProxyAPI/logs
     security_opt:
       - no-new-privileges:true
     cap_drop:
