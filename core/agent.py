@@ -6,11 +6,14 @@ import re
 import aiohttp
 from datetime import datetime
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Optional
 from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
 from logger import agent_logger, log_agent_step
+from observability import REQUEST_ID as OBS_REQUEST_ID
+from run_meta import run_meta_update_llm
 from tools import execute_tool, filter_tools_for_session
 from models import ToolContext
 
@@ -429,15 +432,24 @@ async def call_llm(messages: list, tools: list, model_override: str = "") -> dic
     agent_logger.debug("=" * 60)
     
     try:
+        request_id = OBS_REQUEST_ID.get("-")
+        headers = {"X-Request-Id": request_id} if request_id and request_id != "-" else {}
+        llm_started = perf_counter()
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{CONFIG.proxy_url}/v1/chat/completions",
                 json=request_body,
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=120)
             ) as resp:
                 if resp.status != 200:
                     error = await resp.text()
                     agent_logger.error(f"RAW RESPONSE ERROR: {resp.status} - {error[:500]}")
+                    run_meta_update_llm(
+                        duration_ms=(perf_counter() - llm_started) * 1000,
+                        usage=None,
+                        model=current_model,
+                    )
                     return {"error": f"LLM error {resp.status}: {error[:200]}"}
                 
                 result = await resp.json()
@@ -466,9 +478,22 @@ async def call_llm(messages: list, tools: list, model_override: str = "") -> dic
                 agent_logger.debug(f"  usage: prompt={usage.get('prompt_tokens', '?')}, completion={usage.get('completion_tokens', '?')}, total={usage.get('total_tokens', '?')}")
                 agent_logger.debug("=" * 60)
                 
+                run_meta_update_llm(
+                    duration_ms=(perf_counter() - llm_started) * 1000,
+                    usage=result.get("usage"),
+                    model=str(result.get("model") or current_model),
+                )
                 return result
     except Exception as e:
         agent_logger.error(f"RAW RESPONSE EXCEPTION: {e}")
+        try:
+            run_meta_update_llm(
+                duration_ms=(perf_counter() - llm_started) * 1000,
+                usage=None,
+                model=current_model,
+            )
+        except Exception:
+            pass
         return {"error": str(e)}
 
 

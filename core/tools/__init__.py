@@ -6,10 +6,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
 import aiohttp
+from time import perf_counter
 from typing import Callable, Any
 from logger import log_tool_call, log_tool_result
 from config import CONFIG
 from models import ToolResult, ToolContext
+from run_meta import run_meta_update_tool
+from observability import REQUEST_ID as OBS_REQUEST_ID
 
 TOOLS_API_URL = os.getenv("TOOLS_API_URL", "http://tools-api:8100")
 
@@ -535,10 +538,13 @@ TOOL_EXECUTORS = {
 async def call_mcp_tool(server_name: str, tool_name: str, args: dict) -> ToolResult:
     """Call MCP tool via tools-api"""
     try:
+        request_id = OBS_REQUEST_ID.get("-")
+        headers = {"X-Request-Id": request_id} if request_id and request_id != "-" else {}
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{TOOLS_API_URL}/mcp/call/{server_name}/{tool_name}",
                 json=args,
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=60)
             ) as resp:
                 if resp.status == 200:
@@ -567,6 +573,7 @@ async def call_mcp_tool(server_name: str, tool_name: str, args: dict) -> ToolRes
 
 async def execute_tool(name: str, args: dict, ctx: ToolContext) -> ToolResult:
     """Execute a tool by name with permission check"""
+    started = perf_counter()
     
     # Check tool permission based on session type
     perm = check_tool_permission(
@@ -578,10 +585,17 @@ async def execute_tool(name: str, args: dict, ctx: ToolContext) -> ToolResult:
     if not perm.allowed:
         log_tool_call(name, args)
         log_tool_result(False, None, f"PERMISSION DENIED: {perm.reason}")
-        return ToolResult(
+        result = ToolResult(
             False, 
             error=f"🔒 Tool '{name}' not available in {perm.session_type} sessions. {perm.reason}"
         )
+        run_meta_update_tool(
+            name=name,
+            duration_ms=(perf_counter() - started) * 1000,
+            success=False,
+            error=result.error,
+        )
+        return result
     
     log_tool_call(name, args)
     
@@ -618,15 +632,42 @@ async def execute_tool(name: str, args: dict, ctx: ToolContext) -> ToolResult:
                     timeout=CONFIG.tool_timeout
                 )
                 log_tool_result(result.success, result.output, result.error)
+                run_meta_update_tool(
+                    name=name,
+                    duration_ms=(perf_counter() - started) * 1000,
+                    success=bool(result.success),
+                    error=result.error,
+                )
                 return result
             except asyncio.TimeoutError:
-                return ToolResult(False, error=f"MCP tool {name} timed out")
+                result = ToolResult(False, error=f"MCP tool {name} timed out")
+                run_meta_update_tool(
+                    name=name,
+                    duration_ms=(perf_counter() - started) * 1000,
+                    success=False,
+                    error=result.error,
+                )
+                return result
             except Exception as e:
-                return ToolResult(False, error=f"MCP tool error: {e}")
+                result = ToolResult(False, error=f"MCP tool error: {e}")
+                run_meta_update_tool(
+                    name=name,
+                    duration_ms=(perf_counter() - started) * 1000,
+                    success=False,
+                    error=result.error,
+                )
+                return result
     
     executor = TOOL_EXECUTORS.get(name)
     if not executor:
-        return ToolResult(False, error=f"Unknown tool: {name}")
+        result = ToolResult(False, error=f"Unknown tool: {name}")
+        run_meta_update_tool(
+            name=name,
+            duration_ms=(perf_counter() - started) * 1000,
+            success=False,
+            error=result.error,
+        )
+        return result
     
     try:
         result = await asyncio.wait_for(
@@ -635,9 +676,29 @@ async def execute_tool(name: str, args: dict, ctx: ToolContext) -> ToolResult:
         )
         
         log_tool_result(result.success, result.output, result.error)
+        run_meta_update_tool(
+            name=name,
+            duration_ms=(perf_counter() - started) * 1000,
+            success=bool(result.success),
+            error=result.error,
+        )
         return result
         
     except asyncio.TimeoutError:
-        return ToolResult(False, error=f"Tool {name} timed out")
+        result = ToolResult(False, error=f"Tool {name} timed out")
+        run_meta_update_tool(
+            name=name,
+            duration_ms=(perf_counter() - started) * 1000,
+            success=False,
+            error=result.error,
+        )
+        return result
     except Exception as e:
-        return ToolResult(False, error=str(e))
+        result = ToolResult(False, error=str(e))
+        run_meta_update_tool(
+            name=name,
+            duration_ms=(perf_counter() - started) * 1000,
+            success=False,
+            error=result.error,
+        )
+        return result

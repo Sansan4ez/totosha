@@ -10,6 +10,9 @@ Read by Intent
 --------------
 
 - Bring up the stack locally -> `README.md`
+- Run bench runner -> `docs/operations/bench-runbook.md`
+- Configure and run eval -> `docs/operations/bench-eval.md`
+- Open a local dashboard for bench runs -> `docs/operations/bench-dashboard.md`
 - Run observability smoke -> `docs/operations/observability-runbook.md`
 - Review observability baseline -> `docs/operations/observability-baseline.md`
 - Review observability policy -> `docs/operations/observability-policy.md`

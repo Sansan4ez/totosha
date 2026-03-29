@@ -45,3 +45,7 @@ db/catalog.normalized.json
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Bench artifacts
+bench/results/
+bench/reports/

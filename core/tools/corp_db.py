@@ -11,6 +11,7 @@ import json
 import os
 
 from models import ToolResult, ToolContext
+from observability import REQUEST_ID as OBS_REQUEST_ID
 
 
 async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
@@ -19,13 +20,17 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
     try:
         timeout = aiohttp.ClientTimeout(total=20)
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            request_id = OBS_REQUEST_ID.get("-")
+            headers = {
+                "X-User-Id": str(ctx.user_id),
+                "X-Chat-Type": str(ctx.chat_type),
+            }
+            if request_id and request_id != "-":
+                headers["X-Request-Id"] = request_id
             async with session.post(
                 f"{tools_api_url}/corp-db/search",
                 json=args,
-                headers={
-                    "X-User-Id": str(ctx.user_id),
-                    "X-Chat-Type": str(ctx.chat_type),
-                },
+                headers=headers,
             ) as resp:
                 text = await resp.text()
 

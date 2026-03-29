@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bench Dashboard</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brandTitle">Bench Dashboard</div>
+        <div class="brandSub">Golden dataset runs, metrics, and case-level drilldown</div>
+      </div>
+
+      <div class="controls">
+        <label class="ctrl">
+          <span class="ctrlLabel">Run</span>
+          <select id="runSelect" class="ctrlSelect" disabled></select>
+        </label>
+        <button id="reloadBtn" class="btn" type="button">Reload index</button>
+        <button id="latestBtn" class="btn btnPrimary" type="button">Open latest</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section id="hint" class="hint">
+        <div class="hintTitle">Data source</div>
+        <div class="hintBody">
+          This page loads <code>bench/reports/index.json</code> and per-run <code>bench/reports/&lt;run_id&gt;.json</code>.
+          Build them with:
+          <code>python3 scripts/bench_dashboard_build.py</code>
+          then serve the repo with:
+          <code>python3 -m http.server</code>
+        </div>
+      </section>
+
+      <section id="errors" class="fallback" hidden>
+        <div class="fallbackTitle">Dashboard error</div>
+        <div class="fallbackBody" id="errorsBody"></div>
+      </section>
+
+      <section id="fallback" class="fallback" hidden>
+        <div class="fallbackTitle">Index not found</div>
+        <div class="fallbackBody">
+          <div>Could not load <code>bench/reports/index.json</code>.</div>
+          <div id="fallbackDebug" class="fallbackNote"></div>
+          <div class="fallbackRow">
+            <label class="fileCtrl">
+              <span class="fileLabel">Load a per-run report JSON</span>
+              <input id="reportFile" class="fileInput" type="file" accept="application/json" />
+            </label>
+          </div>
+          <div class="fallbackNote">
+            Tip: generate reports locally with <code>python3 scripts/bench_dashboard_build.py</code>.
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <section class="kpis">
+          <div class="kpi">
+            <div class="kpiLabel">Pass rate</div>
+            <div id="kpiPassRate" class="kpiValue">-</div>
+          </div>
+          <div class="kpi">
+            <div class="kpiLabel">Pass / Fail / Missing</div>
+            <div id="kpiCounts" class="kpiValue">-</div>
+          </div>
+          <div class="kpi">
+            <div class="kpiLabel">Latency p50 / p95</div>
+            <div id="kpiLatency" class="kpiValue">-</div>
+          </div>
+          <div class="kpi">
+            <div class="kpiLabel">Tokens total</div>
+            <div id="kpiTokens" class="kpiValue">-</div>
+          </div>
+          <div class="kpi">
+            <div class="kpiLabel">Estimated cost total</div>
+            <div id="kpiCost" class="kpiValue">-</div>
+          </div>
+          <div class="kpi">
+            <div class="kpiLabel">Run</div>
+            <div id="kpiRunId" class="kpiValue kpiMono">-</div>
+          </div>
+        </section>
+
+        <section class="charts">
+          <div class="chartCard">
+            <div class="chartTitle">Outcome</div>
+            <div id="chartOutcome" class="chart"></div>
+          </div>
+          <div class="chartCard">
+            <div class="chartTitle">Latency by Case (ms)</div>
+            <div id="chartLatency" class="chart"></div>
+          </div>
+          <div class="chartCard">
+            <div class="chartTitle">Tags Pass Rate</div>
+            <div id="chartTags" class="chart"></div>
+          </div>
+        </section>
+
+        <section class="cases">
+          <div class="casesTop">
+            <div class="casesTitle">Cases</div>
+            <div class="casesControls">
+              <input id="caseSearch" class="search" type="search" placeholder="Search case_id, tags, question, answer..." />
+              <select id="caseFilter" class="filter">
+                <option value="all">All</option>
+                <option value="passed">Passed</option>
+                <option value="failed">Failed</option>
+                <option value="non_ok">Non-ok status</option>
+                <option value="missing">Missing result</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="tableWrap">
+            <table class="table" id="casesTable">
+              <thead>
+                <tr>
+                  <th>case_id</th>
+                  <th>tags</th>
+                  <th>status</th>
+                  <th>score</th>
+                  <th class="num">duration</th>
+                  <th class="num">tokens</th>
+                  <th class="num">cost</th>
+                </tr>
+              </thead>
+              <tbody id="casesBody"></tbody>
+            </table>
+          </div>
+
+          <div class="detail" id="detail">
+            <div class="detailTitle">Case details</div>
+            <div class="detailBody" id="detailBody">
+              Select a case row to inspect question, answer, checks, and metadata.
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <!-- Prefer local vendored ECharts (offline-friendly). Fallback to CDN if missing. -->
+    <script
+      src="./vendor/echarts.min.js"
+      onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js';"
+    ></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

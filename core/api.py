@@ -4,12 +4,14 @@ import os
 import aiohttp
 from fastapi import FastAPI
 from pydantic import BaseModel
+from time import perf_counter
 from typing import Optional
 
-from config import CONFIG
+from config import CONFIG, get_model, get_temperature, get_max_iterations
 from logger import api_logger, log_request, log_response
-from observability import instrument_fastapi
+from observability import REQUEST_ID, instrument_fastapi
 from agent import run_agent, sessions
+from run_meta import run_meta_reset, run_meta_set
 from tools.scheduler import scheduler
 from admin_api import router as admin_router, load_config as load_admin_config
 
@@ -26,6 +28,7 @@ class ChatRequest(BaseModel):
     username: Optional[str] = ""
     chat_type: Optional[str] = "private"
     source: Optional[str] = "bot"
+    return_meta: Optional[bool] = False
 
 
 class ClearRequest(BaseModel):
@@ -141,6 +144,27 @@ async def chat(req: ChatRequest):
     
     log_request(req.user_id, req.chat_id, req.username or "", source, req.message)
     
+    token = None
+    meta = None
+    started = perf_counter()
+    if req.return_meta:
+        meta = {
+            "request_id": REQUEST_ID.get("-"),
+            "model": get_model(),
+            "temperature": get_temperature(),
+            "max_iterations": get_max_iterations(),
+            "llm_calls": 0,
+            "llm_time_ms": 0.0,
+            "llm_usage": None,
+            "llm_models": [],
+            "tools_used": [],
+            "tool_stats": {},
+            "tools_time_ms": 0.0,
+            "had_search_tool": False,
+            "tool_errors": 0,
+        }
+        token = run_meta_set(meta)
+
     try:
         response = await run_agent(
             user_id=req.user_id,
@@ -152,11 +176,25 @@ async def chat(req: ChatRequest):
         )
         
         log_response(response)
+        if meta is not None:
+            meta["duration_ms"] = (perf_counter() - started) * 1000
+            meta["iterations"] = int(meta.get("llm_calls", 0))
+            meta["final_response_chars"] = len(response or "")
+            meta["status"] = "ok"
+            return {"response": response, "meta": meta}
         return {"response": response}
     
     except Exception as e:
         api_logger.error(f"Chat error: {e}")
+        if meta is not None:
+            meta["duration_ms"] = (perf_counter() - started) * 1000
+            meta["status"] = "error"
+            meta["error"] = str(e)
+            return {"response": f"Error: {e}", "meta": meta}
         return {"response": f"Error: {e}"}
+    finally:
+        if token is not None:
+            run_meta_reset(token)
 
 
 @app.post("/api/clear")

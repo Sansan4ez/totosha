@@ -1,0 +1,15 @@
+{
+  "default": {
+    "prompt_per_1m_usd": 2.5,
+    "cached_input_per_1m_usd": 0.25,
+    "completion_per_1m_usd": 15.0
+  },
+  "models": [
+    {
+      "match": "gpt-5.4",
+      "prompt_per_1m_usd": 2.5,
+      "cached_input_per_1m_usd": 0.25,
+      "completion_per_1m_usd": 15.0
+    }
+  ]
+}
