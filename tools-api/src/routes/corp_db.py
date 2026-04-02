@@ -708,6 +708,22 @@ def _normalize_query_text(query: str) -> str:
     return _normalize_ws(text)
 
 
+def _normalize_lamp_exact_name(value: str) -> str:
+    return _normalize_ws(str(value).replace("\u00a0", " ").strip()).lower()
+
+
+def _lamp_exact_name_variants(value: str) -> tuple[list[str], str]:
+    raw = _normalize_lamp_exact_name(value)
+    without_brand = _normalize_ws(re.sub(r"^lad\s+", "", raw, flags=re.IGNORECASE))
+    without_brand_led = _normalize_ws(re.sub(r"^(?:lad\s+)?led\s+", "", raw, flags=re.IGNORECASE))
+
+    variants: list[str] = []
+    for candidate in (raw, without_brand, without_brand_led):
+        if candidate and candidate not in variants:
+            variants.append(candidate)
+    return variants, without_brand_led or raw
+
+
 def _strong_query_terms(query: str) -> list[str]:
     terms: list[str] = []
     for token in QUERY_TOKEN_RE.findall(_normalize_query_text(query)):
@@ -1416,15 +1432,24 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
 
 async def _lamp_exact(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     name = _req_str(req.name, "name")
+    name_variants, core_name = _lamp_exact_name_variants(name)
     rows = await conn.fetch(
-        """
-        SELECT *
-        FROM corp.v_catalog_lamps_agent
-        WHERE lower(name) = lower($1)
-        ORDER BY name
-        LIMIT $2 OFFSET $3
+        r"""
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
+        WHERE regexp_replace(lower(coalesce(name, '')), '\s+', ' ', 'g') = ANY($1::text[])
+           OR regexp_replace(regexp_replace(lower(coalesce(name, '')), '^lad\s+', '', 'i'), '\s+', ' ', 'g') = ANY($1::text[])
+           OR regexp_replace(regexp_replace(lower(coalesce(name, '')), '^(lad\s+)?led\s+', '', 'i'), '\s+', ' ', 'g') = $2
+        ORDER BY CASE
+            WHEN regexp_replace(lower(coalesce(name, '')), '\s+', ' ', 'g') = ANY($1::text[]) THEN 0
+            WHEN regexp_replace(regexp_replace(lower(coalesce(name, '')), '^lad\s+', '', 'i'), '\s+', ' ', 'g') = ANY($1::text[]) THEN 1
+            WHEN regexp_replace(regexp_replace(lower(coalesce(name, '')), '^(lad\s+)?led\s+', '', 'i'), '\s+', ' ', 'g') = $2 THEN 2
+            ELSE 99
+        END, name
+        LIMIT $3 OFFSET $4
         """,
-        name,
+        name_variants,
+        core_name,
         limit,
         offset,
     )

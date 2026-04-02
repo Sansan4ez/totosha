@@ -35,9 +35,13 @@ class DummyConn:
 
 
 class LampExactConn:
+    def __init__(self):
+        self.last_exact_args = None
+
     async def fetch(self, query, *args):
         sql = str(query)
         if "FROM corp.v_catalog_lamps_agent" in sql:
+            self.last_exact_args = args
             return [
                 {
                     "lamp_id": 2014,
@@ -284,7 +288,8 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["title"], "LAD LED LINE-OZ-25")
 
     def test_lamp_exact_returns_weight(self):
-        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(LampExactConn()))):
+        conn = LampExactConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
             from app import app
 
             client = TestClient(app)
@@ -299,6 +304,27 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["weight_kg"], 18.3)
         self.assertIn("agent_summary", payload["results"][0])
         self.assertEqual(payload["results"][0]["facts"]["beam_pattern"]["text"], "30°")
+
+    def test_lamp_exact_matches_name_without_lad_prefix(self):
+        conn = LampExactConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "lamp_exact", "name": "LED R500-9-30-6-650LZD"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["results"][0]["name"], "LAD LED R500-9-30-6-650LZD")
+        self.assertIsNotNone(conn.last_exact_args)
+        variants, core_name, _, _ = conn.last_exact_args
+        self.assertIn("led r500-9-30-6-650lzd", variants)
+        self.assertIn("r500-9-30-6-650lzd", variants)
+        self.assertEqual(core_name, "r500-9-30-6-650lzd")
 
     def test_normalize_query_text_normalizes_units(self):
         from src.routes.corp_db import _normalize_query_text
