@@ -41,9 +41,11 @@ Quick Checks
 1. `curl -fsS http://127.0.0.1:4000/health`
 2. `curl -fsS http://127.0.0.1:4000/metrics | head`
 3. `curl -fsS http://127.0.0.1:13133/`
-4. `curl -fsS http://127.0.0.1:8428/api/v1/targets`
+4. `curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=up'`
 5. `curl -fsS http://127.0.0.1:10428/select/jaeger/api/services`
 6. `curl -fsS http://127.0.0.1:3003/api/health`
+
+Note: `http://127.0.0.1:8428/api/v1/targets` may stay empty in this topology. Prometheus scraping is executed by the OTEL collector, and VictoriaMetrics receives the exported series rather than scraping app targets directly.
 
 Fixed Triage Order
 ------------------
@@ -52,10 +54,19 @@ Fixed Triage Order
 2. Service `/metrics`
 3. Application logs for `HTTP request completed` with `request_id`, `trace_id`, `span_id`
 4. OTEL collector health
-5. VictoriaMetrics target status and metric presence
+5. VictoriaMetrics `up` status and metric presence
 6. VictoriaTraces service list / trace search
 7. VictoriaLogs search by `service.name` and `request_id`
 8. Grafana dashboards and alert state
+
+For metric-side health, use these two checks together:
+
+```bash
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=up'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20(service_name)(http_server_duration_milliseconds_count)'
+```
+
+Expected result: `up{service_name="core|tools-api|proxy|scheduler|bot"}` converges to `1`, and request counters are present for the services that already served traffic.
 
 Corp DB Latency Triage
 ----------------------

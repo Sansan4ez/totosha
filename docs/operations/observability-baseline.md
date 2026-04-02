@@ -46,4 +46,5 @@ Notes
 
 - The observability overlay binds service ports to `127.0.0.1` only, so smoke and local triage work without widening public exposure.
 - Rebuild application services with both compose files: `docker-compose.yml` and `docker-compose.observability.yml`. Rebuilding only the base compose drops OTEL env and breaks request-to-trace correlation.
+- Metric-side runtime health should be checked via VictoriaMetrics queries such as `query=up` and request counters. `api/v1/targets` may remain empty because scraping is performed by the OTEL collector, not by VictoriaMetrics itself.
 - Keep repo-specific thresholds and panel details here, but do not move the baseline file paths.
