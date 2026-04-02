@@ -45,6 +45,7 @@ services:
     build: ../CLIProxyAPI
     image: eceasy/cli-proxy-api:latest
     container_name: cli-proxy-api
+    user: "${CLI_PROXY_UID:-1001}:${CLI_PROXY_GID:-1001}"
     restart: unless-stopped
     profiles:
       - cliproxy
@@ -53,7 +54,7 @@ services:
       - "127.0.0.1:8317:8317"
     volumes:
       - ../CLIProxyAPI/config.yaml:/CLIProxyAPI/config.yaml:ro
-      - ../CLIProxyAPI/auths:/root/.cli-proxy-api
+      - ../CLIProxyAPI/auths:/CLIProxyAPI/auths
       - ../CLIProxyAPI/static:/CLIProxyAPI/static
       - ../CLIProxyAPI/logs:/CLIProxyAPI/logs
     security_opt:
