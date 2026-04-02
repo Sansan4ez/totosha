@@ -255,6 +255,75 @@ class QueryCaptureConn:
         return []
 
 
+class PortfolioExamplesConn:
+    def __init__(self, *, include_portfolio: bool = True, include_spheres: bool = True, include_category: bool = True):
+        self.include_portfolio = include_portfolio
+        self.include_spheres = include_spheres
+        self.include_category = include_category
+
+    @staticmethod
+    def _lamp_row() -> dict:
+        return {
+            "lamp_id": 2014,
+            "name": "LAD LED R500-9-30-6-650LZD",
+            "category_id": 68,
+            "category_name": "LAD LED R500-9 LZD",
+            "url": "https://ladzavod.ru/catalog/r500-9-lzd/ladled-r500-9-30-6-650lzd",
+            "image_url": None,
+            "preview": "LAD LED R500-9 LZD | 557 Вт | 78537 лм | 30° | IP65 | 18.3 кг",
+            "agent_summary": "Светильник LAD LED R500-9-30-6-650LZD. Мощность 557 Вт. Световой поток 78537 лм. Светораспределение 30°.",
+            "agent_facts": {
+                "power_w": {"label": "Мощность", "text": "557 Вт", "value": 557, "unit": "Вт"},
+                "beam_pattern": {"label": "Светораспределение", "text": "30°", "value": "30°"},
+            },
+        }
+
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "FROM corp.v_catalog_lamps_agent l" in sql:
+            row = self._lamp_row()
+            if not self.include_category:
+                row["category_id"] = None
+                row["category_name"] = None
+            return [row]
+        if "FROM corp.sphere_categories sc" in sql:
+            if not self.include_spheres:
+                return []
+            return [
+                {"sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"},
+                {"sphere_id": 7, "sphere_name": "Промышленность и склады"},
+            ]
+        if "FROM corp.portfolio p" in sql:
+            if not self.include_portfolio:
+                return []
+            return [
+                {
+                    "portfolio_id": 102,
+                    "name": "Освещение резервуарного парка",
+                    "url": "https://ladzavod.ru/portfolio/reservoir",
+                    "group_name": "Нефтегаз",
+                    "image_url": "https://ladzavod.ru/images/reservoir.jpg",
+                    "sphere_id": 4,
+                    "sphere_name": "Нефтегазовый комплекс",
+                },
+                {
+                    "portfolio_id": 205,
+                    "name": "Освещение логистического комплекса",
+                    "url": "https://ladzavod.ru/portfolio/logistics",
+                    "group_name": "Логистика",
+                    "image_url": "https://ladzavod.ru/images/logistics.jpg",
+                    "sphere_id": 7,
+                    "sphere_name": "Промышленность и склады",
+                },
+            ]
+        return []
+
+
+class EmptyLampPortfolioConn:
+    async def fetch(self, query, *args):
+        return []
+
+
 class CorpDbRouteTests(unittest.TestCase):
     def test_hybrid_search_route_returns_allowlisted_result(self):
         rows = [
@@ -325,6 +394,67 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertIn("led r500-9-30-6-650lzd", variants)
         self.assertIn("r500-9-30-6-650lzd", variants)
         self.assertEqual(core_name, "r500-9-30-6-650lzd")
+
+    def test_portfolio_examples_by_lamp_returns_compact_grouped_payload(self):
+        conn = PortfolioExamplesConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "R500-9-30-6-650LZD", "limit": 10},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["kind"], "portfolio_examples_by_lamp")
+        self.assertEqual(payload["lamp"]["name"], "LAD LED R500-9-30-6-650LZD")
+        self.assertEqual(payload["lamp"]["category_id"], 68)
+        self.assertEqual(len(payload["spheres"]), 2)
+        self.assertEqual(len(payload["portfolio_examples"]), 2)
+        self.assertEqual(payload["results"], payload["portfolio_examples"])
+        self.assertEqual(payload["filters"]["lamp_match"], "exact")
+        self.assertEqual(payload["filters"]["portfolio_count"], 2)
+        self.assertEqual(payload["portfolio_examples"][0]["sphere_name"], "Нефтегазовый комплекс")
+
+    def test_portfolio_examples_by_lamp_reports_portfolio_not_found(self):
+        conn = PortfolioExamplesConn(include_portfolio=False)
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "R500-9-30-6-650LZD"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "empty")
+        self.assertEqual(payload["filters"]["reason"], "portfolio_not_found")
+        self.assertEqual(payload["filters"]["category_id"], 68)
+        self.assertEqual(payload["filters"]["sphere_count"], 2)
+        self.assertEqual(payload["lamp"]["name"], "LAD LED R500-9-30-6-650LZD")
+        self.assertEqual(payload["spheres"][0]["sphere_name"], "Нефтегазовый комплекс")
+
+    def test_portfolio_examples_by_lamp_reports_lamp_not_found(self):
+        conn = EmptyLampPortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "UNKNOWN-MODEL"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "empty")
+        self.assertEqual(payload["filters"]["reason"], "lamp_not_found")
+        self.assertEqual(payload["results"], [])
 
     def test_normalize_query_text_normalizes_units(self):
         from src.routes.corp_db import _normalize_query_text
@@ -651,3 +781,25 @@ class CorpDbRouteTests(unittest.TestCase):
         text = metrics.text
         self.assertIn("corp_db_search_phase_duration_milliseconds_bucket", text)
         self.assertIn('phase="lamp_filters"', text)
+
+    def test_metrics_expose_portfolio_examples_phases(self):
+        conn = PortfolioExamplesConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "R500-9-30-6-650LZD"},
+            )
+            self.assertEqual(response.status_code, 200)
+
+            metrics = client.get("/metrics")
+
+        self.assertEqual(metrics.status_code, 200)
+        text = metrics.text
+        self.assertIn('kind="portfolio_examples_by_lamp"', text)
+        self.assertIn('phase="lamp_exact"', text)
+        self.assertIn('phase="sphere_lookup"', text)
+        self.assertIn('phase="portfolio_lookup"', text)
+        self.assertIn('phase="response_build"', text)

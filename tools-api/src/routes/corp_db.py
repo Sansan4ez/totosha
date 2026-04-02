@@ -253,6 +253,7 @@ class CorpDbSearchRequest(BaseModel):
         "sku_by_code",
         "category_lamps",
         "portfolio_by_sphere",
+        "portfolio_examples_by_lamp",
         "sphere_categories",
         "lamp_filters",
         "category_mountings",
@@ -490,11 +491,12 @@ async def _observe_search_phase(
     profile: str,
     phase: str,
     attributes: dict[str, Any] | None = None,
+    span_name: str | None = None,
 ):
     started_at = perf_counter()
     status = "success"
     request_id = REQUEST_ID.get("-")
-    with _get_tracer().start_as_current_span(f"corp_db.{phase}") as span:
+    with _get_tracer().start_as_current_span(span_name or f"corp_db.{phase}") as span:
         span.set_attribute("corp_db.kind", kind)
         span.set_attribute("corp_db.profile", profile)
         span.set_attribute("corp_db.phase", phase)
@@ -642,6 +644,80 @@ def _request_like(req: CorpDbSearchRequest, **updates: Any) -> CorpDbSearchReque
     if hasattr(req, "model_copy"):
         return req.model_copy(update=updates)
     return req.copy(update=updates)
+
+
+async def _fetch_lamp_exact_rows(
+    conn: asyncpg.Connection,
+    *,
+    name: str,
+    limit: int,
+    offset: int,
+) -> list[asyncpg.Record]:
+    name_variants, core_name = _lamp_exact_name_variants(name)
+    return await conn.fetch(
+        r"""
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
+        WHERE regexp_replace(lower(coalesce(name, '')), '\s+', ' ', 'g') = ANY($1::text[])
+           OR regexp_replace(regexp_replace(lower(coalesce(name, '')), '^lad\s+', '', 'i'), '\s+', ' ', 'g') = ANY($1::text[])
+           OR regexp_replace(regexp_replace(lower(coalesce(name, '')), '^(lad\s+)?led\s+', '', 'i'), '\s+', ' ', 'g') = $2
+        ORDER BY CASE
+            WHEN regexp_replace(lower(coalesce(name, '')), '\s+', ' ', 'g') = ANY($1::text[]) THEN 0
+            WHEN regexp_replace(regexp_replace(lower(coalesce(name, '')), '^lad\s+', '', 'i'), '\s+', ' ', 'g') = ANY($1::text[]) THEN 1
+            WHEN regexp_replace(regexp_replace(lower(coalesce(name, '')), '^(lad\s+)?led\s+', '', 'i'), '\s+', ' ', 'g') = $2 THEN 2
+            ELSE 99
+        END, name
+        LIMIT $3 OFFSET $4
+        """,
+        name_variants,
+        core_name,
+        limit,
+        offset,
+    )
+
+
+def _portfolio_examples_response(
+    *,
+    query: str,
+    status: str,
+    filters: dict[str, Any],
+    lamp: dict[str, Any] | None = None,
+    spheres: list[dict[str, Any]] | None = None,
+    portfolio_examples: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    examples = portfolio_examples or []
+    payload = {
+        "status": status,
+        "kind": "portfolio_examples_by_lamp",
+        "query": query,
+        "filters": filters,
+        "results": examples,
+        "portfolio_examples": examples,
+    }
+    if lamp is not None:
+        payload["lamp"] = lamp
+    if spheres is not None:
+        payload["spheres"] = spheres
+    return payload
+
+
+def _log_portfolio_examples_result(
+    *,
+    status: str,
+    lamp_id: Any = None,
+    category_id: Any = None,
+    sphere_count: int = 0,
+    portfolio_count: int = 0,
+) -> None:
+    logger.info(
+        "corp-db portfolio_examples_by_lamp status=%s request_id=%s lamp_id=%s category_id=%s sphere_count=%s portfolio_count=%s",
+        status,
+        REQUEST_ID.get("-"),
+        lamp_id,
+        category_id,
+        sphere_count,
+        portfolio_count,
+    )
 
 
 def _sanitize_filter_defaults(req: CorpDbSearchRequest) -> CorpDbSearchRequest:
@@ -1432,27 +1508,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
 
 async def _lamp_exact(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     name = _req_str(req.name, "name")
-    name_variants, core_name = _lamp_exact_name_variants(name)
-    rows = await conn.fetch(
-        r"""
-        SELECT l.*
-        FROM corp.v_catalog_lamps_agent l
-        WHERE regexp_replace(lower(coalesce(name, '')), '\s+', ' ', 'g') = ANY($1::text[])
-           OR regexp_replace(regexp_replace(lower(coalesce(name, '')), '^lad\s+', '', 'i'), '\s+', ' ', 'g') = ANY($1::text[])
-           OR regexp_replace(regexp_replace(lower(coalesce(name, '')), '^(lad\s+)?led\s+', '', 'i'), '\s+', ' ', 'g') = $2
-        ORDER BY CASE
-            WHEN regexp_replace(lower(coalesce(name, '')), '\s+', ' ', 'g') = ANY($1::text[]) THEN 0
-            WHEN regexp_replace(regexp_replace(lower(coalesce(name, '')), '^lad\s+', '', 'i'), '\s+', ' ', 'g') = ANY($1::text[]) THEN 1
-            WHEN regexp_replace(regexp_replace(lower(coalesce(name, '')), '^(lad\s+)?led\s+', '', 'i'), '\s+', ' ', 'g') = $2 THEN 2
-            ELSE 99
-        END, name
-        LIMIT $3 OFFSET $4
-        """,
-        name_variants,
-        core_name,
-        limit,
-        offset,
-    )
+    rows = await _fetch_lamp_exact_rows(conn, name=name, limit=limit, offset=offset)
     lamp_ids = [row["lamp_id"] for row in rows]
     docs = {}
     skus_by_lamp: dict[int, list[dict[str, Any]]] = {}
@@ -1583,6 +1639,163 @@ async def _portfolio_by_sphere(conn: asyncpg.Connection, req: CorpDbSearchReques
     )
 
 
+async def _portfolio_examples_by_lamp(
+    conn: asyncpg.Connection,
+    req: CorpDbSearchRequest,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    query = _req_str(req.name, "name")
+    profile_name = "exact_chain"
+
+    async with _observe_search_phase(
+        kind="portfolio_examples_by_lamp",
+        profile=profile_name,
+        phase="lamp_exact",
+        span_name="corp_db.portfolio_examples.lamp_exact",
+    ):
+        lamp_rows = await _fetch_lamp_exact_rows(conn, name=query, limit=1, offset=0)
+
+    if not lamp_rows:
+        response = _portfolio_examples_response(
+            query=query,
+            status="empty",
+            filters={"reason": "lamp_not_found"},
+        )
+        _log_portfolio_examples_result(status="empty")
+        return response
+
+    lamp_row = lamp_rows[0]
+    lamp_payload = _serialize_lamp_row(lamp_row)
+    category_id = _row_get(lamp_row, "category_id")
+    category_name = _row_get(lamp_row, "category_name")
+    lamp_id = _row_get(lamp_row, "lamp_id")
+
+    if category_id is None:
+        response = _portfolio_examples_response(
+            query=query,
+            status="empty",
+            filters={
+                "reason": "category_missing",
+                "lamp_id": lamp_id,
+            },
+            lamp=lamp_payload,
+        )
+        _log_portfolio_examples_result(status="empty", lamp_id=lamp_id)
+        return response
+
+    async with _observe_search_phase(
+        kind="portfolio_examples_by_lamp",
+        profile=profile_name,
+        phase="sphere_lookup",
+        span_name="corp_db.portfolio_examples.sphere_lookup",
+        attributes={"corp_db.category_id": int(category_id)},
+    ):
+        sphere_rows = await conn.fetch(
+            """
+            SELECT s.sphere_id, s.name AS sphere_name
+            FROM corp.sphere_categories sc
+            JOIN corp.spheres s ON s.sphere_id = sc.sphere_id
+            WHERE sc.category_id = $1
+            ORDER BY s.name
+            """,
+            category_id,
+        )
+
+    spheres = [dict(row) for row in sphere_rows]
+    if not spheres:
+        response = _portfolio_examples_response(
+            query=query,
+            status="empty",
+            filters={
+                "reason": "spheres_not_found",
+                "lamp_id": lamp_id,
+                "category_id": category_id,
+                "category_name": category_name,
+                "sphere_count": 0,
+            },
+            lamp=lamp_payload,
+            spheres=[],
+        )
+        _log_portfolio_examples_result(status="empty", lamp_id=lamp_id, category_id=category_id)
+        return response
+
+    sphere_ids = [row["sphere_id"] for row in spheres]
+    async with _observe_search_phase(
+        kind="portfolio_examples_by_lamp",
+        profile=profile_name,
+        phase="portfolio_lookup",
+        span_name="corp_db.portfolio_examples.portfolio_lookup",
+        attributes={"corp_db.sphere_count": len(sphere_ids)},
+    ):
+        portfolio_rows = await conn.fetch(
+            """
+            SELECT p.portfolio_id, p.name, p.url, p.group_name, p.image_url, s.sphere_id, s.name AS sphere_name
+            FROM corp.portfolio p
+            JOIN corp.spheres s ON s.sphere_id = p.sphere_id
+            WHERE p.sphere_id = ANY($1::bigint[])
+            ORDER BY s.name, p.name
+            LIMIT $2 OFFSET $3
+            """,
+            sphere_ids,
+            limit,
+            offset,
+        )
+
+    portfolio_examples = [dict(row) for row in portfolio_rows]
+    if not portfolio_examples:
+        response = _portfolio_examples_response(
+            query=query,
+            status="empty",
+            filters={
+                "reason": "portfolio_not_found",
+                "lamp_id": lamp_id,
+                "category_id": category_id,
+                "category_name": category_name,
+                "sphere_count": len(spheres),
+            },
+            lamp=lamp_payload,
+            spheres=spheres,
+        )
+        _log_portfolio_examples_result(
+            status="empty",
+            lamp_id=lamp_id,
+            category_id=category_id,
+            sphere_count=len(spheres),
+        )
+        return response
+
+    async with _observe_search_phase(
+        kind="portfolio_examples_by_lamp",
+        profile=profile_name,
+        phase="response_build",
+        span_name="corp_db.portfolio_examples.response_build",
+    ):
+        response = _portfolio_examples_response(
+            query=query,
+            status="success",
+            filters={
+                "lamp_match": "exact",
+                "category_id": category_id,
+                "category_name": category_name,
+                "sphere_count": len(spheres),
+                "portfolio_count": len(portfolio_examples),
+            },
+            lamp=lamp_payload,
+            spheres=spheres,
+            portfolio_examples=portfolio_examples,
+        )
+
+    _log_portfolio_examples_result(
+        status="success",
+        lamp_id=lamp_id,
+        category_id=category_id,
+        sphere_count=len(spheres),
+        portfolio_count=len(portfolio_examples),
+    )
+    return response
+
+
 async def _sphere_categories(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     sphere = _req_str(req.sphere, "sphere")
     rows = await conn.fetch(
@@ -1694,6 +1907,8 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
                 result = await _category_lamps(conn, req, limit, offset)
             elif req.kind == "portfolio_by_sphere":
                 result = await _portfolio_by_sphere(conn, req, limit, offset)
+            elif req.kind == "portfolio_examples_by_lamp":
+                result = await _portfolio_examples_by_lamp(conn, req, limit, offset)
             elif req.kind == "sphere_categories":
                 result = await _sphere_categories(conn, req, limit, offset)
             elif req.kind == "category_mountings":

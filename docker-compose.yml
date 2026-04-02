@@ -99,7 +99,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 25s
     deploy:
       resources:
         limits:
@@ -332,7 +332,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
 
   # ============ BOT - Telegram Bot (Telegraf) ============
   bot:

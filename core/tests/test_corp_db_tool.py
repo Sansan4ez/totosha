@@ -189,6 +189,49 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(decoded["results"][0]["mounting_type_name"], "Лира")
         self.assertEqual(decoded["results"][0]["mark"], "LR")
 
+    def test_tool_preserves_specialized_payload_for_portfolio_examples_by_lamp(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {
+            "status": "success",
+            "kind": "portfolio_examples_by_lamp",
+            "filters": {"lamp_match": "exact", "portfolio_count": 2},
+            "lamp": {
+                "lamp_id": 2014,
+                "name": "LAD LED R500-9-30-6-650LZD",
+                "category_id": 68,
+                "category_name": "LAD LED R500-9 LZD",
+            },
+            "spheres": [
+                {"sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"},
+            ],
+            "portfolio_examples": [
+                {
+                    "portfolio_id": 102,
+                    "name": "Освещение резервуарного парка",
+                    "sphere_id": 4,
+                    "sphere_name": "Нефтегазовый комплекс",
+                }
+            ],
+            "results": [
+                {
+                    "portfolio_id": 102,
+                    "name": "Освещение резервуарного парка",
+                    "sphere_id": 4,
+                    "sphere_name": "Нефтегазовый комплекс",
+                }
+            ],
+        }
+
+        with patch.object(_MODULE, "aiohttp", _aiohttp_stub_for_payload(payload)):
+            result = asyncio.run(tool_corp_db_search({"kind": "portfolio_examples_by_lamp", "name": "R500-9-30-6-650LZD"}, ctx))
+
+        self.assertTrue(result.success)
+        decoded = json.loads(result.output)
+        self.assertEqual(decoded["kind"], "portfolio_examples_by_lamp")
+        self.assertEqual(decoded["lamp"]["name"], "LAD LED R500-9-30-6-650LZD")
+        self.assertEqual(decoded["spheres"][0]["sphere_name"], "Нефтегазовый комплекс")
+        self.assertEqual(decoded["portfolio_examples"][0]["portfolio_id"], 102)
+
     def test_tool_reports_timeout_error_with_budget_and_class(self):
         class FakeTimeout:
             def __init__(self, **kwargs):
