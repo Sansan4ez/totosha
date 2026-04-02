@@ -1,5 +1,6 @@
 """ReAct Agent implementation"""
 
+import asyncio
 import os
 import json
 import re
@@ -322,6 +323,39 @@ def estimate_context_size(messages: list) -> int:
     return sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
 
 
+def _llm_max_attempts() -> int:
+    """Maximum number of attempts for transient LLM failures."""
+    try:
+        return max(1, int(os.getenv("LLM_MAX_ATTEMPTS", "3")))
+    except ValueError:
+        return 3
+
+
+def _llm_retry_delay(attempt: int) -> float:
+    """Linear retry backoff in seconds."""
+    try:
+        base_delay = float(os.getenv("LLM_RETRY_BASE_DELAY_S", "0.75"))
+    except ValueError:
+        base_delay = 0.75
+    return max(0.0, base_delay * max(1, attempt))
+
+
+def _should_retry_llm_status(status: int, error_text: str) -> bool:
+    """Return True for transient proxy/upstream failures."""
+    normalized = (error_text or "").lower()
+    if status in {429, 502, 503, 504}:
+        return True
+    if status == 408:
+        transient_markers = (
+            "stream disconnected before completion",
+            "stream closed before response.completed",
+            "request timeout",
+            "upstream timed out",
+        )
+        return any(marker in normalized for marker in transient_markers)
+    return False
+
+
 def _get_language_reminder() -> str:
     """Get language enforcement reminder from locale config"""
     try:
@@ -431,70 +465,117 @@ async def call_llm(messages: list, tools: list, model_override: str = "") -> dic
     agent_logger.debug(f"  tools: {len(tools)} definitions")
     agent_logger.debug("=" * 60)
     
-    try:
-        request_id = OBS_REQUEST_ID.get("-")
-        headers = {"X-Request-Id": request_id} if request_id and request_id != "-" else {}
-        llm_started = perf_counter()
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{CONFIG.proxy_url}/v1/chat/completions",
-                json=request_body,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=120)
-            ) as resp:
-                if resp.status != 200:
-                    error = await resp.text()
-                    agent_logger.error(f"RAW RESPONSE ERROR: {resp.status} - {error[:500]}")
+    request_id = OBS_REQUEST_ID.get("-")
+    headers = {"X-Request-Id": request_id} if request_id and request_id != "-" else {}
+    llm_started = perf_counter()
+    max_attempts = _llm_max_attempts()
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{CONFIG.proxy_url}/v1/chat/completions",
+                    json=request_body,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=120)
+                ) as resp:
+                    if resp.status != 200:
+                        error = await resp.text()
+                        if _should_retry_llm_status(resp.status, error) and attempt < max_attempts:
+                            delay = _llm_retry_delay(attempt)
+                            agent_logger.warning(
+                                "Transient LLM error on attempt %s/%s: status=%s; retrying in %.2fs",
+                                attempt,
+                                max_attempts,
+                                resp.status,
+                                delay,
+                            )
+                            if delay > 0:
+                                await asyncio.sleep(delay)
+                            continue
+
+                        agent_logger.error(f"RAW RESPONSE ERROR: {resp.status} - {error[:500]}")
+                        run_meta_update_llm(
+                            duration_ms=(perf_counter() - llm_started) * 1000,
+                            usage=None,
+                            model=current_model,
+                        )
+                        return {"error": f"LLM error {resp.status}: {error[:200]}"}
+                    
+                    result = await resp.json()
+                    
+                    # Log raw response
+                    agent_logger.debug("RAW RESPONSE:")
+                    agent_logger.debug(f"  id: {result.get('id', '?')}")
+                    agent_logger.debug(f"  model: {result.get('model', '?')}")
+                    
+                    choices = result.get("choices", [])
+                    for i, choice in enumerate(choices):
+                        msg = choice.get("message", {})
+                        finish = choice.get("finish_reason", "?")
+                        content = msg.get("content", "")
+                        tool_calls = msg.get("tool_calls", [])
+                        
+                        agent_logger.debug(f"  choice[{i}] finish_reason: {finish}")
+                        if content:
+                            agent_logger.debug(f"  choice[{i}] content: {content[:300]}{'...' if len(content) > 300 else ''}")
+                        if tool_calls:
+                            for tc in tool_calls:
+                                fn = tc.get("function", {})
+                                agent_logger.debug(f"  choice[{i}] tool_call: {fn.get('name')}({fn.get('arguments', '')[:150]})")
+                    
+                    usage = result.get("usage", {})
+                    agent_logger.debug(f"  usage: prompt={usage.get('prompt_tokens', '?')}, completion={usage.get('completion_tokens', '?')}, total={usage.get('total_tokens', '?')}")
+                    agent_logger.debug("=" * 60)
+                    
                     run_meta_update_llm(
                         duration_ms=(perf_counter() - llm_started) * 1000,
-                        usage=None,
-                        model=current_model,
+                        usage=result.get("usage"),
+                        model=str(result.get("model") or current_model),
                     )
-                    return {"error": f"LLM error {resp.status}: {error[:200]}"}
-                
-                result = await resp.json()
-                
-                # Log raw response
-                agent_logger.debug("RAW RESPONSE:")
-                agent_logger.debug(f"  id: {result.get('id', '?')}")
-                agent_logger.debug(f"  model: {result.get('model', '?')}")
-                
-                choices = result.get("choices", [])
-                for i, choice in enumerate(choices):
-                    msg = choice.get("message", {})
-                    finish = choice.get("finish_reason", "?")
-                    content = msg.get("content", "")
-                    tool_calls = msg.get("tool_calls", [])
-                    
-                    agent_logger.debug(f"  choice[{i}] finish_reason: {finish}")
-                    if content:
-                        agent_logger.debug(f"  choice[{i}] content: {content[:300]}{'...' if len(content) > 300 else ''}")
-                    if tool_calls:
-                        for tc in tool_calls:
-                            fn = tc.get("function", {})
-                            agent_logger.debug(f"  choice[{i}] tool_call: {fn.get('name')}({fn.get('arguments', '')[:150]})")
-                
-                usage = result.get("usage", {})
-                agent_logger.debug(f"  usage: prompt={usage.get('prompt_tokens', '?')}, completion={usage.get('completion_tokens', '?')}, total={usage.get('total_tokens', '?')}")
-                agent_logger.debug("=" * 60)
-                
+                    return result
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            if attempt < max_attempts:
+                delay = _llm_retry_delay(attempt)
+                agent_logger.warning(
+                    "Transient LLM transport error on attempt %s/%s: %s; retrying in %.2fs",
+                    attempt,
+                    max_attempts,
+                    e,
+                    delay,
+                )
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                continue
+
+            agent_logger.error(f"RAW RESPONSE EXCEPTION: {e}")
+            try:
                 run_meta_update_llm(
                     duration_ms=(perf_counter() - llm_started) * 1000,
-                    usage=result.get("usage"),
-                    model=str(result.get("model") or current_model),
+                    usage=None,
+                    model=current_model,
                 )
-                return result
-    except Exception as e:
-        agent_logger.error(f"RAW RESPONSE EXCEPTION: {e}")
-        try:
-            run_meta_update_llm(
-                duration_ms=(perf_counter() - llm_started) * 1000,
-                usage=None,
-                model=current_model,
-            )
-        except Exception:
-            pass
-        return {"error": str(e)}
+            except Exception:
+                pass
+            return {"error": str(e)}
+        except Exception as e:
+            agent_logger.error(f"RAW RESPONSE EXCEPTION: {e}")
+            try:
+                run_meta_update_llm(
+                    duration_ms=(perf_counter() - llm_started) * 1000,
+                    usage=None,
+                    model=current_model,
+                )
+            except Exception:
+                pass
+            return {"error": str(e)}
+
+    run_meta_update_llm(
+        duration_ms=(perf_counter() - llm_started) * 1000,
+        usage=None,
+        model=current_model,
+    )
+    return {"error": "LLM request failed after retries"}
 
 
 async def get_tool_definitions(source: str = "bot", lazy_loading: bool = True) -> list:
