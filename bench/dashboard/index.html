@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
-    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./style.css?v=20260403-ux1" />
   </head>
   <body>
     <header class="topbar">
@@ -96,12 +96,12 @@
             <div id="chartOutcome" class="chart"></div>
           </div>
           <div class="chartCard">
-            <div class="chartTitle">Latency by Case (ms)</div>
-            <div id="chartLatency" class="chart"></div>
-          </div>
-          <div class="chartCard">
             <div class="chartTitle">Tags Pass Rate</div>
             <div id="chartTags" class="chart"></div>
+          </div>
+          <div class="chartCard chartCardWide">
+            <div class="chartTitle">Latency by Case (ms)</div>
+            <div id="chartLatency" class="chart chartWide"></div>
           </div>
         </section>
 
@@ -124,13 +124,13 @@
             <table class="table" id="casesTable">
               <thead>
                 <tr>
-                  <th>case_id</th>
-                  <th>tags</th>
-                  <th>status</th>
-                  <th>score</th>
-                  <th class="num">duration</th>
-                  <th class="num">tokens</th>
-                  <th class="num">cost</th>
+                  <th class="sortable" data-sort-key="case_id"><span class="thLabel">case_id</span><span class="sortIndicator" aria-hidden="true"></span></th>
+                  <th class="sortable" data-sort-key="tags"><span class="thLabel">tags</span><span class="sortIndicator" aria-hidden="true"></span></th>
+                  <th class="sortable" data-sort-key="status"><span class="thLabel">status</span><span class="sortIndicator" aria-hidden="true"></span></th>
+                  <th class="sortable" data-sort-key="score"><span class="thLabel">score</span><span class="sortIndicator" aria-hidden="true"></span></th>
+                  <th class="num sortable" data-sort-key="duration"><span class="thLabel">duration</span><span class="sortIndicator" aria-hidden="true"></span></th>
+                  <th class="num sortable" data-sort-key="tokens"><span class="thLabel">tokens</span><span class="sortIndicator" aria-hidden="true"></span></th>
+                  <th class="num sortable" data-sort-key="cost"><span class="thLabel">cost</span><span class="sortIndicator" aria-hidden="true"></span></th>
                 </tr>
               </thead>
               <tbody id="casesBody"></tbody>
@@ -149,9 +149,9 @@
 
     <!-- Prefer local vendored ECharts (offline-friendly). Fallback to CDN if missing. -->
     <script
-      src="./vendor/echarts.min.js"
+      src="./vendor/echarts.min.js?v=20260403-ux1"
       onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js';"
     ></script>
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=20260403-ux1"></script>
   </body>
 </html>

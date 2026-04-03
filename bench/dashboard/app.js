@@ -39,6 +39,10 @@ const el = (id) => document.getElementById(id);
 const state = {
   index: null,
   report: null,
+  tableSort: {
+    key: "duration",
+    dir: "desc",
+  },
   charts: {
     outcome: null,
     latency: null,
@@ -198,6 +202,78 @@ function getCaseCost(c) {
   return typeof v === "number" ? v : null;
 }
 
+function getCaseScoreLabel(c) {
+  const status = getCaseStatus(c);
+  if (c?.scoring?.missing) return "MISSING";
+  if (status !== "ok") return "NON_OK";
+  return getCasePassed(c) ? "PASS" : "FAIL";
+}
+
+function getCaseScoreRank(c) {
+  const label = getCaseScoreLabel(c);
+  if (label === "MISSING") return 0;
+  if (label === "NON_OK") return 1;
+  if (label === "FAIL") return 2;
+  if (label === "PASS") return 3;
+  return -1;
+}
+
+function getDefaultSortDir(key) {
+  if (key === "duration" || key === "tokens" || key === "cost") return "desc";
+  if (key === "score") return "asc";
+  return "asc";
+}
+
+function compareNullableNumbers(a, b, dir) {
+  const aNull = a == null || !isFinite(a);
+  const bNull = b == null || !isFinite(b);
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;
+  if (bNull) return -1;
+  return dir === "asc" ? a - b : b - a;
+}
+
+function compareText(a, b, dir) {
+  const aa = String(a || "");
+  const bb = String(b || "");
+  return dir === "asc" ? aa.localeCompare(bb) : bb.localeCompare(aa);
+}
+
+function sortCases(cases, sort) {
+  const key = sort?.key || "duration";
+  const dir = sort?.dir === "asc" ? "asc" : "desc";
+  const rows = [...cases];
+
+  rows.sort((a, b) => {
+    let cmp = 0;
+
+    if (key === "case_id") cmp = compareText(a.case_id, b.case_id, dir);
+    else if (key === "tags") cmp = compareText(Array.isArray(a.tags) ? a.tags.join(", ") : "", Array.isArray(b.tags) ? b.tags.join(", ") : "", dir);
+    else if (key === "status") cmp = compareText(getCaseStatus(a), getCaseStatus(b), dir);
+    else if (key === "score") cmp = compareNullableNumbers(getCaseScoreRank(a), getCaseScoreRank(b), dir);
+    else if (key === "duration") cmp = compareNullableNumbers(getCaseDurationMs(a), getCaseDurationMs(b), dir);
+    else if (key === "tokens") cmp = compareNullableNumbers(getCaseTokensTotal(a), getCaseTokensTotal(b), dir);
+    else if (key === "cost") cmp = compareNullableNumbers(getCaseCost(a), getCaseCost(b), dir);
+
+    if (cmp !== 0) return cmp;
+    return compareText(a.case_id, b.case_id, "asc");
+  });
+
+  return rows;
+}
+
+function renderSortHeaders() {
+  const headers = document.querySelectorAll("#casesTable th.sortable");
+  headers.forEach((node) => {
+    const key = node.dataset.sortKey || "";
+    const active = key === state.tableSort.key;
+    node.classList.toggle("sortActive", active);
+    const indicator = node.querySelector(".sortIndicator");
+    if (!indicator) return;
+    indicator.textContent = active ? (state.tableSort.dir === "asc" ? "▲" : "▼") : "·";
+  });
+}
+
 function renderKpis(report) {
   const s = getSummary(report);
 
@@ -289,6 +365,11 @@ function renderLatencyChart(report) {
     if (status !== "ok") return "#ffd166";
     return getCasePassed(x.c) ? "#6ee7a8" : "#ff6b6b";
   });
+  const truncateCaseId = (value, max = 20) => {
+    const text = String(value || "");
+    if (text.length <= max) return text;
+    return `${text.slice(0, max - 1)}…`;
+  };
 
   const opt = {
     backgroundColor: "transparent",
@@ -309,16 +390,28 @@ function renderLatencyChart(report) {
         ].join("<br/>");
       },
     },
-    grid: { left: 24, right: 14, top: 8, bottom: 42, containLabel: true },
+    grid: { left: 68, right: 18, top: 14, bottom: 88, containLabel: true },
     xAxis: {
       type: "category",
       data: x,
-      axisLabel: { color: "rgba(255,255,255,0.65)", rotate: 35, fontFamily: "IBM Plex Mono" },
+      axisLabel: {
+        color: "rgba(255,255,255,0.65)",
+        rotate: 28,
+        margin: 18,
+        fontSize: 11,
+        fontFamily: "IBM Plex Mono",
+        formatter: (value) => truncateCaseId(value),
+      },
       axisLine: { lineStyle: { color: "rgba(255,255,255,0.15)" } },
     },
     yAxis: {
       type: "value",
-      axisLabel: { color: "rgba(255,255,255,0.65)" },
+      axisLabel: {
+        color: "rgba(255,255,255,0.65)",
+        margin: 14,
+        fontSize: 11,
+        formatter: (value) => fmtMs(Number(value)),
+      },
       splitLine: { lineStyle: { color: "rgba(255,255,255,0.10)" } },
     },
     series: [
@@ -450,7 +543,10 @@ function renderTable(report) {
     return hay.includes(query);
   });
 
-  for (const c of cases) {
+  const sortedCases = sortCases(cases, state.tableSort);
+  renderSortHeaders();
+
+  for (const c of sortedCases) {
     const tr = document.createElement("tr");
     tr.className = "caseRow";
     tr.addEventListener("click", () => renderDetail(c));
@@ -470,15 +566,11 @@ function renderTable(report) {
     tr.appendChild(tdStatus);
 
     const tdScore = document.createElement("td");
-    if (c?.scoring?.missing) {
-      tdScore.appendChild(buildBadge({ kind: "warn", text: "MISSING" }));
-    } else if (status !== "ok") {
-      tdScore.appendChild(buildBadge({ kind: "warn", text: "NON_OK" }));
-    } else if (getCasePassed(c)) {
-      tdScore.appendChild(buildBadge({ kind: "good", text: "PASS" }));
-    } else {
-      tdScore.appendChild(buildBadge({ kind: "bad", text: "FAIL" }));
-    }
+    const score = getCaseScoreLabel(c);
+    if (score === "MISSING") tdScore.appendChild(buildBadge({ kind: "warn", text: score }));
+    else if (score === "NON_OK") tdScore.appendChild(buildBadge({ kind: "warn", text: score }));
+    else if (score === "PASS") tdScore.appendChild(buildBadge({ kind: "good", text: score }));
+    else tdScore.appendChild(buildBadge({ kind: "bad", text: score }));
     tr.appendChild(tdScore);
 
     const tdDur = document.createElement("td");
@@ -662,6 +754,19 @@ function bindUi() {
 
   el("caseSearch").addEventListener("input", () => renderTable(state.report));
   el("caseFilter").addEventListener("change", () => renderTable(state.report));
+  document.querySelectorAll("#casesTable th.sortable").forEach((node) => {
+    node.addEventListener("click", () => {
+      const key = node.dataset.sortKey || "";
+      if (!key) return;
+      if (state.tableSort.key === key) {
+        state.tableSort.dir = state.tableSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.tableSort.key = key;
+        state.tableSort.dir = getDefaultSortDir(key);
+      }
+      renderTable(state.report);
+    });
+  });
 
   el("reportFile").addEventListener("change", async (ev) => {
     const file = ev.target.files?.[0];

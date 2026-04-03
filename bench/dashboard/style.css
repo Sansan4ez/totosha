@@ -232,7 +232,7 @@ code {
 
 .charts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -255,6 +255,15 @@ code {
 .chart {
   width: 100%;
   height: 280px;
+}
+
+.chartCardWide {
+  grid-column: 1 / -1;
+  min-height: 420px;
+}
+
+.chartWide {
+  height: 360px;
 }
 
 .cases {
@@ -337,6 +346,32 @@ th {
   backdrop-filter: blur(10px);
   color: rgba(255, 255, 255, 0.8);
   font-weight: 600;
+}
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable:hover {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.thLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sortIndicator {
+  display: inline-block;
+  min-width: 1ch;
+  margin-left: 6px;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+th.sortable.sortActive .sortIndicator {
+  color: var(--accent2);
 }
 
 td.num,
