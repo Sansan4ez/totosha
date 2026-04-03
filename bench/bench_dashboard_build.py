@@ -12,8 +12,8 @@ Writes (gitignored by default):
   - bench/reports/latest.json           (copy of latest run)
 
 Usage:
-  python3 scripts/bench_dashboard_build.py
-  python3 scripts/bench_dashboard_build.py --results-glob 'bench/results/*.jsonl'
+  python3 bench/bench_dashboard_build.py
+  python3 bench/bench_dashboard_build.py --results-glob 'bench/results/*.jsonl'
 """
 
 from __future__ import annotations
@@ -26,15 +26,15 @@ import statistics
 from pathlib import Path
 from typing import Any, Optional
 
-from bench_lib import estimate_cost_usd, eval_checks, load_pricing, percentile, read_jsonl
+from bench_lib import BENCH_DIR, estimate_cost_usd, eval_checks, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
 
 
-DEFAULT_DATASET = "bench/golden/v1.jsonl"
-DEFAULT_RESULTS_GLOB = "bench/results/*.jsonl"
-DEFAULT_OUT_DIR = "bench/reports"
-DEFAULT_INDEX = "bench/reports/index.json"
-DEFAULT_LATEST = "bench/reports/latest.json"
-DEFAULT_PRICING = "bench/pricing.json"
+DEFAULT_DATASET = BENCH_DIR / "golden" / "v1.jsonl"
+DEFAULT_RESULTS_GLOB = str(BENCH_DIR / "results" / "*.jsonl")
+DEFAULT_OUT_DIR = BENCH_DIR / "reports"
+DEFAULT_INDEX = DEFAULT_OUT_DIR / "index.json"
+DEFAULT_LATEST = DEFAULT_OUT_DIR / "latest.json"
+DEFAULT_PRICING = BENCH_DIR / "pricing.json"
 
 
 def utc_now_iso() -> str:
@@ -92,7 +92,7 @@ def _norm_tags(tags: Any) -> list[str]:
     return out
 
 
-def build_run_report(dataset: list[dict[str, Any]], results_path: Path, pricing: dict[str, Any]) -> dict[str, Any]:
+def build_run_report(dataset: list[dict[str, Any]], dataset_path: Path, results_path: Path, pricing: dict[str, Any]) -> dict[str, Any]:
     results_rows = read_jsonl(results_path)
     by_case: dict[str, dict[str, Any]] = {}
     for row in results_rows:
@@ -219,8 +219,8 @@ def build_run_report(dataset: list[dict[str, Any]], results_path: Path, pricing:
     pass_rate = (pass_count / scored) if scored else 0.0
 
     summary = {
-        "dataset": DEFAULT_DATASET,
-        "results": str(results_path),
+        "dataset": repo_rel(dataset_path),
+        "results": repo_rel(results_path),
         "run_id": run_id,
         "started_at": started_at,
         "total_cases": total,
@@ -259,27 +259,29 @@ def build_run_report(dataset: list[dict[str, Any]], results_path: Path, pricing:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Build JSON artifacts for the bench dashboard.")
-    p.add_argument("--dataset", default=DEFAULT_DATASET, help="Golden dataset JSONL")
-    p.add_argument("--pricing", default=DEFAULT_PRICING, help="Pricing JSON for cost recomputation")
-    p.add_argument("--results-glob", default=DEFAULT_RESULTS_GLOB, help="Glob for results JSONL runs")
-    p.add_argument("--out-dir", default=DEFAULT_OUT_DIR, help="Output dir for reports JSON")
-    p.add_argument("--index", default=DEFAULT_INDEX, help="Index JSON path (run list)")
-    p.add_argument("--latest", default=DEFAULT_LATEST, help="Latest run JSON path")
+    p.add_argument("--dataset", default=repo_rel(DEFAULT_DATASET), help="Golden dataset JSONL")
+    p.add_argument("--pricing", default=repo_rel(DEFAULT_PRICING), help="Pricing JSON for cost recomputation")
+    p.add_argument("--results-glob", default=repo_rel(Path(DEFAULT_RESULTS_GLOB)), help="Glob for results JSONL runs")
+    p.add_argument("--out-dir", default=repo_rel(DEFAULT_OUT_DIR), help="Output dir for reports JSON")
+    p.add_argument("--index", default=repo_rel(DEFAULT_INDEX), help="Index JSON path (run list)")
+    p.add_argument("--latest", default=repo_rel(DEFAULT_LATEST), help="Latest run JSON path")
     p.add_argument("--max-runs", type=int, default=200, help="Max runs to include in the index")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    dataset_path = Path(args.dataset)
-    pricing_path = Path(args.pricing)
-    out_dir = Path(args.out_dir)
+    dataset_path = resolve_repo_path(args.dataset)
+    pricing_path = resolve_repo_path(args.pricing)
+    out_dir = resolve_repo_path(args.out_dir)
+    index_path = resolve_repo_path(args.index)
+    latest_path = resolve_repo_path(args.latest)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     dataset = read_jsonl(dataset_path)
     pricing = load_pricing(pricing_path)
 
-    result_files = [Path(p) for p in glob.glob(args.results_glob)]
+    result_files = [Path(p) for p in glob.glob(str(resolve_repo_path(args.results_glob)))]
     result_files = [p for p in result_files if p.is_file()]
     result_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     if args.max_runs and args.max_runs > 0:
@@ -290,7 +292,7 @@ def main() -> None:
     latest_time: Optional[dt.datetime] = None
 
     for results_path in result_files:
-        report = build_run_report(dataset, results_path, pricing)
+        report = build_run_report(dataset, dataset_path, results_path, pricing)
         run_id = str((report.get("summary") or {}).get("run_id") or results_path.stem)
         started_at = str((report.get("summary") or {}).get("started_at") or "")
 
@@ -307,8 +309,8 @@ def main() -> None:
             {
                 "run_id": run_id,
                 "started_at": started_at,
-                "results_path": str(results_path),
-                "report_path": str(report_path),
+                "results_path": repo_rel(results_path),
+                "report_path": repo_rel(report_path),
                 "pass_rate": s.get("pass_rate"),
                 "pass": s.get("pass"),
                 "fail": s.get("fail"),
@@ -324,7 +326,7 @@ def main() -> None:
     idx = {
         "version": 1,
         "generated_at": utc_now_iso(),
-        "dataset": str(dataset_path),
+        "dataset": repo_rel(dataset_path),
         "results_glob": args.results_glob,
         "runs": sorted(
             runs_index,
@@ -333,16 +335,14 @@ def main() -> None:
         ),
     }
 
-    index_path = Path(args.index)
     index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text(json.dumps(idx, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     if latest_report is not None:
-        latest_path = Path(args.latest)
         latest_path.parent.mkdir(parents=True, exist_ok=True)
         latest_path.write_text(json.dumps(latest_report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    print(f"wrote {index_path} runs={len(runs_index)} out_dir={out_dir}")
+    print(f"wrote {repo_rel(index_path)} runs={len(runs_index)} out_dir={repo_rel(out_dir)}")
 
 
 if __name__ == "__main__":

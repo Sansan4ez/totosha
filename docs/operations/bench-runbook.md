@@ -6,8 +6,8 @@ Purpose
 
 This document explains how to:
 
-- run the bench runner (`scripts/bench_run.py`) against Core Agent;
-- evaluate results deterministically (`scripts/bench_eval.py`) (see also `docs/operations/bench-eval.md`);
+- run the bench runner (`bench/bench_run.py`) against Core Agent;
+- evaluate results deterministically (`bench/bench_eval.py`) (see also `docs/operations/bench-eval.md`);
 - build/open a local dashboard for results exploration (`docs/operations/bench-dashboard.md`);
 - configure pricing (`bench/pricing.json`) so results include `estimated_cost_usd`;
 - correlate failures with observability using `request_id`.
@@ -31,7 +31,7 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 2) Run a small subset (calls Core inside the container, no host port required):
 
 ```bash
-python3 scripts/bench_run.py --docker-exec --limit 5
+python3 bench/bench_run.py --docker-exec --limit 5
 ```
 
 This writes `bench/results/<run_id>.jsonl`.
@@ -39,7 +39,7 @@ This writes `bench/results/<run_id>.jsonl`.
 3) Evaluate:
 
 ```bash
-python3 scripts/bench_eval.py --results bench/results/<run_id>.jsonl
+python3 bench/bench_eval.py --results bench/results/<run_id>.jsonl
 ```
 
 Eval runbook: `docs/operations/bench-eval.md`.
@@ -73,7 +73,7 @@ Runner: How to Run
 Core port is not exposed in default `docker-compose.yml`. Use docker exec mode:
 
 ```bash
-python3 scripts/bench_run.py --docker-exec
+python3 bench/bench_run.py --docker-exec
 ```
 
 Useful flags:
@@ -89,7 +89,7 @@ Useful flags:
 If Core is bound to host (for example via `docker-compose.observability.yml`):
 
 ```bash
-python3 scripts/bench_run.py --core-url http://127.0.0.1:4000
+python3 bench/bench_run.py --core-url http://127.0.0.1:4000
 ```
 
 Access Control Notes
@@ -115,7 +115,7 @@ If you see `status=access_denied` in results:
 docker exec core sh -lc "curl -sS http://localhost:4000/api/admin/access"
 
 # force runner to use that id
-python3 scripts/bench_run.py --docker-exec --user-id <admin_id> --chat-id <admin_id>
+python3 bench/bench_run.py --docker-exec --user-id <admin_id> --chat-id <admin_id>
 ```
 
 Pricing: How to Add Prices
@@ -157,7 +157,7 @@ Notes:
 - if provider returns `usage.prompt_tokens_details.cached_tokens`, runner prices those tokens with `cached_input_per_1m_usd`;
 - if cached token details are absent, runner treats all prompt tokens as regular input;
 - runner still understands legacy `*_per_1k_usd` fields and converts them automatically;
-- `bench_run.py` writes `estimated_cost_usd` into results JSONL at run time, but `bench_eval.py` and `bench_dashboard_build.py` recompute cost from current `bench/pricing.json` when `meta.llm_usage` is present, so pricing fixes apply to old runs without rerunning the agent;
+- `bench/bench_run.py` writes `estimated_cost_usd` into results JSONL at run time, but `bench/bench_eval.py` and `bench/bench_dashboard_build.py` recompute cost from current `bench/pricing.json` when `meta.llm_usage` is present, so pricing fixes apply to old runs without rerunning the agent;
 - `estimated_cost_usd` is only computed when Core returns token usage in `meta.llm_usage`.
 - some OpenAI-compatible backends may omit `usage`; then cost stays `null` even if pricing is configured.
 
@@ -190,7 +190,7 @@ For deeper guidance on adding/tuning checks and generating reports, see `docs/op
 Observability: Debugging Failures
 ---------------------------------
 
-When a case fails, `bench_eval.py` prints `request_id`.
+When a case fails, `bench/bench_eval.py` prints `request_id`.
 
 Recommended workflow:
 
@@ -236,13 +236,13 @@ PY
 2. Run the subset against `core`:
 
 ```bash
-python3 scripts/bench_run.py --docker-exec --dataset "$SMOKE_DATASET" --timeout-s 180
+python3 bench/bench_run.py --docker-exec --dataset "$SMOKE_DATASET" --timeout-s 180
 ```
 
 3. Evaluate and summarize latency:
 
 ```bash
-python3 scripts/bench_eval.py --dataset "$SMOKE_DATASET" --results bench/results/<run_id>.jsonl
+python3 bench/bench_eval.py --dataset "$SMOKE_DATASET" --results bench/results/<run_id>.jsonl
 python3 - <<'PY'
 import json, statistics
 from pathlib import Path
@@ -282,6 +282,6 @@ Baseline used for comparison:
 Operator sign-off checklist:
 
 1. Save the printed `SMOKE_DATASET` path and `run_id` from the run output.
-2. Reuse the same `SMOKE_DATASET` in both `bench_run.py` and `bench_eval.py`.
+2. Reuse the same `SMOKE_DATASET` in both `bench/bench_run.py` and `bench/bench_eval.py`.
 3. Confirm that any failed cases are not explained by upstream LLM `429` / `usage_limit_reached` / `model_cooldown`.
 4. Attach the eval summary plus one Victoria screenshot or query result showing the slowest `request_id`.

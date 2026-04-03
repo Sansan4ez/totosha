@@ -3,8 +3,8 @@
 Bench runner: sends golden dataset questions to Core agent and writes JSONL results.
 
 Usage examples:
-  python3 scripts/bench_run.py --dataset bench/golden/v1.jsonl --out bench/results/run.jsonl
-  python3 scripts/bench_run.py --docker-exec --limit 5
+  python3 bench/bench_run.py --dataset bench/golden/v1.jsonl --out bench/results/run.jsonl
+  python3 bench/bench_run.py --docker-exec --limit 5
 """
 
 from __future__ import annotations
@@ -21,12 +21,13 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
-from bench_lib import estimate_cost_usd, load_pricing
+from bench_lib import BENCH_DIR, estimate_cost_usd, load_pricing, repo_rel, resolve_repo_path
 
 
 DEFAULT_CORE_URL = "http://127.0.0.1:4000"
-DEFAULT_DATASET = "bench/golden/v1.jsonl"
-DEFAULT_PRICING = "bench/pricing.json"
+DEFAULT_DATASET = BENCH_DIR / "golden" / "v1.jsonl"
+DEFAULT_PRICING = BENCH_DIR / "pricing.json"
+DEFAULT_RESULTS_DIR = BENCH_DIR / "results"
 
 
 def utc_now_iso() -> str:
@@ -133,9 +134,9 @@ def docker_exec_json_get(path: str, request_id: str, timeout_s: float) -> tuple[
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run bench dataset against Core agent and write JSONL results.")
-    parser.add_argument("--dataset", default=DEFAULT_DATASET, help="Path to golden dataset JSONL")
+    parser.add_argument("--dataset", default=repo_rel(DEFAULT_DATASET), help="Path to golden dataset JSONL")
     parser.add_argument("--out", default="", help="Output JSONL path (default: bench/results/<run_id>.jsonl)")
-    parser.add_argument("--pricing", default=DEFAULT_PRICING, help="Pricing JSON (default: bench/pricing.json)")
+    parser.add_argument("--pricing", default=repo_rel(DEFAULT_PRICING), help="Pricing JSON (default: bench/pricing.json)")
     parser.add_argument("--core-url", default=DEFAULT_CORE_URL, help="Core URL when ports are exposed")
     parser.add_argument("--user-id", type=int, default=None, help="user_id for /api/chat (default: auto)")
     parser.add_argument("--chat-id", type=int, default=None, help="chat_id for /api/chat (default: auto)")
@@ -149,10 +150,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    dataset_path = Path(args.dataset)
-    pricing_path = Path(args.pricing)
+    dataset_path = resolve_repo_path(args.dataset)
+    pricing_path = resolve_repo_path(args.pricing)
     run_id = make_run_id()
-    out_path = Path(args.out) if args.out else Path("bench/results") / f"{run_id}.jsonl"
+    out_path = resolve_repo_path(args.out) if args.out else DEFAULT_RESULTS_DIR / f"{run_id}.jsonl"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     pricing = load_pricing(pricing_path)
@@ -207,7 +208,18 @@ def main() -> None:
     if user_id is None or chat_id is None:
         raise SystemExit("Provide --user-id/--chat-id or set ADMIN_USER_ID (or use --docker-exec for auto-detect).")
 
-    print(f"run_id={run_id} cases={len(cases)} out={out_path} user_id={user_id} chat_id={chat_id} docker_exec={args.docker_exec}")
+    print(
+        " ".join(
+            [
+                f"run_id={run_id}",
+                f"cases={len(cases)}",
+                f"out={repo_rel(out_path)}",
+                f"user_id={user_id}",
+                f"chat_id={chat_id}",
+                f"docker_exec={args.docker_exec}",
+            ]
+        )
+    )
 
     with out_path.open("w", encoding="utf-8") as f:
         for case in cases:

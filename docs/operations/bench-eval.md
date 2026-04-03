@@ -4,7 +4,7 @@ Bench Eval (Golden Dataset Scoring)
 Purpose
 -------
 
-This document explains how to evaluate bench runs produced by `scripts/bench_run.py` against the golden dataset (`bench/golden/v1.jsonl`), how checks work, and how to tune cases to stay deterministic and maintainable.
+This document explains how to evaluate bench runs produced by `bench/bench_run.py` against the golden dataset (`bench/golden/v1.jsonl`), how checks work, and how to tune cases to stay deterministic and maintainable.
 
 Prereqs
 -------
@@ -18,13 +18,13 @@ Run
 Print summary (JSON to stdout) and list failures:
 
 ```bash
-python3 scripts/bench_eval.py --results bench/results/<run_id>.jsonl
+python3 bench/bench_eval.py --results bench/results/<run_id>.jsonl
 ```
 
 Write a Markdown report and a JSON summary:
 
 ```bash
-python3 scripts/bench_eval.py \
+python3 bench/bench_eval.py \
   --results bench/results/<run_id>.jsonl \
   --report bench/reports/<run_id>.md \
   --json-out bench/reports/<run_id>.json
@@ -38,7 +38,7 @@ Useful flags:
 Outputs
 -------
 
-`bench_eval.py` prints a summary JSON with:
+`bench/bench_eval.py` prints a summary JSON with:
 
 - `pass_rate`, `pass`, `fail`, `missing_results`, `non_ok`
 - `duration_ms_avg`, `duration_ms_p50`, `duration_ms_p95`

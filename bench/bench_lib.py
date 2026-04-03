@@ -1,4 +1,4 @@
-"""Shared utilities for bench runner/eval/dashboard scripts (stdlib only)."""
+"""Shared utilities for the bench module (stdlib only)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,22 @@ from typing import Any, Optional
 
 
 NUMBER_RE = re.compile(r"(?<!\d)\d+(?:[\.,]\d+)?")
+BENCH_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BENCH_DIR.parent
+
+
+def resolve_repo_path(raw: str) -> Path:
+    path = Path(raw).expanduser()
+    if path.is_absolute():
+        return path
+    return (REPO_ROOT / path).resolve()
+
+
+def repo_rel(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except Exception:
+        return str(path)
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:

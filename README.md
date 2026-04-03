@@ -195,16 +195,17 @@ python scripts/e2e_test.py --verbose
 Run a deterministic quality check suite based on `docs/questions.md`:
 
 ```bash
-python3 scripts/bench_run.py --docker-exec --limit 5
-python3 scripts/bench_eval.py --results bench/results/<run_id>.jsonl
+python3 bench/bench_run.py --docker-exec --limit 5
+python3 bench/bench_eval.py --results bench/results/<run_id>.jsonl
 ```
 
+Module overview: `bench/README.md`.
 Runbook: `docs/operations/bench-runbook.md` (runner) and `docs/operations/bench-eval.md` (eval).
 
 Local dashboard:
 
 ```bash
-python3 scripts/bench_dashboard_build.py
+python3 bench/bench_dashboard_build.py
 python3 -m http.server 8000
 # open http://127.0.0.1:8000/bench/dashboard/
 ```

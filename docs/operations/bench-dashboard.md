@@ -27,7 +27,7 @@ The dashboard expects JSON reports in `bench/reports/`:
 Generate them from `bench/results/*.jsonl`:
 
 ```bash
-python3 scripts/bench_dashboard_build.py
+python3 bench/bench_dashboard_build.py
 ```
 
 Run the UI
@@ -49,4 +49,4 @@ Notes
 -----
 
 - Make sure you open the dashboard URL with trailing slash (`.../bench/dashboard/`). Some setups treat `.../bench/dashboard` as a file path, which breaks relative fetch paths.
-- The dashboard reads files from the same host it is served from. If you access it via SSH tunnel, run `python3 scripts/bench_dashboard_build.py` and `python3 -m http.server` on the remote machine (where `bench/reports/` exists), then forward that port to your local browser.
+- The dashboard reads files from the same host it is served from. If you access it via SSH tunnel, run `python3 bench/bench_dashboard_build.py` and `python3 -m http.server` on the remote machine (where `bench/reports/` exists), then forward that port to your local browser.

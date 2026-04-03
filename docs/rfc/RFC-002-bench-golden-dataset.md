@@ -31,10 +31,10 @@ Goals
   - `golden.answer` и/или `golden.fields` (структурная истина),
   - `golden.checks[]` (детерминированные проверки: contains/regex/number),
   - `origin` (ссылка на исходную формулировку из `docs/questions.md`) и `evidence` (файл/URL/указание источника).
-- Добавить runner-скрипт `scripts/bench_run.py`:
+- Добавить runner-скрипт `bench/bench_run.py`:
   - отправляет вопросы в Core Agent (`POST /api/chat`),
   - пишет `bench/results/*.jsonl` с `question`, `answer`, `status`, `duration_ms`, `tokens`, `estimated_cost_usd`, `request_id`.
-- Добавить eval-скрипт `scripts/bench_eval.py`:
+- Добавить eval-скрипт `bench/bench_eval.py`:
   - читает golden dataset и результаты,
   - считает pass/fail по `golden.checks`,
   - печатает summary и (опционально) пишет `bench/reports/*.md|.json`.
@@ -75,14 +75,14 @@ High-level behavior
 -------------------
 
 1) Оператор/CI запускает стек (опционально с observability overlay).
-2) `scripts/bench_run.py`:
+2) `bench/bench_run.py`:
    - читает `bench/golden/v1.jsonl`,
    - для каждого кейса:
      - генерирует `request_id = bench/<run_id>/<case_id>`,
      - очищает сессию (`/api/clear`),
      - вызывает `/api/chat` с `return_meta=true`,
      - пишет строку результата в `bench/results/<run_id>.jsonl`.
-3) `scripts/bench_eval.py`:
+3) `bench/bench_eval.py`:
    - читает golden dataset и results jsonl,
    - оценивает каждый кейс по `golden.checks`,
    - печатает summary (pass rate, latency, tokens, cost) и список фейлов с `request_id`.
@@ -169,7 +169,7 @@ Runner обязан писать строку результата даже пр
 Bench runner
 ------------
 
-Скрипт: `scripts/bench_run.py`.
+Скрипт: `bench/bench_run.py`.
 
 Аргументы v1:
 - `--dataset bench/golden/v1.jsonl`
@@ -187,7 +187,7 @@ Bench runner
 Bench eval
 ----------
 
-Скрипт: `scripts/bench_eval.py`.
+Скрипт: `bench/bench_eval.py`.
 
 Аргументы v1:
 - `--dataset bench/golden/v1.jsonl`
@@ -248,8 +248,8 @@ Implementation outline
    - накопление `llm_usage` по всем `call_llm` внутри `run_agent`,
    - измерение времени LLM/tool,
    - список `tools_used`.
-4. Добавить `scripts/bench_run.py` (jsonl writer).
-5. Добавить `scripts/bench_eval.py` (checks + summary).
+4. Добавить `bench/bench_run.py` (jsonl writer).
+5. Добавить `bench/bench_eval.py` (checks + summary).
 6. Обновить observability docs/harness при необходимости (если добавятся новые метрики).
 
 Testing approach
@@ -260,14 +260,14 @@ Testing approach
   - проверки `contains/regex/number` на наборе фикстур.
 - Integration (manual):
   - поднять compose (желательно с `docker-compose.observability.yml`),
-  - прогнать `scripts/bench_run.py --limit 5`,
-  - прогнать `scripts/bench_eval.py`,
+  - прогнать `bench/bench_run.py --limit 5`,
+  - прогнать `bench/bench_eval.py`,
   - проверить, что `request_id` виден в core/proxy logs и trace цепочка строится.
 
 Acceptance criteria
 -------------------
 
 - В репозитории есть `bench/golden/v1.jsonl` с детерминированными кейсами, связанными с `docs/questions.md`.
-- `scripts/bench_run.py` создаёт jsonl результатов, где для каждого кейса есть `duration_ms`, `request_id` и (если backend даёт usage) `tokens`.
-- `scripts/bench_eval.py` детерминированно оценивает результаты и печатает summary + failing cases.
+- `bench/bench_run.py` создаёт jsonl результатов, где для каждого кейса есть `duration_ms`, `request_id` и (если backend даёт usage) `tokens`.
+- `bench/bench_eval.py` детерминированно оценивает результаты и печатает summary + failing cases.
 - При включённом observability overlay failing case можно найти по `request_id` в VictoriaLogs и открыть связанный trace в VictoriaTraces.

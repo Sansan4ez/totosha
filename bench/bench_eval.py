@@ -3,30 +3,29 @@
 Bench evaluator: scores results JSONL against golden dataset checks.
 
 Usage:
-  python3 scripts/bench_eval.py --results bench/results/<run_id>.jsonl
-  python3 scripts/bench_eval.py --results bench/results/<run_id>.jsonl --report bench/reports/<run_id>.md
+  python3 bench/bench_eval.py --results bench/results/<run_id>.jsonl
+  python3 bench/bench_eval.py --results bench/results/<run_id>.jsonl --report bench/reports/<run_id>.md
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import statistics
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from bench_lib import estimate_cost_usd, eval_checks, load_pricing, percentile, read_jsonl
+from bench_lib import BENCH_DIR, estimate_cost_usd, eval_checks, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
 
-DEFAULT_DATASET = "bench/golden/v1.jsonl"
-DEFAULT_PRICING = "bench/pricing.json"
+DEFAULT_DATASET = BENCH_DIR / "golden" / "v1.jsonl"
+DEFAULT_PRICING = BENCH_DIR / "pricing.json"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate bench results against golden dataset.")
-    parser.add_argument("--dataset", default=DEFAULT_DATASET, help="Golden dataset JSONL")
-    parser.add_argument("--pricing", default=DEFAULT_PRICING, help="Pricing JSON for cost recomputation")
-    parser.add_argument("--results", required=True, help="Results JSONL from scripts/bench_run.py")
+    parser.add_argument("--dataset", default=repo_rel(DEFAULT_DATASET), help="Golden dataset JSONL")
+    parser.add_argument("--pricing", default=repo_rel(DEFAULT_PRICING), help="Pricing JSON for cost recomputation")
+    parser.add_argument("--results", required=True, help="Results JSONL from bench/bench_run.py")
     parser.add_argument("--report", default="", help="Optional markdown report path")
     parser.add_argument("--json-out", default="", help="Optional JSON summary path")
     parser.add_argument("--show-fails", type=int, default=20, help="How many failed cases to print")
@@ -35,11 +34,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    dataset_path = Path(args.dataset)
-    pricing_path = Path(args.pricing)
-    results_path = Path(args.results)
-    report_path = Path(args.report) if args.report else None
-    json_out_path = Path(args.json_out) if args.json_out else None
+    dataset_path = resolve_repo_path(args.dataset)
+    pricing_path = resolve_repo_path(args.pricing)
+    results_path = resolve_repo_path(args.results)
+    report_path = resolve_repo_path(args.report) if args.report else None
+    json_out_path = resolve_repo_path(args.json_out) if args.json_out else None
 
     dataset = read_jsonl(dataset_path)
     results = read_jsonl(results_path)
@@ -126,8 +125,8 @@ def main() -> None:
     pass_rate = (pass_count / scored) if scored else 0.0
 
     summary = {
-        "dataset": str(dataset_path),
-        "results": str(results_path),
+        "dataset": repo_rel(dataset_path),
+        "results": repo_rel(results_path),
         "total_cases": total,
         "results_found": scored,
         "missing_results": missing_count,
@@ -164,8 +163,8 @@ def main() -> None:
         report_path.parent.mkdir(parents=True, exist_ok=True)
         lines: list[str] = []
         lines.append(f"# Bench report\n")
-        lines.append(f"- Dataset: `{dataset_path}`")
-        lines.append(f"- Results: `{results_path}`")
+        lines.append(f"- Dataset: `{repo_rel(dataset_path)}`")
+        lines.append(f"- Results: `{repo_rel(results_path)}`")
         lines.append(f"- Pass rate: **{summary['pass_rate']}** ({pass_count}/{scored})")
         if summary["duration_ms_avg"] is not None:
             lines.append(f"- Latency avg/p50/p95 (ms): {summary['duration_ms_avg']} / {summary['duration_ms_p50']} / {summary['duration_ms_p95']}")

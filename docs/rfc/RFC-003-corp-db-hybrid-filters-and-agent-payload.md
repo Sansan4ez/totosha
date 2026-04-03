@@ -366,7 +366,7 @@ Testing approach
   - `lamp_filters` и `hybrid_search + filters` используют одинаковую фактическую сериализацию.
 - Bench:
   - новый набор кейсов в `bench/golden/v1.jsonl`;
-  - прогоны через `scripts/bench_run.py` и `scripts/bench_eval.py`.
+  - прогоны через `bench/bench_run.py` и `bench/bench_eval.py`.
 
 Acceptance criteria
 -------------------
@@ -380,4 +380,3 @@ Acceptance criteria
 - `corp_search_docs` индексирует те же характеристики, которые агент ожидает увидеть в ответе.
 - Новые bench-кейсы по характеристикам проходят без ручного prompt workaround.
 - Медианная latency для catalog-вопросов не деградирует существенно относительно текущего пути; допустимое отклонение для v1: не более `+20%` на p50 и не более `+30%` на p95 по подмножеству catalog-кейсов.
-
