@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 
 NUMBER_RE = re.compile(r"(?<!\d)\d+(?:[\.,]\d+)?")
+DASH_VARIANTS_RE = re.compile(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]")
 BENCH_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BENCH_DIR.parent
 
@@ -137,7 +138,8 @@ def estimate_cost_usd(meta: Optional[dict[str, Any]], pricing: dict[str, Any]) -
 
 
 def norm_text(text: str) -> str:
-    return " ".join((text or "").lower().split())
+    normalized = DASH_VARIANTS_RE.sub("-", text or "")
+    return " ".join(normalized.lower().split())
 
 
 def extract_numbers(text: str) -> list[float]:
