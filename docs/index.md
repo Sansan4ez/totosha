@@ -16,6 +16,7 @@ Indexes
 
 - Architecture -> `docs/architecture/index.md`
 - Operations -> `docs/operations/index.md`
+- RFCs -> `docs/rfc/index.md`
 - Requirements -> `docs/requirements/index.md`
 - Plans -> `docs/plans/index.md`
 - Generated -> `docs/generated/index.md`
