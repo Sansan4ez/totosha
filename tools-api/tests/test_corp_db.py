@@ -324,6 +324,193 @@ class EmptyLampPortfolioConn:
         return []
 
 
+class ApplicationRecommendationConn:
+    def __init__(self):
+        self.last_leaf_terms: list[str] = []
+
+    @staticmethod
+    def _sphere_rows():
+        return [
+            {"sphere_id": 2, "name": "Тяжелые условия эксплуатации", "url": "https://ladzavod.ru/catalog/tyazhelye-usloviya-ekspluatacii"},
+            {"sphere_id": 3, "name": "Складские помещения", "url": "https://ladzavod.ru/catalog/skladskie-pomeshcheniya"},
+            {"sphere_id": 6, "name": "Спортивное и освещение высокой мощности", "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie"},
+            {"sphere_id": 7, "name": "Наружное, уличное и дорожное освещение", "url": "https://ladzavod.ru/catalog/ulichnoe-i-dorozhnoe"},
+            {"sphere_id": 8, "name": "Офисное, торговое, ЖКХ и АБК освещение", "url": "https://ladzavod.ru/catalog/ofisnoe-torgovoe-i-zhkh"},
+            {"sphere_id": 11, "name": "Светильники специального назначения", "url": "https://ladzavod.ru/catalog/svetilniki-specialnogo-naznacheniya"},
+        ]
+
+    @staticmethod
+    def _reference_categories():
+        return [
+            {"sphere_id": 6, "sphere_name": "Спортивное и освещение высокой мощности", "category_id": 169, "category_name": "LAD LED R500 SPORT", "url": "https://ladzavod.ru/catalog/sport", "image_url": "https://ladzavod.ru/img/r500-sport.png"},
+            {"sphere_id": 6, "sphere_name": "Спортивное и освещение высокой мощности", "category_id": 37, "category_name": "LAD LED R500", "url": "https://ladzavod.ru/catalog/r500", "image_url": "https://ladzavod.ru/img/r500-parent.png"},
+            {"sphere_id": 3, "sphere_name": "Складские помещения", "category_id": 39, "category_name": "LAD LED LINE-OZ", "url": "https://ladzavod.ru/catalog/line-oz", "image_url": "https://ladzavod.ru/img/line-oz.png"},
+            {"sphere_id": 3, "sphere_name": "Складские помещения", "category_id": 37, "category_name": "LAD LED R500", "url": "https://ladzavod.ru/catalog/r500", "image_url": "https://ladzavod.ru/img/r500-parent.png"},
+            {"sphere_id": 8, "sphere_name": "Офисное, торговое, ЖКХ и АБК освещение", "category_id": 14, "category_name": "NL Nova", "url": "https://ladzavod.ru/catalog/nl-nova", "image_url": "https://ladzavod.ru/img/nova.png"},
+            {"sphere_id": 8, "sphere_name": "Офисное, торговое, ЖКХ и АБК освещение", "category_id": 170, "category_name": "NL VEGA", "url": "https://ladzavod.ru/catalog/nl-vega", "image_url": "https://ladzavod.ru/img/vega.png"},
+            {"sphere_id": 7, "sphere_name": "Наружное, уличное и дорожное освещение", "category_id": 79, "category_name": "LAD LED R500 G", "url": "https://ladzavod.ru/catalog/r500-g", "image_url": "https://ladzavod.ru/img/r500-g.png"},
+            {"sphere_id": 7, "sphere_name": "Наружное, уличное и дорожное освещение", "category_id": 161, "category_name": "Консольные светильники", "url": "https://ladzavod.ru/catalog/konsolnye-svetilniki", "image_url": "https://ladzavod.ru/img/console.png"},
+            {"sphere_id": 11, "sphere_name": "Светильники специального назначения", "category_id": 166, "category_name": "Специальное освещение", "url": "https://ladzavod.ru/catalog/specialnoe-osveshchenie", "image_url": "https://ladzavod.ru/img/special.png"},
+            {"sphere_id": 11, "sphere_name": "Светильники специального назначения", "category_id": 164, "category_name": "АЗС", "url": "https://ladzavod.ru/catalog/azs", "image_url": "https://ladzavod.ru/img/azs.png"},
+        ]
+
+    @staticmethod
+    def _portfolio_rows():
+        return [
+            {"portfolio_id": 501, "sphere_id": 6, "sphere_name": "Спортивное и освещение высокой мощности", "name": "Освещение стадиона", "group_name": "Спорт", "url": "https://ladzavod.ru/portfolio/stadium", "image_url": "https://ladzavod.ru/img/stadium.png"},
+            {"portfolio_id": 502, "sphere_id": 3, "sphere_name": "Складские помещения", "name": "Освещение логистического комплекса", "group_name": "Логистика", "url": "https://ladzavod.ru/portfolio/logistics", "image_url": "https://ladzavod.ru/img/logistics.png"},
+            {"portfolio_id": 503, "sphere_id": 7, "sphere_name": "Наружное, уличное и дорожное освещение", "name": "Освещение аэропортового перрона", "group_name": "Транспорт", "url": "https://ladzavod.ru/portfolio/apron", "image_url": "https://ladzavod.ru/img/apron.png"},
+            {"portfolio_id": 504, "sphere_id": 8, "sphere_name": "Офисное, торговое, ЖКХ и АБК освещение", "name": "Освещение административного корпуса", "group_name": "АБК", "url": "https://ladzavod.ru/portfolio/office", "image_url": "https://ladzavod.ru/img/office.png"},
+            {"portfolio_id": 505, "sphere_id": 11, "sphere_name": "Светильники специального назначения", "name": "Освещение АЗС", "group_name": "АЗС", "url": "https://ladzavod.ru/portfolio/azs", "image_url": "https://ladzavod.ru/img/azs-portfolio.png"},
+        ]
+
+    @staticmethod
+    def _leaf_categories(term: str):
+        mapping = {
+            "LAD LED R500": [
+                {"category_id": 68, "category_name": "LAD LED R500-9 LZD", "lamp_count": 4, "url": "https://ladzavod.ru/catalog/r500-9-lzd", "image_url": "https://ladzavod.ru/img/r500-9.png"},
+                {"category_id": 69, "category_name": "LAD LED R500-12 LZD", "lamp_count": 3, "url": "https://ladzavod.ru/catalog/r500-12-lzd", "image_url": "https://ladzavod.ru/img/r500-12.png"},
+            ],
+            "LAD LED R700": [
+                {"category_id": 87, "category_name": "LAD LED R700-10 ST", "lamp_count": 2, "url": "https://ladzavod.ru/catalog/r700-10-st", "image_url": "https://ladzavod.ru/img/r700-10.png"},
+            ],
+            "LAD LED LINE-OZ": [
+                {"category_id": 39, "category_name": "LAD LED LINE-OZ", "lamp_count": 5, "url": "https://ladzavod.ru/catalog/lad-led-line-oz", "image_url": "https://ladzavod.ru/img/line-oz.png"},
+            ],
+            "NL Nova": [
+                {"category_id": 14, "category_name": "NL Nova120", "lamp_count": 3, "url": "https://ladzavod.ru/catalog/nl-nova120", "image_url": "https://ladzavod.ru/img/nova120.png"},
+            ],
+            "NL VEGA": [
+                {"category_id": 170, "category_name": "NL VEGA", "lamp_count": 2, "url": "https://ladzavod.ru/catalog/nl-vega", "image_url": "https://ladzavod.ru/img/vega.png"},
+            ],
+            "LAD LED R500 G": [
+                {"category_id": 79, "category_name": "LAD LED R500 G", "lamp_count": 2, "url": "https://ladzavod.ru/catalog/lad-led-r500-g", "image_url": "https://ladzavod.ru/img/r500-g.png"},
+            ],
+            "Специальное освещение": [
+                {"category_id": 166, "category_name": "Специальное освещение", "lamp_count": 2, "url": "https://ladzavod.ru/catalog/specialnoe-osveshchenie", "image_url": "https://ladzavod.ru/img/special.png"},
+            ],
+            "АЗС": [
+                {"category_id": 164, "category_name": "АЗС", "lamp_count": 1, "url": "https://ladzavod.ru/catalog/azs", "image_url": "https://ladzavod.ru/img/azs.png"},
+            ],
+            "LAD LED R320 Ex": [
+                {"category_id": 18, "category_name": "LAD LED R320 Ex", "lamp_count": 1, "url": "https://ladzavod.ru/catalog/r320-ex", "image_url": "https://ladzavod.ru/img/r320-ex.png"},
+            ],
+            "LAD LED R500 2Ex": [
+                {"category_id": 119, "category_name": "LAD LED R500 2Ex", "lamp_count": 1, "url": "https://ladzavod.ru/catalog/lad-led-r500-2ex", "image_url": "https://ladzavod.ru/img/r500-2ex.png"},
+            ],
+        }
+        return mapping.get(term, [])
+
+    @staticmethod
+    def _lamp_row(
+        lamp_id: int,
+        *,
+        name: str,
+        category_id: int,
+        category_name: str,
+        power_w: int,
+        luminous_flux_lm: int,
+        ip: str,
+        mounting_type: str,
+        beam_pattern: str,
+        image_url: str,
+        url: str,
+        is_explosion_protected: bool = False,
+        climate_execution: str = "УХЛ1",
+        cri_ra: int = 70,
+        temp_min_c: int = -60,
+        preview: str | None = None,
+    ) -> dict:
+        return {
+            "lamp_id": lamp_id,
+            "name": name,
+            "category_id": category_id,
+            "category_name": category_name,
+            "url": url,
+            "image_url": image_url,
+            "power_w": power_w,
+            "luminous_flux_lm": luminous_flux_lm,
+            "beam_pattern": beam_pattern,
+            "mounting_type": mounting_type,
+            "explosion_protection_marking": "1Ex mb IIC T6 Gb X" if is_explosion_protected else None,
+            "is_explosion_protected": is_explosion_protected,
+            "color_temperature_k": 5000,
+            "color_rendering_index_ra": cri_ra,
+            "power_factor_operator": ">=",
+            "power_factor_min": 0.95,
+            "climate_execution": climate_execution,
+            "operating_temperature_range_raw": f"{temp_min_c}...+50",
+            "operating_temperature_min_c": temp_min_c,
+            "operating_temperature_max_c": 50,
+            "ingress_protection": ip,
+            "electrical_protection_class": "I",
+            "supply_voltage_raw": "AC230",
+            "supply_voltage_kind": "AC",
+            "supply_voltage_nominal_v": 230,
+            "supply_voltage_min_v": 180,
+            "supply_voltage_max_v": 260,
+            "supply_voltage_tolerance_minus_pct": 20.0,
+            "supply_voltage_tolerance_plus_pct": 15.0,
+            "dimensions_raw": "500 x 300 x 200",
+            "length_mm": 500.0,
+            "width_mm": 300.0,
+            "height_mm": 200.0,
+            "warranty_years": 5,
+            "weight_kg": 8.4,
+            "preview": preview or f"{name} | {power_w} Вт | {luminous_flux_lm} лм | {ip}",
+            "agent_summary": f"Светильник {name}. Мощность {power_w} Вт. Световой поток {luminous_flux_lm} лм.",
+            "agent_facts": {
+                "power_w": {"label": "Мощность", "text": f"{power_w} Вт", "value": power_w, "unit": "Вт"},
+                "beam_pattern": {"label": "Светораспределение", "text": beam_pattern, "value": beam_pattern},
+                "ingress_protection": {"label": "IP", "text": ip, "value": ip},
+            },
+        }
+
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "application_reference_spheres" in sql:
+            return self._sphere_rows()
+        if "application_reference_categories" in sql:
+            return self._reference_categories()
+        if "application_reference_portfolio" in sql:
+            return self._portfolio_rows()
+        if "application_parent_categories" in sql:
+            sphere_id = args[0]
+            return [row for row in self._reference_categories() if row["sphere_id"] == sphere_id]
+        if "application_leaf_categories" in sql:
+            term = args[0]
+            self.last_leaf_terms.append(term)
+            return self._leaf_categories(term)
+        if "application_lamps" in sql:
+            category_ids = set(args[0])
+            rows = []
+            if 68 in category_ids:
+                rows.append(self._lamp_row(2014, name="LAD LED R500-9-30-6-650LZD", category_id=68, category_name="LAD LED R500-9 LZD", power_w=557, luminous_flux_lm=78537, ip="IP65", mounting_type="Лира", beam_pattern="30°", image_url="https://ladzavod.ru/img/r500-9-30.png", url="https://ladzavod.ru/catalog/r500-9-lzd/ladled-r500-9-30-6-650lzd"))
+            if 69 in category_ids:
+                rows.append(self._lamp_row(2016, name="LAD LED R500-12-30-6-850LZD", category_id=69, category_name="LAD LED R500-12 LZD", power_w=709, luminous_flux_lm=97842, ip="IP65", mounting_type="Лира", beam_pattern="30°", image_url="https://ladzavod.ru/img/r500-12-30.png", url="https://ladzavod.ru/catalog/r500-12-lzd/ladled-r500-12-30-6-850lzd"))
+            if 87 in category_ids:
+                rows.append(self._lamp_row(2998, name="LAD LED R700-10 ST", category_id=87, category_name="LAD LED R700-10 ST", power_w=180, luminous_flux_lm=24579, ip="IP67", mounting_type="Лира", beam_pattern="Ш", image_url="https://ladzavod.ru/img/r700-10.png", url="https://ladzavod.ru/catalog/r700-10-st"))
+            if 39 in category_ids:
+                rows.append(self._lamp_row(1302, name="LAD LED LINE-OZ-80", category_id=39, category_name="LAD LED LINE-OZ", power_w=80, luminous_flux_lm=9200, ip="IP65", mounting_type="Подвес", beam_pattern="Опал", image_url="https://ladzavod.ru/img/line-oz-80.png", url="https://ladzavod.ru/catalog/lad-led-line-oz/lad-led-line-oz-80", cri_ra=80, temp_min_c=-65))
+            if 14 in category_ids:
+                rows.append(self._lamp_row(4101, name="NL Nova120", category_id=14, category_name="NL Nova120", power_w=36, luminous_flux_lm=4100, ip="IP40", mounting_type="Потолочное", beam_pattern="Опал", image_url="https://ladzavod.ru/img/nova120.png", url="https://ladzavod.ru/catalog/nl-nova120", cri_ra=80, temp_min_c=-20))
+            if 170 in category_ids:
+                rows.append(self._lamp_row(4102, name="NL VEGA-40", category_id=170, category_name="NL VEGA", power_w=40, luminous_flux_lm=4300, ip="IP40", mounting_type="Потолочное", beam_pattern="Опал", image_url="https://ladzavod.ru/img/vega40.png", url="https://ladzavod.ru/catalog/nl-vega/nl-vega-40", cri_ra=80, temp_min_c=-20))
+            if 79 in category_ids:
+                rows.append(self._lamp_row(5101, name="LAD LED R500 G-120", category_id=79, category_name="LAD LED R500 G", power_w=120, luminous_flux_lm=16500, ip="IP67", mounting_type="Консоль", beam_pattern="Ш", image_url="https://ladzavod.ru/img/r500-g-120.png", url="https://ladzavod.ru/catalog/lad-led-r500-g/r500-g-120"))
+            if 166 in category_ids:
+                rows.append(self._lamp_row(6101, name="LAD LED SPECIAL-80", category_id=166, category_name="Специальное освещение", power_w=80, luminous_flux_lm=10000, ip="IP67", mounting_type="Лира", beam_pattern="Ш", image_url="https://ladzavod.ru/img/special-80.png", url="https://ladzavod.ru/catalog/specialnoe-osveshchenie/special-80", temp_min_c=-40))
+            if 18 in category_ids:
+                rows.append(self._lamp_row(6102, name="LAD LED R320 Ex-50", category_id=18, category_name="LAD LED R320 Ex", power_w=50, luminous_flux_lm=6200, ip="IP67", mounting_type="Кронштейн", beam_pattern="Ш", image_url="https://ladzavod.ru/img/r320-ex-50.png", url="https://ladzavod.ru/catalog/r320-ex/r320-ex-50", is_explosion_protected=True))
+            if 119 in category_ids:
+                rows.append(self._lamp_row(6103, name="LAD LED R500 2Ex-120", category_id=119, category_name="LAD LED R500 2Ex", power_w=120, luminous_flux_lm=15800, ip="IP67", mounting_type="Лира", beam_pattern="60°", image_url="https://ladzavod.ru/img/r500-2ex-120.png", url="https://ladzavod.ru/catalog/lad-led-r500-2ex/r500-2ex-120", is_explosion_protected=True))
+            return rows
+        if "application_portfolio" in sql:
+            sphere_id = args[0]
+            return [row for row in self._portfolio_rows() if row["sphere_id"] == sphere_id]
+        return []
+
+
 class CorpDbRouteTests(unittest.TestCase):
     def test_hybrid_search_route_returns_allowlisted_result(self):
         rows = [
@@ -455,6 +642,144 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["status"], "empty")
         self.assertEqual(payload["filters"]["reason"], "lamp_not_found")
         self.assertEqual(payload["results"], [])
+
+    def test_application_recommendation_resolves_stadium_and_returns_payload(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери освещение для спортивного стадиона"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["kind"], "application_recommendation")
+        self.assertEqual(payload["resolved_application"]["application_key"], "sports_high_power")
+        self.assertEqual(payload["resolved_application"]["resolution_strategy"], "synonym_map")
+        self.assertEqual(payload["categories"][0]["image_url"], "https://ladzavod.ru/img/r500-9.png")
+        self.assertEqual(payload["recommended_lamps"][0]["name"], "LAD LED R500-12-30-6-850LZD")
+        self.assertIn("стадионного света", payload["recommended_lamps"][0]["recommendation_reason"])
+        self.assertEqual(payload["portfolio_examples"][0]["url"], "https://ladzavod.ru/portfolio/stadium")
+        self.assertIn("Уточните высоту установки", payload["follow_up_question"])
+
+    def test_application_recommendation_normalizes_quarry_typo(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери мощный светильник для карьерна"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["resolved_application"]["application_key"], "quarry_heavy_duty")
+        self.assertIn(payload["recommended_lamps"][0]["category_name"], {"LAD LED R700-10 ST", "LAD LED R500-12 LZD", "LAD LED R500-9 LZD"})
+
+    def test_application_recommendation_resolves_airport(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери освещение для аэропортового перрона"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["resolved_application"]["application_key"], "airport_apron")
+        self.assertEqual(payload["portfolio_examples"][0]["name"], "Освещение аэропортового перрона")
+
+    def test_application_recommendation_prefers_warehouse_lamps_for_warehouse(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери освещение для склада"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["resolved_application"]["application_key"], "warehouse")
+        self.assertEqual(payload["recommended_lamps"][0]["category_name"], "LAD LED LINE-OZ")
+
+    def test_application_recommendation_prefers_office_lamps_for_office(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери светильник для офисного кабинета"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["resolved_application"]["application_key"], "office")
+        self.assertIn(payload["recommended_lamps"][0]["category_name"], {"NL Nova120", "NL VEGA"})
+
+    def test_application_recommendation_resolves_high_bay(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери освещение для высоких пролетов склада"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["resolved_application"]["application_key"], "high_bay")
+        self.assertNotIn(payload["recommended_lamps"][0]["category_name"], {"NL Nova120", "NL VEGA"})
+
+    def test_application_recommendation_resolves_aggressive_environment(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери светильник для агрессивной среды"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["resolved_application"]["application_key"], "aggressive_environment")
+        self.assertTrue(payload["recommended_lamps"][0]["url"].startswith("https://ladzavod.ru/catalog/"))
+
+    def test_application_recommendation_returns_ambiguity_payload(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери освещение для склада или офиса"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "needs_clarification")
+        self.assertEqual(payload["resolved_application"]["resolution_strategy"], "ambiguity")
+        self.assertGreaterEqual(len(payload["resolved_application"]["candidates"]), 2)
+        self.assertEqual(payload["recommended_lamps"], [])
 
     def test_normalize_query_text_normalizes_units(self):
         from src.routes.corp_db import _normalize_query_text
@@ -801,5 +1126,28 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertIn('kind="portfolio_examples_by_lamp"', text)
         self.assertIn('phase="lamp_exact"', text)
         self.assertIn('phase="sphere_lookup"', text)
+        self.assertIn('phase="portfolio_lookup"', text)
+        self.assertIn('phase="response_build"', text)
+
+    def test_metrics_expose_application_recommendation_phases(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "application_recommendation", "query": "подбери освещение для спортивного стадиона"},
+            )
+            self.assertEqual(response.status_code, 200)
+
+            metrics = client.get("/metrics")
+
+        self.assertEqual(metrics.status_code, 200)
+        text = metrics.text
+        self.assertIn('kind="application_recommendation"', text)
+        self.assertIn('phase="application_resolution"', text)
+        self.assertIn('phase="category_resolution"', text)
+        self.assertIn('phase="lamp_ranking"', text)
         self.assertIn('phase="portfolio_lookup"', text)
         self.assertIn('phase="response_build"', text)

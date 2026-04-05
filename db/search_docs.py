@@ -9,6 +9,23 @@ from common import batched, join_nonempty, json_hash, tokenize_text, url_tokens
 LIVE_SEARCH_DOCS_TABLE = "corp.corp_search_docs"
 STAGE_SEARCH_DOCS_TABLE = "corp.corp_search_docs_stage"
 OLD_SEARCH_DOCS_TABLE = "corp.corp_search_docs_old"
+APPLICATION_DOC_ALIASES = {
+    "Спортивное и освещение высокой мощности": ["стадион", "арена", "спорткомплекс", "футбольное поле"],
+    "Тяжелые условия эксплуатации": ["карьер", "открытый карьер", "горнодобыча", "гок", "рудник"],
+    "Наружное, уличное и дорожное освещение": ["аэропорт", "апрон", "перрон", "рулежная дорожка"],
+    "Складские помещения": ["склад", "логистический центр", "высокие пролеты", "high-bay"],
+    "Офисное, торговое, ЖКХ и АБК освещение": ["офис", "кабинет", "абк", "торговый зал"],
+    "Светильники специального назначения": ["агрессивная среда", "химическое производство", "мойка", "азс"],
+    "LAD LED R500 SPORT": ["стадион", "прожектор для стадиона"],
+    "LAD LED R500": ["карьер", "мачтовое освещение", "высокие пролеты"],
+    "LAD LED R700": ["карьер", "апрон", "открытая площадка"],
+    "LAD LED R500 G": ["апрон", "перрон", "аэропорт"],
+    "NL Nova": ["офис", "кабинет"],
+    "NL VEGA": ["офис", "абк"],
+    "LAD LED LINE-OZ": ["склад", "высокий пролет"],
+    "АЗС": ["агрессивная среда", "азс"],
+    "Специальное освещение": ["агрессивная среда", "специальное применение"],
+}
 
 
 def _json_object(value: object) -> dict:
@@ -161,17 +178,28 @@ def _sku_doc(sku: dict, lamp_name: str | None) -> dict:
 
 
 def _category_doc(category: dict, sphere_names: list[str]) -> dict:
+    aliases = APPLICATION_DOC_ALIASES.get(category["name"], [])
     return {
         "entity_type": "category",
         "entity_id": str(category["category_id"]),
         "title": category["name"],
         "content": join_nonempty([", ".join(sorted(sphere_names)) if sphere_names else None]),
-        "aliases": join_nonempty([tokenize_text(category.get("name")), url_tokens(category.get("url")), " ".join(sorted(sphere_names))], sep=" "),
+        "aliases": join_nonempty(
+            [
+                tokenize_text(category.get("name")),
+                url_tokens(category.get("url")),
+                " ".join(sorted(sphere_names)),
+                " ".join(aliases),
+            ],
+            sep=" ",
+        ),
         "metadata": {
             "category_id": category["category_id"],
             "name": category["name"],
             "url": category.get("url"),
+            "image_url": category.get("image_url"),
             "sphere_names": sorted(sphere_names),
+            "application_aliases": aliases,
         },
     }
 
@@ -198,11 +226,13 @@ def _portfolio_doc(portfolio: dict, sphere_name: str | None) -> dict:
             "group_name": portfolio.get("group_name"),
             "sphere_name": sphere_name,
             "url": portfolio.get("url"),
+            "image_url": portfolio.get("image_url"),
         },
     }
 
 
 def _sphere_doc(sphere: dict, category_names: list[str], portfolio_names: list[str]) -> dict:
+    aliases = APPLICATION_DOC_ALIASES.get(sphere["name"], [])
     return {
         "entity_type": "sphere",
         "entity_id": str(sphere["sphere_id"]),
@@ -219,6 +249,7 @@ def _sphere_doc(sphere: dict, category_names: list[str], portfolio_names: list[s
                 url_tokens(sphere.get("url")),
                 " ".join(category_names[:8]),
                 " ".join(portfolio_names[:5]),
+                " ".join(aliases),
             ],
             sep=" ",
         ),
@@ -228,6 +259,7 @@ def _sphere_doc(sphere: dict, category_names: list[str], portfolio_names: list[s
             "url": sphere.get("url"),
             "category_names": category_names[:8],
             "portfolio_examples": portfolio_names[:5],
+            "application_aliases": aliases,
         },
     }
 

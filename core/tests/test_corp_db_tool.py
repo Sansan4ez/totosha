@@ -115,6 +115,57 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(len(payload["results"][0]["facts"]), 8)
         self.assertEqual(payload["results"][5]["title"], "Lamp 5")
 
+    def test_format_result_payload_compacts_company_fact_kb_search(self):
+        data = {
+            "status": "success",
+            "kind": "hybrid_search",
+            "query": "сайт компании ЛАДзавод светотехники",
+            "results": [
+                {
+                    "entity_type": "kb_chunk",
+                    "title": "О компании",
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                    "heading": "О компании",
+                    "score": 0.48,
+                    "metadata": {
+                        "source_file": "common_information_about_company.md",
+                        "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                        "source_hash": "abc123",
+                    },
+                    "preview": "Мы занимаем одно из ведущих мест на рынке промышленного светотехнического оборудования в России.",
+                },
+                {
+                    "entity_type": "kb_chunk",
+                    "title": "Контакты",
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                    "heading": "Контакты",
+                    "score": 0.31,
+                    "metadata": {
+                        "source_file": "common_information_about_company.md",
+                        "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                        "source_hash": "def456",
+                    },
+                    "preview": "Телефон +7 (351) 239-18-11, email lad@ladled.ru.",
+                },
+            ],
+        }
+
+        payload = json.loads(
+            _format_result_payload(
+                data,
+                {"kind": "hybrid_search", "profile": "kb_search", "entity_types": ["company"], "query": data["query"]},
+            )
+        )
+
+        self.assertEqual(payload["result_format"], "compact_company_fact_v1")
+        self.assertEqual(payload["result_count"], 2)
+        self.assertEqual(len(payload["results"]), 2)
+        self.assertEqual(
+            sorted(payload["results"][0].keys()),
+            ["document_title", "entity_type", "heading", "preview", "score", "source_file"],
+        )
+        self.assertNotIn("metadata", payload["results"][0])
+
     def test_tool_preserves_full_lamp_filters_payload(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
         payload = {
@@ -141,6 +192,42 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(decoded["kind"], "lamp_filters")
         self.assertEqual(decoded["results"][0]["name"], "NL Nova30-N-O")
         self.assertEqual(decoded["results"][0]["facts"]["color_rendering_index_ra"]["text"], "Ra 80")
+
+    def test_tool_compacts_company_fact_kb_search_payload(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {
+            "status": "success",
+            "kind": "hybrid_search",
+            "query": "контакты компании ЛАДзавод светотехники",
+            "results": [
+                {
+                    "entity_type": "kb_chunk",
+                    "title": "Контакты",
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                    "heading": "Контакты",
+                    "score": 0.39,
+                    "metadata": {
+                        "source_file": "common_information_about_company.md",
+                        "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                    },
+                    "preview": "Телефон +7 (351) 239-18-11, email lad@ladled.ru.",
+                }
+            ],
+        }
+
+        with patch.object(_MODULE, "aiohttp", _aiohttp_stub_for_payload(payload)):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {"kind": "hybrid_search", "profile": "kb_search", "query": "контакты компании ЛАДзавод светотехники"},
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        decoded = json.loads(result.output)
+        self.assertEqual(decoded["result_format"], "compact_company_fact_v1")
+        self.assertEqual(decoded["result_count"], 1)
+        self.assertEqual(decoded["results"][0]["source_file"], "common_information_about_company.md")
 
     def test_tool_preserves_structured_fields_for_sku_by_code(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
@@ -231,6 +318,71 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(decoded["lamp"]["name"], "LAD LED R500-9-30-6-650LZD")
         self.assertEqual(decoded["spheres"][0]["sphere_name"], "Нефтегазовый комплекс")
         self.assertEqual(decoded["portfolio_examples"][0]["portfolio_id"], 102)
+
+    def test_tool_preserves_specialized_payload_for_application_recommendation(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {
+            "status": "success",
+            "kind": "application_recommendation",
+            "filters": {"application_key": "sports_high_power", "resolution_strategy": "synonym_map"},
+            "resolved_application": {
+                "status": "resolved",
+                "application_key": "sports_high_power",
+                "sphere_name": "Спортивное и освещение высокой мощности",
+                "confidence": 0.91,
+                "resolution_strategy": "synonym_map",
+            },
+            "categories": [
+                {
+                    "category_id": 68,
+                    "category_name": "LAD LED R500-9 LZD",
+                    "url": "https://ladzavod.ru/catalog/r500-9-lzd",
+                    "image_url": "https://ladzavod.ru/storage/app/uploads/public/r500-9.png",
+                    "lamp_count": 4,
+                }
+            ],
+            "recommended_lamps": [
+                {
+                    "lamp_id": 2014,
+                    "name": "LAD LED R500-9-30-6-650LZD",
+                    "url": "https://ladzavod.ru/catalog/r500-9-lzd/ladled-r500-9-30-6-650lzd",
+                    "image_url": "https://ladzavod.ru/storage/app/uploads/public/r500-9-30.png",
+                    "recommendation_reason": "высокая мощность для стадионного света",
+                }
+            ],
+            "portfolio_examples": [
+                {
+                    "portfolio_id": 302,
+                    "name": "Освещение стадиона",
+                    "url": "https://ladzavod.ru/portfolio/stadium",
+                    "image_url": "https://ladzavod.ru/storage/app/uploads/public/stadium.png",
+                }
+            ],
+            "follow_up_question": "Уточните высоту установки и нужен общий заливочный свет или узконаправленные прожекторы?",
+            "results": [
+                {
+                    "lamp_id": 2014,
+                    "name": "LAD LED R500-9-30-6-650LZD",
+                    "url": "https://ladzavod.ru/catalog/r500-9-lzd/ladled-r500-9-30-6-650lzd",
+                }
+            ],
+        }
+
+        with patch.object(_MODULE, "aiohttp", _aiohttp_stub_for_payload(payload)):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {"kind": "application_recommendation", "query": "подбери освещение для спортивного стадиона"},
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        decoded = json.loads(result.output)
+        self.assertEqual(decoded["kind"], "application_recommendation")
+        self.assertEqual(decoded["resolved_application"]["application_key"], "sports_high_power")
+        self.assertEqual(decoded["categories"][0]["image_url"], "https://ladzavod.ru/storage/app/uploads/public/r500-9.png")
+        self.assertEqual(decoded["recommended_lamps"][0]["recommendation_reason"], "высокая мощность для стадионного света")
+        self.assertIn("Уточните высоту установки", decoded["follow_up_question"])
 
     def test_tool_reports_timeout_error_with_budget_and_class(self):
         class FakeTimeout:

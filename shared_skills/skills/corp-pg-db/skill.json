@@ -1,6 +1,6 @@
 {
   "name": "corp-pg-db",
-  "description": "Поиск по корпоративной Postgres БД: светильники, коды, категории, сферы, портфолио, крепления и promoted KB subset.",
+  "description": "Поиск по корпоративной Postgres БД: company facts, контакты, реквизиты, сайт, адрес, соцсети, сервис, гарантия, светильники, коды, категории, сферы, портфолио, крепления, broad-object подбор по сфере применения и promoted KB subset.",
   "version": "1.0.0",
   "author": "LAD",
   "system_prompt_file": "SKILL.md",

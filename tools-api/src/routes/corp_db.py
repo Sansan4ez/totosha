@@ -108,6 +108,167 @@ MOUNTING_HINTS = {
     "потолоч": "потол",
     "настенн": "настен",
 }
+APPLICATION_ALIAS_VERSION = "v1"
+APPLICATION_PROFILES: dict[str, dict[str, Any]] = {
+    "sports_high_power": {
+        "sphere_name": "Спортивное и освещение высокой мощности",
+        "aliases": (
+            "стадион",
+            "арена",
+            "спорткомплекс",
+            "спортивный объект",
+            "спортивное поле",
+            "футбольное поле",
+            "прожектор для стадиона",
+        ),
+        "category_queries": (
+            "LAD LED R500 SPORT",
+            "LAD LED R500",
+            "LAD LED R700",
+        ),
+        "follow_up_question": "Уточните высоту установки и нужен общий заливочный свет или узконаправленные прожекторы?",
+    },
+    "quarry_heavy_duty": {
+        "sphere_name": "Тяжелые условия эксплуатации",
+        "aliases": (
+            "карьер",
+            "открытый карьер",
+            "горный карьер",
+            "горнодобыча",
+            "горнодобывающий",
+            "рудник",
+            "гок",
+            "добыча",
+            "mine",
+            "open pit",
+            "quarry",
+        ),
+        "category_queries": (
+            "LAD LED R700",
+            "LAD LED R500",
+            "LAD LED R500 G",
+            "LAD LED R320",
+        ),
+        "follow_up_question": "Уточните, это открытый карьер или опасная зона с требованием Ex, и какая высота установки?",
+    },
+    "airport_apron": {
+        "sphere_name": "Наружное, уличное и дорожное освещение",
+        "aliases": (
+            "аэропорт",
+            "апрон",
+            "перрон",
+            "впп",
+            "рулежная дорожка",
+            "рулежка",
+            "airport",
+            "apron",
+        ),
+        "category_queries": (
+            "LAD LED R500 G",
+            "LAD LED R700",
+            "Консольные светильники",
+            "Светильники на лире",
+        ),
+        "follow_up_question": "Уточните, нужен свет для мачт/перрона или для проездов и прилегающей территории?",
+    },
+    "warehouse": {
+        "sphere_name": "Складские помещения",
+        "aliases": (
+            "склад",
+            "складской",
+            "логистический центр",
+            "логистика",
+            "складское помещение",
+            "warehouse",
+        ),
+        "category_queries": (
+            "LAD LED LINE-OZ",
+            "LAD LED LINE",
+            "LAD LED R500",
+            "NL Nova",
+        ),
+        "follow_up_question": "Уточните высоту подвеса и нужна ли защита IP65/IP67 для пыли или влаги?",
+    },
+    "office": {
+        "sphere_name": "Офисное, торговое, ЖКХ и АБК освещение",
+        "aliases": (
+            "офис",
+            "кабинет",
+            "абк",
+            "жкх",
+            "торговый зал",
+            "офисное помещение",
+            "office",
+        ),
+        "category_queries": (
+            "NL Nova",
+            "NL VEGA",
+            "LAD LED LINE",
+            "LAD LED LINE-OZ",
+        ),
+        "follow_up_question": "Уточните тип помещения и нужен встроенный, накладной или подвесной монтаж?",
+    },
+    "high_bay": {
+        "sphere_name": "Складские помещения",
+        "aliases": (
+            "высокий пролет",
+            "высокие пролеты",
+            "high-bay",
+            "high bay",
+            "высота подвеса",
+            "высотный склад",
+            "ангар",
+        ),
+        "category_queries": (
+            "LAD LED R500",
+            "LAD LED R700",
+            "LAD LED LINE-OZ",
+        ),
+        "follow_up_question": "Уточните высоту пролета и нужен более узкий угол или равномерный общий свет?",
+    },
+    "aggressive_environment": {
+        "sphere_name": "Светильники специального назначения",
+        "aliases": (
+            "агрессивная среда",
+            "агрессивной среде",
+            "химическое производство",
+            "химически агрессивная",
+            "коррозионная среда",
+            "мойка",
+            "моечная",
+            "азс",
+        ),
+        "category_queries": (
+            "Специальное освещение",
+            "АЗС",
+            "LAD LED R320 Ex",
+            "LAD LED R500 2Ex",
+        ),
+        "follow_up_question": "Уточните, среда химически агрессивная, моечная или взрывоопасная, и нужна ли Ex-защита?",
+    },
+}
+APPLICATION_TYPO_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bкарьерна\b", re.IGNORECASE), "карьер"),
+    (re.compile(r"\bкарьерный\b", re.IGNORECASE), "карьер"),
+    (re.compile(r"\bспорт\s*арена\b", re.IGNORECASE), "спортивная арена"),
+)
+APPLICATION_NOISE_TERMS = {
+    "подбер",
+    "подоб",
+    "освещ",
+    "светильник",
+    "светильник",
+    "мощн",
+    "для",
+    "или",
+    "нужн",
+    "пожалуйст",
+    "объект",
+    "проект",
+    "сфер",
+    "применен",
+    "свет",
+}
 LAMP_RESPONSE_FIELDS = (
     "power_w",
     "luminous_flux_lm",
@@ -251,6 +412,7 @@ class CorpDbSearchRequest(BaseModel):
         "lamp_exact",
         "lamp_suggest",
         "sku_by_code",
+        "application_recommendation",
         "category_lamps",
         "portfolio_by_sphere",
         "portfolio_examples_by_lamp",
@@ -284,6 +446,9 @@ class CorpDbSearchRequest(BaseModel):
     voltage_kind: Optional[Literal["AC", "DC", "AC/DC"]] = None
     explosion_protected: Optional[bool] = None
     fuzzy: bool = False
+    limit_categories: int = Field(default=3, ge=1, le=10)
+    limit_lamps: int = Field(default=3, ge=1, le=10)
+    limit_portfolio: int = Field(default=2, ge=0, le=10)
 
     power_w_min: Optional[int] = None
     power_w_max: Optional[int] = None
@@ -360,6 +525,72 @@ def _preview(text: str, limit: int = 220) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _join_nonempty(parts: list[Any], sep: str = " ") -> str:
+    return sep.join(str(part).strip() for part in parts if str(part or "").strip())
+
+
+def _normalize_application_text(value: str) -> str:
+    text = _normalize_ws(value).lower().replace("\u00a0", " ")
+    for pattern, replacement in APPLICATION_TYPO_REPLACEMENTS:
+        text = pattern.sub(replacement, text)
+    text = text.replace("ё", "е")
+    text = re.sub(r"[^0-9a-zа-я/+.-]+", " ", text)
+    return _normalize_ws(text)
+
+
+def _application_stem(token: str) -> str:
+    normalized = token.lower().replace("ё", "е")
+    if not re.search(r"[а-я]", normalized):
+        return normalized
+    for suffix in (
+        "иями",
+        "ями",
+        "ами",
+        "ого",
+        "ему",
+        "ому",
+        "ыми",
+        "ими",
+        "иях",
+        "ях",
+        "ах",
+        "ий",
+        "ый",
+        "ой",
+        "ая",
+        "яя",
+        "ое",
+        "ее",
+        "ую",
+        "юю",
+        "ом",
+        "ам",
+        "ям",
+        "ы",
+        "и",
+        "а",
+        "я",
+        "е",
+        "у",
+        "ю",
+    ):
+        if len(normalized) > len(suffix) + 3 and normalized.endswith(suffix):
+            return normalized[: -len(suffix)]
+    return normalized
+
+
+def _application_terms(value: str) -> list[str]:
+    return [_application_stem(token) for token in _normalize_application_text(value).split(" ") if token]
+
+
+def _application_contains_phrase(text: str, phrase: str) -> bool:
+    normalized_text = f" {_normalize_application_text(text)} "
+    normalized_phrase = _normalize_application_text(phrase)
+    if not normalized_phrase:
+        return False
+    return f" {normalized_phrase} " in normalized_text
 
 
 def _normalize_entity_types(values: Optional[list[str]]) -> Optional[list[str]]:
@@ -720,6 +951,60 @@ def _log_portfolio_examples_result(
     )
 
 
+def _application_response(
+    *,
+    query: str,
+    status: str,
+    filters: dict[str, Any],
+    resolved_application: dict[str, Any] | None = None,
+    categories: list[dict[str, Any]] | None = None,
+    recommended_lamps: list[dict[str, Any]] | None = None,
+    portfolio_examples: list[dict[str, Any]] | None = None,
+    follow_up_question: str | None = None,
+) -> dict[str, Any]:
+    lamps = recommended_lamps or []
+    payload = {
+        "status": status,
+        "kind": "application_recommendation",
+        "query": query,
+        "filters": filters,
+        "results": lamps,
+        "resolved_application": resolved_application or {},
+        "categories": categories or [],
+        "recommended_lamps": lamps,
+        "portfolio_examples": portfolio_examples or [],
+        "follow_up_question": follow_up_question,
+    }
+    return payload
+
+
+def _log_application_recommendation_result(
+    *,
+    status: str,
+    query: str,
+    application_key: str | None = None,
+    sphere_name: str | None = None,
+    resolution_strategy: str | None = None,
+    category_count: int = 0,
+    lamp_count: int = 0,
+    portfolio_count: int = 0,
+    ambiguity: bool = False,
+) -> None:
+    logger.info(
+        "corp-db application_recommendation status=%s request_id=%s query=%r application_key=%s sphere_name=%s resolution_strategy=%s category_count=%s lamp_count=%s portfolio_count=%s ambiguity=%s",
+        status,
+        REQUEST_ID.get("-"),
+        query[:160],
+        application_key,
+        sphere_name,
+        resolution_strategy,
+        category_count,
+        lamp_count,
+        portfolio_count,
+        ambiguity,
+    )
+
+
 def _sanitize_filter_defaults(req: CorpDbSearchRequest) -> CorpDbSearchRequest:
     updates: dict[str, Any] = {}
     for field_name, value in req.__dict__.items():
@@ -740,6 +1025,645 @@ def _sanitize_filter_defaults(req: CorpDbSearchRequest) -> CorpDbSearchRequest:
     if not updates:
         return req
     return _request_like(req, **updates)
+
+
+async def _fetch_application_reference_data(conn: asyncpg.Connection) -> dict[str, Any]:
+    sphere_rows = [
+        dict(row)
+        for row in await conn.fetch(
+            """
+            /* application_reference_spheres */
+            SELECT sphere_id, name, url
+            FROM corp.spheres
+            ORDER BY sphere_id
+            """
+        )
+    ]
+    category_rows = [
+        dict(row)
+        for row in await conn.fetch(
+            """
+            /* application_reference_categories */
+            SELECT
+                s.sphere_id,
+                s.name AS sphere_name,
+                c.category_id,
+                c.name AS category_name,
+                c.url,
+                c.image_url
+            FROM corp.spheres s
+            JOIN corp.sphere_categories sc ON sc.sphere_id = s.sphere_id
+            JOIN corp.categories c ON c.category_id = sc.category_id
+            ORDER BY s.sphere_id, c.name
+            """
+        )
+    ]
+    portfolio_rows = [
+        dict(row)
+        for row in await conn.fetch(
+            """
+            /* application_reference_portfolio */
+            SELECT
+                p.portfolio_id,
+                p.sphere_id,
+                s.name AS sphere_name,
+                p.name,
+                p.group_name,
+                p.url,
+                p.image_url
+            FROM corp.portfolio p
+            JOIN corp.spheres s ON s.sphere_id = p.sphere_id
+            ORDER BY p.portfolio_id
+            """
+        )
+    ]
+
+    spheres_by_name = {_normalize_application_text(row["name"]): row for row in sphere_rows}
+    categories_by_sphere: dict[int, list[dict[str, Any]]] = {}
+    for row in category_rows:
+        categories_by_sphere.setdefault(int(row["sphere_id"]), []).append(row)
+    portfolio_by_sphere: dict[int, list[dict[str, Any]]] = {}
+    for row in portfolio_rows:
+        portfolio_by_sphere.setdefault(int(row["sphere_id"]), []).append(row)
+    return {
+        "spheres": sphere_rows,
+        "spheres_by_name": spheres_by_name,
+        "categories_by_sphere": categories_by_sphere,
+        "portfolio_by_sphere": portfolio_by_sphere,
+    }
+
+
+def _application_profile_sphere_row(
+    reference: dict[str, Any],
+    application_key: str,
+) -> dict[str, Any] | None:
+    sphere_name = str(APPLICATION_PROFILES[application_key]["sphere_name"])
+    return reference["spheres_by_name"].get(_normalize_application_text(sphere_name))
+
+
+def _direct_application_score(query: str, sphere_name: str) -> tuple[float, list[str]]:
+    reasons: list[str] = []
+    normalized_query = _normalize_application_text(query)
+    normalized_sphere = _normalize_application_text(sphere_name)
+    if not normalized_query or not normalized_sphere:
+        return 0.0, reasons
+    if _application_contains_phrase(normalized_query, normalized_sphere):
+        reasons.append(f"direct:{normalized_sphere}")
+        return 10.0, reasons
+
+    sphere_terms = [
+        term
+        for term in _application_terms(normalized_sphere)
+        if term not in {"и", "освещение", "высокой", "условия", "эксплуатации", "оборудование"}
+    ]
+    matched = [term for term in sphere_terms if _application_contains_phrase(normalized_query, term)]
+    if sphere_terms and len(matched) == len(sphere_terms):
+        reasons.extend(f"direct_term:{term}" for term in matched)
+        return 7.0 + float(len(matched)), reasons
+    return 0.0, reasons
+
+
+def _synonym_application_score(query: str, aliases: tuple[str, ...]) -> tuple[float, list[str]]:
+    normalized_query = _normalize_application_text(query)
+    query_terms = {term for term in _application_terms(query) if term and term not in APPLICATION_NOISE_TERMS}
+    score = 0.0
+    reasons: list[str] = []
+    for alias in aliases:
+        alias_terms = [term for term in _application_terms(alias) if term and term not in APPLICATION_NOISE_TERMS]
+        if _application_contains_phrase(normalized_query, alias):
+            alias_terms = _application_terms(alias)
+            score += 4.0 + (0.75 * len(alias_terms))
+            reasons.append(f"alias:{_normalize_application_text(alias)}")
+            continue
+        if alias_terms and all(term in query_terms for term in alias_terms):
+            score += 3.25 + (0.5 * len(alias_terms))
+            reasons.append(f"alias_terms:{_normalize_application_text(alias)}")
+            continue
+        if len(alias_terms) == 1 and any(query_term.startswith(alias_terms[0]) or alias_terms[0].startswith(query_term) for query_term in query_terms):
+            score += 3.0
+            reasons.append(f"alias_token:{_normalize_application_text(alias)}")
+    return score, reasons
+
+
+def _related_application_score(
+    query: str,
+    *,
+    sphere_row: dict[str, Any] | None,
+    categories: list[dict[str, Any]],
+    portfolio_rows: list[dict[str, Any]],
+) -> tuple[float, list[str]]:
+    query_terms = {term for term in _application_terms(query) if term and term not in APPLICATION_NOISE_TERMS}
+    if not query_terms:
+        return 0.0, []
+
+    score = 0.0
+    reasons: list[str] = []
+    if sphere_row is not None:
+        sphere_terms = {
+            term
+            for term in _application_terms(str(sphere_row["name"]))
+            if len(term) >= 4 and term not in APPLICATION_NOISE_TERMS
+        }
+        matched = sorted(query_terms & sphere_terms)
+        if matched:
+            score += 2.0 + (0.5 * len(matched))
+            reasons.extend(f"sphere_term:{term}" for term in matched[:3])
+
+    category_hits = 0
+    for row in categories:
+        category_terms = {
+            term
+            for term in _application_terms(str(row["category_name"]))
+            if len(term) >= 4 and term not in APPLICATION_NOISE_TERMS
+        }
+        if query_terms & category_terms:
+            category_hits += 1
+    if category_hits:
+        score += min(3.0, 0.75 * category_hits)
+        reasons.append(f"category_hits:{category_hits}")
+
+    portfolio_hits = 0
+    for row in portfolio_rows:
+        evidence_terms = {
+            term
+            for term in _application_terms(_join_nonempty([row.get("name"), row.get("group_name"), row.get("sphere_name")]))
+            if len(term) >= 4 and term not in APPLICATION_NOISE_TERMS
+        }
+        if query_terms & evidence_terms:
+            portfolio_hits += 1
+    if portfolio_hits:
+        score += min(2.0, 0.5 * portfolio_hits)
+        reasons.append(f"portfolio_hits:{portfolio_hits}")
+    return score, reasons
+
+
+def _application_resolution_candidates(
+    query: str,
+    reference: dict[str, Any],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for application_key, config in APPLICATION_PROFILES.items():
+        sphere_row = _application_profile_sphere_row(reference, application_key)
+        direct_score, direct_reasons = _direct_application_score(query, str(config["sphere_name"]))
+        synonym_score, synonym_reasons = _synonym_application_score(query, tuple(config["aliases"]))
+        related_score, related_reasons = _related_application_score(
+            query,
+            sphere_row=sphere_row,
+            categories=reference["categories_by_sphere"].get(int(sphere_row["sphere_id"]), []) if sphere_row else [],
+            portfolio_rows=reference["portfolio_by_sphere"].get(int(sphere_row["sphere_id"]), []) if sphere_row else [],
+        )
+        candidates.append(
+            {
+                "application_key": application_key,
+                "sphere_row": sphere_row,
+                "direct_score": direct_score,
+                "direct_reasons": direct_reasons,
+                "synonym_score": synonym_score,
+                "synonym_reasons": synonym_reasons,
+                "related_score": related_score,
+                "related_reasons": related_reasons,
+            }
+        )
+    return candidates
+
+
+def _resolve_application(query: str, reference: dict[str, Any]) -> dict[str, Any]:
+    candidates = _application_resolution_candidates(query, reference)
+    normalized_query = _normalize_application_text(query)
+
+    direct = [candidate for candidate in candidates if candidate["direct_score"] > 0]
+    if direct:
+        direct.sort(key=lambda item: (-item["direct_score"], item["application_key"]))
+        if len(direct) == 1 or direct[0]["direct_score"] >= direct[1]["direct_score"] + 1.5:
+            winner = direct[0]
+            sphere_row = winner["sphere_row"] or {}
+            return {
+                "status": "resolved",
+                "application_key": winner["application_key"],
+                "sphere_id": sphere_row.get("sphere_id"),
+                "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[winner["application_key"]]["sphere_name"],
+                "sphere_url": sphere_row.get("url"),
+                "confidence": round(min(0.99, 0.6 + (winner["direct_score"] / 20.0)), 3),
+                "resolution_strategy": "direct_match",
+                "matched_terms": winner["direct_reasons"],
+                "alias_version": APPLICATION_ALIAS_VERSION,
+            }
+
+    synonym_ranked = [candidate for candidate in candidates if candidate["synonym_score"] > 0]
+    synonym_ranked.sort(key=lambda item: (-item["synonym_score"], item["application_key"]))
+    if " или " in f" {normalized_query} " and len(synonym_ranked) >= 2:
+        ambiguity_candidates = []
+        for candidate in synonym_ranked[:3]:
+            sphere_row = candidate["sphere_row"] or {}
+            ambiguity_candidates.append(
+                {
+                    "application_key": candidate["application_key"],
+                    "sphere_id": sphere_row.get("sphere_id"),
+                    "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[candidate["application_key"]]["sphere_name"],
+                    "score": round(candidate["synonym_score"], 3),
+                }
+            )
+        return {
+            "status": "ambiguous",
+            "confidence": round(ambiguity_candidates[0]["score"] / 10.0, 3),
+            "resolution_strategy": "ambiguity",
+            "alias_version": APPLICATION_ALIAS_VERSION,
+            "candidates": ambiguity_candidates,
+        }
+    if synonym_ranked:
+        clear_synonym = len(synonym_ranked) == 1 or synonym_ranked[0]["synonym_score"] >= synonym_ranked[1]["synonym_score"] + 2.0
+        if clear_synonym:
+            winner = synonym_ranked[0]
+            sphere_row = winner["sphere_row"] or {}
+            return {
+                "status": "resolved",
+                "application_key": winner["application_key"],
+                "sphere_id": sphere_row.get("sphere_id"),
+                "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[winner["application_key"]]["sphere_name"],
+                "sphere_url": sphere_row.get("url"),
+                "confidence": round(min(0.97, 0.55 + (winner["synonym_score"] / 18.0)), 3),
+                "resolution_strategy": "synonym_map",
+                "matched_terms": winner["synonym_reasons"],
+                "alias_version": APPLICATION_ALIAS_VERSION,
+            }
+
+    related_ranked = [
+        candidate
+        for candidate in candidates
+        if (candidate["synonym_score"] + candidate["related_score"]) > 0
+    ]
+    related_ranked.sort(
+        key=lambda item: (-(item["synonym_score"] + item["related_score"]), -item["related_score"], item["application_key"])
+    )
+    if related_ranked:
+        top_score = related_ranked[0]["synonym_score"] + related_ranked[0]["related_score"]
+        if top_score > 0:
+            clear_related = len(related_ranked) == 1 or top_score >= (
+                related_ranked[1]["synonym_score"] + related_ranked[1]["related_score"] + 1.5
+            )
+            if clear_related:
+                winner = related_ranked[0]
+                sphere_row = winner["sphere_row"] or {}
+                matched_terms = [*winner["synonym_reasons"], *winner["related_reasons"]]
+                strategy = "related_evidence" if winner["related_score"] > 0 else "synonym_map"
+                return {
+                    "status": "resolved",
+                    "application_key": winner["application_key"],
+                    "sphere_id": sphere_row.get("sphere_id"),
+                    "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[winner["application_key"]]["sphere_name"],
+                    "sphere_url": sphere_row.get("url"),
+                    "confidence": round(min(0.94, 0.48 + (top_score / 16.0)), 3),
+                    "resolution_strategy": strategy,
+                    "matched_terms": matched_terms,
+                    "alias_version": APPLICATION_ALIAS_VERSION,
+                }
+
+    ambiguity_candidates = []
+    for candidate in related_ranked[:3]:
+        sphere_row = candidate["sphere_row"] or {}
+        ambiguity_candidates.append(
+            {
+                "application_key": candidate["application_key"],
+                "sphere_id": sphere_row.get("sphere_id"),
+                "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[candidate["application_key"]]["sphere_name"],
+                "score": round(candidate["synonym_score"] + candidate["related_score"], 3),
+            }
+        )
+    if ambiguity_candidates:
+        return {
+            "status": "ambiguous",
+            "confidence": round(ambiguity_candidates[0]["score"] / 10.0, 3),
+            "resolution_strategy": "ambiguity",
+            "alias_version": APPLICATION_ALIAS_VERSION,
+            "candidates": ambiguity_candidates,
+        }
+
+    return {
+        "status": "empty",
+        "confidence": 0.0,
+        "resolution_strategy": "empty",
+        "alias_version": APPLICATION_ALIAS_VERSION,
+        "matched_terms": [],
+    }
+
+
+def _application_category_search_terms(*values: str) -> list[str]:
+    terms: list[str] = []
+    for value in values:
+        normalized = _normalize_ws(value)
+        if normalized and normalized not in terms:
+            terms.append(normalized)
+        for token in _application_terms(value):
+            if len(token) < 4 or token in {"lad", "led", "svetilniki", "светильники"}:
+                continue
+            if token.endswith("ые") or token.endswith("ий") or token.endswith("ая"):
+                token = token[:-2]
+            if token and token not in terms:
+                terms.append(token)
+    return terms
+
+
+async def _resolve_application_categories(
+    conn: asyncpg.Connection,
+    *,
+    application_key: str,
+    sphere_id: int | None,
+    limit_categories: int,
+) -> list[dict[str, Any]]:
+    config = APPLICATION_PROFILES[application_key]
+    parent_rows: list[dict[str, Any]] = []
+    if sphere_id is not None:
+        parent_rows = [
+            dict(row)
+            for row in await conn.fetch(
+                """
+                /* application_parent_categories */
+                SELECT
+                    c.category_id,
+                    c.name AS category_name,
+                    c.url,
+                    c.image_url
+                FROM corp.sphere_categories sc
+                JOIN corp.categories c ON c.category_id = sc.category_id
+                WHERE sc.sphere_id = $1
+                ORDER BY c.name
+                """,
+                sphere_id,
+            )
+        ]
+
+    search_terms: list[str] = []
+    for row in parent_rows:
+        search_terms.extend(_application_category_search_terms(str(row["category_name"])))
+    for raw_term in config["category_queries"]:
+        search_terms.extend(_application_category_search_terms(str(raw_term)))
+
+    deduped_terms: list[str] = []
+    for term in search_terms:
+        if term not in deduped_terms:
+            deduped_terms.append(term)
+
+    categories_by_id: dict[int, dict[str, Any]] = {}
+    for term in deduped_terms[:12]:
+        rows = await conn.fetch(
+            """
+            /* application_leaf_categories */
+            SELECT
+                l.category_id,
+                l.category_name,
+                count(*)::int AS lamp_count,
+                min(c.url) AS url,
+                coalesce(min(c.image_url), min(l.image_url)) AS image_url
+            FROM corp.v_catalog_lamps_agent l
+            LEFT JOIN corp.categories c ON c.category_id = l.category_id
+            WHERE coalesce(l.category_name, '') ILIKE ('%' || $1 || '%')
+            GROUP BY l.category_id, l.category_name
+            ORDER BY
+                CASE
+                    WHEN lower(coalesce(l.category_name, '')) = lower($1) THEN 0
+                    WHEN lower(coalesce(l.category_name, '')) LIKE (lower($1) || '%') THEN 1
+                    ELSE 2
+                END,
+                count(*) DESC,
+                l.category_name
+            LIMIT $2
+            """,
+            term,
+            max(limit_categories, 4),
+        )
+        for row in rows:
+            category_id = int(row["category_id"])
+            match_strategy = "contains"
+            if str(row["category_name"]).lower() == term.lower():
+                match_strategy = "exact"
+            elif str(row["category_name"]).lower().startswith(term.lower()):
+                match_strategy = "prefix"
+            current = categories_by_id.get(category_id)
+            payload = {
+                "category_id": category_id,
+                "category_name": row["category_name"],
+                "url": row.get("url"),
+                "image_url": row.get("image_url"),
+                "lamp_count": int(row["lamp_count"]),
+                "match_strategy": match_strategy,
+                "matched_term": term,
+            }
+            if current is None or (
+                _application_match_rank(payload["match_strategy"]),
+                -payload["lamp_count"],
+                payload["category_name"],
+            ) < (
+                _application_match_rank(current["match_strategy"]),
+                -current["lamp_count"],
+                current["category_name"],
+            ):
+                categories_by_id[category_id] = payload
+
+    ordered = sorted(
+        categories_by_id.values(),
+        key=lambda row: (
+            0 if row["match_strategy"] == "exact" else 1 if row["match_strategy"] == "prefix" else 2,
+            -int(row["lamp_count"]),
+            str(row["category_name"]),
+        ),
+    )
+    return ordered[:limit_categories]
+
+
+def _application_requested_explosion_protection(req: CorpDbSearchRequest, query: str) -> bool:
+    normalized = _normalize_application_text(query)
+    return bool(req.explosion_protected) or "взрыв" in normalized or " ex " in f" {normalized} " or "2ex" in normalized
+
+
+def _application_ip_rating(value: Any) -> int:
+    match = re.search(r"ip\s*?(\d{2,3})", str(value or ""), re.IGNORECASE)
+    if not match:
+        return 0
+    return int(match.group(1))
+
+
+def _application_text_contains_any(value: Any, terms: tuple[str, ...]) -> bool:
+    normalized = _normalize_application_text(str(value or ""))
+    return any(_application_contains_phrase(normalized, term) for term in terms)
+
+
+def _application_score_lamp(
+    row: dict[str, Any] | asyncpg.Record,
+    *,
+    application_key: str,
+    req: CorpDbSearchRequest,
+    query: str,
+) -> tuple[float, list[str]]:
+    score = 0.0
+    reasons: list[str] = []
+    power = int(_row_get(row, "power_w") or 0)
+    flux = int(_row_get(row, "luminous_flux_lm") or 0)
+    cri = int(_row_get(row, "color_rendering_index_ra") or 0)
+    ip_rating = _application_ip_rating(_row_get(row, "ingress_protection"))
+    mounting = str(_row_get(row, "mounting_type") or "")
+    category_name = str(_row_get(row, "category_name") or "")
+    temp_min = int(_row_get(row, "operating_temperature_min_c") or 0)
+    is_explosion_protected = bool(_row_get(row, "is_explosion_protected"))
+    wants_ex = _application_requested_explosion_protection(req, query)
+
+    if _row_get(row, "url"):
+        score += 0.2
+    if _row_get(row, "image_url"):
+        score += 0.2
+    if int(_row_get(row, "warranty_years") or 0) >= 5:
+        score += 0.2
+
+    if application_key == "sports_high_power":
+        if power >= 300:
+            score += 6.0
+            reasons.append("высокая мощность для стадионного света")
+        elif power >= 150:
+            score += 3.0
+            reasons.append("достаточная мощность для открытых спортивных площадок")
+        if flux >= 30000:
+            score += 3.0
+        if _application_text_contains_any(mounting, ("лира",)):
+            score += 2.5
+            reasons.append("монтаж на лире подходит для прожекторных установок")
+        if _application_text_contains_any(category_name, ("r500", "r700", "sport")):
+            score += 2.0
+        if power < 100 or _application_text_contains_any(category_name, ("line", "nova", "vega")):
+            score -= 8.0
+    elif application_key == "quarry_heavy_duty":
+        if power >= 150:
+            score += 4.0
+            reasons.append("мощности достаточно для больших открытых зон")
+        if ip_rating >= 67:
+            score += 3.0
+            reasons.append("повышенная защита корпуса для тяжёлых условий")
+        elif ip_rating >= 65:
+            score += 1.0
+        if temp_min <= -50:
+            score += 2.0
+        if _application_text_contains_any(category_name, ("r700", "r500", "r500 g")):
+            score += 2.0
+        if is_explosion_protected and not wants_ex:
+            score -= 2.0
+        if power < 80 or _application_text_contains_any(category_name, ("line", "nova", "vega")):
+            score -= 7.0
+    elif application_key == "airport_apron":
+        if power >= 120:
+            score += 4.0
+            reasons.append("подходит для открытых транспортных площадок")
+        if ip_rating >= 67:
+            score += 3.0
+        if _application_text_contains_any(mounting, ("консоль", "лира", "кронштейн")):
+            score += 2.5
+        if _application_text_contains_any(str(_row_get(row, "beam_pattern")), ("ш",)):
+            score += 1.0
+        if _application_text_contains_any(category_name, ("r500 g", "r700")):
+            score += 2.5
+        if power < 60 or _application_text_contains_any(category_name, ("line", "nova", "vega")):
+            score -= 7.0
+    elif application_key == "warehouse":
+        if 40 <= power <= 220:
+            score += 4.0
+            reasons.append("диапазон мощности подходит для складских помещений")
+        if _application_text_contains_any(category_name, ("line", "line-oz", "nova", "vega", "r500")):
+            score += 2.0
+        if _application_text_contains_any(mounting, ("подвес", "потол", "лира")):
+            score += 1.5
+        if ip_rating >= 65:
+            score += 1.0
+        if power > 350:
+            score -= 4.0
+    elif application_key == "office":
+        if 10 <= power <= 120:
+            score += 4.0
+            reasons.append("мощность подходит для офисных и административных помещений")
+        if cri >= 80:
+            score += 2.0
+        if _application_text_contains_any(category_name, ("nova", "vega", "line")):
+            score += 3.0
+            reasons.append("серия ближе к офисному и АБК-сценарию")
+        if _application_text_contains_any(mounting, ("потол", "подвес", "наклад")):
+            score += 1.0
+        if power > 200 or _application_text_contains_any(category_name, ("r500", "r700")):
+            score -= 8.0
+    elif application_key == "high_bay":
+        if 80 <= power <= 320:
+            score += 4.0
+            reasons.append("подходит для высоких пролётов и складских зон")
+        if flux >= 12000:
+            score += 1.5
+        if _application_text_contains_any(category_name, ("r500", "r700", "line-oz")):
+            score += 2.5
+        if _application_text_contains_any(mounting, ("лира", "подвес")):
+            score += 1.5
+        if power < 50 or _application_text_contains_any(category_name, ("nova", "vega")):
+            score -= 5.0
+    elif application_key == "aggressive_environment":
+        if ip_rating >= 65:
+            score += 2.0
+            reasons.append("подходит для сложной или влажной среды")
+        if is_explosion_protected:
+            score += 3.0 if wants_ex else 1.0
+        if _application_text_contains_any(category_name, ("специаль", "азс", "ex", "2ex")):
+            score += 3.0
+            reasons.append("серия ориентирована на специальное применение")
+        if _application_text_contains_any(str(_row_get(row, "climate_execution")), ("ухл1",)):
+            score += 1.0
+        if _application_text_contains_any(category_name, ("line", "nova", "vega")):
+            score -= 7.0
+
+    return score, reasons
+
+
+async def _fetch_application_lamps(
+    conn: asyncpg.Connection,
+    *,
+    category_ids: list[int],
+    req: CorpDbSearchRequest,
+    fetch_limit: int,
+) -> list[asyncpg.Record]:
+    conditions, args, _ = _build_lamp_conditions(req, alias="l", param_offset=1)
+    return await conn.fetch(
+        f"""
+        /* application_lamps */
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
+        WHERE l.category_id = ANY($1::bigint[])
+          AND {' AND '.join(conditions)}
+        ORDER BY l.name
+        LIMIT ${len(args) + 2}
+        """,
+        category_ids,
+        *args,
+        fetch_limit,
+    )
+
+
+def _application_recommendation_reason(reasons: list[str], application_key: str) -> str:
+    filtered = []
+    for reason in reasons:
+        if reason not in filtered:
+            filtered.append(reason)
+    if filtered:
+        return "; ".join(filtered[:2])
+    fallback = {
+        "sports_high_power": "подходит для спортивных объектов и мощного наружного освещения",
+        "quarry_heavy_duty": "подходит для тяжёлых условий эксплуатации и открытых площадок",
+        "airport_apron": "подходит для транспортной инфраструктуры и открытых площадок",
+        "warehouse": "подходит для складских помещений",
+        "office": "подходит для офисных и административных помещений",
+        "high_bay": "подходит для высоких пролётов",
+        "aggressive_environment": "подходит для специального применения и сложной среды",
+    }
+    return fallback.get(application_key, "подходит для выбранной сферы применения")
+
+
+def _application_match_rank(match_strategy: str) -> int:
+    if match_strategy == "exact":
+        return 0
+    if match_strategy == "prefix":
+        return 1
+    return 2
+
 
 
 def _normalize_dimension_filter(text: str) -> str:
@@ -1796,11 +2720,225 @@ async def _portfolio_examples_by_lamp(
     return response
 
 
+async def _application_recommendation(
+    conn: asyncpg.Connection,
+    req: CorpDbSearchRequest,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    query = _req_str(req.query, "query", max_len=400)
+    category_limit = max(1, min(int(req.limit_categories or 3), 10))
+    lamp_limit = max(1, min(int(req.limit_lamps or limit or 3), 10))
+    portfolio_limit_raw = req.limit_portfolio if req.limit_portfolio is not None else 2
+    portfolio_limit = max(0, min(int(portfolio_limit_raw), 10))
+    profile_name = "application_recommendation"
+
+    filters = {
+        "limit_categories": category_limit,
+        "limit_lamps": lamp_limit,
+        "limit_portfolio": portfolio_limit,
+    }
+    async with _observe_search_phase(
+        kind="application_recommendation",
+        profile=profile_name,
+        phase="application_resolution",
+        span_name="corp_db.application.application_resolution",
+    ):
+        reference = await _fetch_application_reference_data(conn)
+        resolved_application = _resolve_application(query, reference)
+
+    filters.update(
+        {
+            "resolution_strategy": resolved_application.get("resolution_strategy"),
+            "application_key": resolved_application.get("application_key"),
+            "sphere_name": resolved_application.get("sphere_name"),
+        }
+    )
+
+    if resolved_application.get("status") == "empty":
+        response = _application_response(
+            query=query,
+            status="empty",
+            filters={**filters, "reason": "application_not_resolved"},
+            resolved_application=resolved_application,
+            follow_up_question="Уточните, пожалуйста, объект применения: склад, офис, стадион, карьер, аэропорт или другая площадка?",
+        )
+        _log_application_recommendation_result(
+            status="empty",
+            query=query,
+            resolution_strategy=str(resolved_application.get("resolution_strategy")),
+        )
+        return response
+
+    if resolved_application.get("status") == "ambiguous":
+        candidate_names = [str(item.get("sphere_name")) for item in resolved_application.get("candidates", [])[:3] if item.get("sphere_name")]
+        question_tail = ", ".join(candidate_names) if candidate_names else "какую сферу применения вы имеете в виду"
+        response = _application_response(
+            query=query,
+            status="needs_clarification",
+            filters={**filters, "ambiguity": True},
+            resolved_application=resolved_application,
+            follow_up_question=f"Уточните, пожалуйста: нужен подбор для {question_tail}?",
+        )
+        _log_application_recommendation_result(
+            status="needs_clarification",
+            query=query,
+            resolution_strategy=str(resolved_application.get("resolution_strategy")),
+            ambiguity=True,
+        )
+        return response
+
+    sphere_id = resolved_application.get("sphere_id")
+    categories: list[dict[str, Any]]
+    async with _observe_search_phase(
+        kind="application_recommendation",
+        profile=profile_name,
+        phase="category_resolution",
+        span_name="corp_db.application.category_resolution",
+        attributes={"corp_db.sphere_id": int(sphere_id) if sphere_id is not None else None},
+    ):
+        categories = await _resolve_application_categories(
+            conn,
+            application_key=str(resolved_application["application_key"]),
+            sphere_id=int(sphere_id) if sphere_id is not None else None,
+            limit_categories=category_limit,
+        )
+
+    if not categories:
+        response = _application_response(
+            query=query,
+            status="empty",
+            filters={**filters, "reason": "categories_not_found"},
+            resolved_application=resolved_application,
+            follow_up_question=str(APPLICATION_PROFILES[str(resolved_application["application_key"])]["follow_up_question"]),
+        )
+        _log_application_recommendation_result(
+            status="empty",
+            query=query,
+            application_key=str(resolved_application.get("application_key")),
+            sphere_name=str(resolved_application.get("sphere_name")),
+            resolution_strategy=str(resolved_application.get("resolution_strategy")),
+        )
+        return response
+
+    category_ids = [int(row["category_id"]) for row in categories]
+    fetch_limit = max(lamp_limit * 6, 12)
+    recommended_lamps: list[dict[str, Any]] = []
+    async with _observe_search_phase(
+        kind="application_recommendation",
+        profile=profile_name,
+        phase="lamp_ranking",
+        span_name="corp_db.application.lamp_ranking",
+        attributes={"corp_db.category_count": len(category_ids)},
+    ):
+        lamp_rows = await _fetch_application_lamps(
+            conn,
+            category_ids=category_ids,
+            req=req,
+            fetch_limit=fetch_limit,
+        )
+        ranked: list[tuple[float, dict[str, Any]]] = []
+        for row in lamp_rows:
+            score, reasons = _application_score_lamp(
+                row,
+                application_key=str(resolved_application["application_key"]),
+                req=req,
+                query=query,
+            )
+            payload = _serialize_lamp_row(row)
+            payload["recommendation_reason"] = _application_recommendation_reason(
+                reasons,
+                str(resolved_application["application_key"]),
+            )
+            payload["rank_score"] = round(score, 3)
+            ranked.append((score, payload))
+        ranked.sort(key=lambda item: (-item[0], str(item[1]["name"])))
+        seen_lamp_ids: set[int] = set()
+        for score, payload in ranked:
+            lamp_id = int(payload["lamp_id"])
+            if lamp_id in seen_lamp_ids:
+                continue
+            seen_lamp_ids.add(lamp_id)
+            recommended_lamps.append(payload)
+            if len(recommended_lamps) >= lamp_limit:
+                break
+
+    portfolio_examples: list[dict[str, Any]] = []
+    if portfolio_limit > 0 and sphere_id is not None:
+        async with _observe_search_phase(
+            kind="application_recommendation",
+            profile=profile_name,
+            phase="portfolio_lookup",
+            span_name="corp_db.application.portfolio_lookup",
+            attributes={"corp_db.sphere_id": int(sphere_id)},
+        ):
+            portfolio_rows = await conn.fetch(
+                """
+                /* application_portfolio */
+                SELECT
+                    p.portfolio_id,
+                    p.name,
+                    p.url,
+                    p.group_name,
+                    p.image_url,
+                    s.sphere_id,
+                    s.name AS sphere_name
+                FROM corp.portfolio p
+                JOIN corp.spheres s ON s.sphere_id = p.sphere_id
+                WHERE p.sphere_id = $1
+                ORDER BY p.name
+                LIMIT $2 OFFSET $3
+                """,
+                int(sphere_id),
+                portfolio_limit,
+                offset,
+            )
+            portfolio_examples = [dict(row) for row in portfolio_rows]
+
+    final_status = "success" if recommended_lamps else "empty"
+    final_filters = {
+        **filters,
+        "category_count": len(categories),
+        "lamp_count": len(recommended_lamps),
+        "portfolio_count": len(portfolio_examples),
+    }
+    follow_up_question = str(APPLICATION_PROFILES[str(resolved_application["application_key"])]["follow_up_question"])
+
+    async with _observe_search_phase(
+        kind="application_recommendation",
+        profile=profile_name,
+        phase="response_build",
+        span_name="corp_db.application.response_build",
+    ):
+        response = _application_response(
+            query=query,
+            status=final_status,
+            filters=final_filters,
+            resolved_application=resolved_application,
+            categories=categories,
+            recommended_lamps=recommended_lamps,
+            portfolio_examples=portfolio_examples,
+            follow_up_question=follow_up_question,
+        )
+
+    _log_application_recommendation_result(
+        status=final_status,
+        query=query,
+        application_key=str(resolved_application.get("application_key")),
+        sphere_name=str(resolved_application.get("sphere_name")),
+        resolution_strategy=str(resolved_application.get("resolution_strategy")),
+        category_count=len(categories),
+        lamp_count=len(recommended_lamps),
+        portfolio_count=len(portfolio_examples),
+    )
+    return response
+
+
 async def _sphere_categories(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     sphere = _req_str(req.sphere, "sphere")
     rows = await conn.fetch(
         """
-        SELECT s.sphere_id, s.name AS sphere_name, c.category_id, c.name AS category_name, c.url
+        SELECT s.sphere_id, s.name AS sphere_name, c.category_id, c.name AS category_name, c.url, c.image_url
         FROM corp.spheres s
         JOIN corp.sphere_categories sc ON sc.sphere_id = s.sphere_id
         JOIN corp.categories c ON c.category_id = sc.category_id
@@ -1903,6 +3041,8 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
                 result["kind"] = "lamp_suggest"
             elif req.kind == "sku_by_code":
                 result = await _sku_by_code(conn, req, limit, offset)
+            elif req.kind == "application_recommendation":
+                result = await _application_recommendation(conn, req, limit, offset)
             elif req.kind == "category_lamps":
                 result = await _category_lamps(conn, req, limit, offset)
             elif req.kind == "portfolio_by_sphere":

@@ -8,15 +8,16 @@ import aiohttp
 from datetime import datetime
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Optional
+from typing import Optional, Any
 from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
 from logger import agent_logger, log_agent_step
 from observability import REQUEST_ID as OBS_REQUEST_ID
-from run_meta import run_meta_update_llm
+from run_meta import run_meta_get, run_meta_update_llm
 from tools import execute_tool, filter_tools_for_session
-from models import ToolContext
+from models import ToolContext, ToolResult
+from opentelemetry import trace
 
 # Cache for tool definitions
 _tools_cache = None
@@ -27,6 +28,28 @@ TOOLS_CACHE_TTL = 60  # seconds
 _userbot_available_cache = None
 _userbot_check_time = 0
 USERBOT_CHECK_TTL = 30  # seconds
+
+COMPANY_FACT_KEYWORDS = (
+    "сайт", "официальный сайт", "адрес", "офис", "головной офис", "контак", "телефон",
+    "email", "e-mail", "почт", "реквизит", "инн", "кпп", "огрн", "соцсет", "телеграм",
+    "telegram", "youtube", "ютуб", "vk", "вконтакте", "канал", "год основания",
+    "основан", "основана", "сколько лет компании", "о компании", "общая информация о компании",
+    "гаранти", "сервис", "консультац",
+)
+APPLICATION_RECOMMENDATION_KEYWORDS = (
+    "стадион", "арена", "спорткомплекс", "футболь", "карьер", "рудник", "гок",
+    "аэропорт", "апрон", "перрон", "склад", "логист", "высокие прол", "high-bay",
+    "high bay", "офис", "кабинет", "абк", "агрессивн", "мойка", "азс",
+)
+
+EXPLICIT_WIKI_KEYWORDS = (
+    "wiki", "вики", "согласно wiki", "согласно вики", "найди в wiki", "найди в вики",
+    "в wiki", "в вики", "процит", "цитат", "покажи фрагмент", "фрагмент", "документ",
+    "из документа", "по документам", "в документе", "найди в документ", "doc search",
+)
+
+LEGACY_DOC_SKILL_PATH = "/data/skills/corp-wiki-md-search"
+CORP_DOCS_ROOT = "/data/corp_docs"
 
 # Google tokens (admin-only, configured via Admin UI)
 GOOGLE_TOKENS_FILE = "/data/google_tokens.json"
@@ -60,6 +83,127 @@ def get_google_email() -> Optional[str]:
         pass
     
     return None
+
+
+def _normalize_routing_text(text: Any) -> str:
+    return re.sub(r"\s+", " ", str(text or "").lower()).strip()
+
+
+def _text_has_any(text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
+def _is_explicit_wiki_request(message: str) -> bool:
+    return _text_has_any(_normalize_routing_text(message), EXPLICIT_WIKI_KEYWORDS)
+
+
+def _is_company_fact_intent(message: str) -> bool:
+    return _text_has_any(_normalize_routing_text(message), COMPANY_FACT_KEYWORDS)
+
+
+def _is_application_recommendation_intent(message: str) -> bool:
+    return _text_has_any(_normalize_routing_text(message), APPLICATION_RECOMMENDATION_KEYWORDS)
+
+
+def _parse_json_object(raw_text: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(raw_text or "")
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _is_successful_company_fact_kb_search(args: dict, tool_output: str, message: str) -> bool:
+    if str(args.get("kind") or "") != "hybrid_search":
+        return False
+    if str(args.get("profile") or "") != "kb_search":
+        return False
+
+    payload = _parse_json_object(tool_output)
+    if payload.get("status") != "success":
+        return False
+
+    entity_types = args.get("entity_types") or []
+    if isinstance(entity_types, list) and any(str(item).lower() == "company" for item in entity_types):
+        return True
+
+    if _is_company_fact_intent(message):
+        return True
+
+    query = _normalize_routing_text(args.get("query"))
+    return _text_has_any(query, COMPANY_FACT_KEYWORDS)
+
+
+def _is_successful_application_recommendation(args: dict, tool_output: str, message: str) -> bool:
+    if str(args.get("kind") or "") != "application_recommendation":
+        return False
+    payload = _parse_json_object(tool_output)
+    status = str(payload.get("status") or "")
+    if status not in {"success", "needs_clarification"}:
+        return False
+    if _is_application_recommendation_intent(message):
+        return True
+    query = _normalize_routing_text(args.get("query"))
+    return _text_has_any(query, APPLICATION_RECOMMENDATION_KEYWORDS)
+
+
+def _is_wiki_tool_attempt(name: str, args: dict) -> bool:
+    if name in {"doc_search", "corp_wiki_search"}:
+        return True
+    if name in {"list_directory", "read_file", "search_text"}:
+        path = _normalize_routing_text(args.get("path"))
+        return LEGACY_DOC_SKILL_PATH in path or CORP_DOCS_ROOT in path
+    if name == "search_files":
+        pattern = _normalize_routing_text(args.get("pattern"))
+        path = _normalize_routing_text(args.get("path"))
+        return (
+            LEGACY_DOC_SKILL_PATH in pattern
+            or CORP_DOCS_ROOT in pattern
+            or LEGACY_DOC_SKILL_PATH in path
+            or CORP_DOCS_ROOT in path
+        )
+    if name == "run_command":
+        command = _normalize_routing_text(args.get("command"))
+        return (
+            "wiki_search.py" in command
+            or "corp-wiki-md-search" in command
+            or "/data/corp_docs" in command
+            or "lit parse" in command
+        )
+    return False
+
+
+def _is_application_fallback_attempt(name: str, args: dict) -> bool:
+    if _is_wiki_tool_attempt(name, args):
+        return True
+    if name != "corp_db_search":
+        return False
+    kind = str(args.get("kind") or "")
+    return kind in {"hybrid_search", "category_lamps", "sphere_categories", "portfolio_by_sphere", "lamp_filters"}
+
+
+def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = "") -> None:
+    meta = run_meta_get()
+    if isinstance(meta, dict):
+        meta["retrieval_intent"] = str(state.get("intent") or "")
+        meta["retrieval_selected_source"] = str(state.get("selected_source") or "unknown")
+        meta["retrieval_explicit_wiki_request"] = bool(state.get("explicit_wiki_request"))
+        meta["retrieval_wiki_after_corp_db_success"] = bool(state.get("wiki_after_corp_db_success"))
+        meta["routing_guardrail_hits"] = int(state.get("guardrail_activations", 0))
+        if blocked_tool:
+            meta["routing_guardrail_last_blocked_tool"] = blocked_tool
+
+    span = trace.get_current_span()
+    try:
+        span.set_attribute("retrieval.intent", str(state.get("intent") or ""))
+        span.set_attribute("retrieval.selected_source", str(state.get("selected_source") or "unknown"))
+        span.set_attribute("retrieval.explicit_wiki_request", bool(state.get("explicit_wiki_request")))
+        span.set_attribute("retrieval.wiki_after_corp_db_success", bool(state.get("wiki_after_corp_db_success")))
+        span.set_attribute("retrieval.guardrail_hits", int(state.get("guardrail_activations", 0)))
+        if blocked_tool:
+            span.set_attribute("retrieval.guardrail_last_blocked_tool", blocked_tool)
+    except Exception:
+        return None
 
 
 async def _check_userbot_available() -> bool:
@@ -800,6 +944,22 @@ async def run_agent(
     final_response = ""
     iteration = 0
     has_search_tool = False  # Track if search_web was called
+    routing_state = {
+        "intent": (
+            "company_fact"
+            if _is_company_fact_intent(message)
+            else "application_recommendation"
+            if _is_application_recommendation_intent(message)
+            else "other"
+        ),
+        "selected_source": "unknown",
+        "explicit_wiki_request": _is_explicit_wiki_request(message),
+        "corp_db_company_fact_success": False,
+        "corp_db_application_success": False,
+        "wiki_after_corp_db_success": False,
+        "guardrail_activations": 0,
+    }
+    _update_routing_observability(routing_state)
     
     agent_logger.info(f"Available tools for {chat_type}/{source}: {len(tool_definitions)} (lazy={use_lazy_loading})")
     
@@ -877,10 +1037,68 @@ async def run_agent(
                         agent_logger.error(f"[iter {iteration}] Could not fix JSON args for {name}")
                     args = {}
                 
-                # Execute tool
-                tool_result = await execute_tool(name, args, tool_ctx)
-                
+                if routing_state["corp_db_application_success"] and not routing_state["explicit_wiki_request"] and _is_application_fallback_attempt(name, args):
+                    routing_state["wiki_after_corp_db_success"] = _is_wiki_tool_attempt(name, args)
+                    routing_state["guardrail_activations"] += 1
+                    _update_routing_observability(routing_state, blocked_tool=name)
+                    agent_logger.warning(
+                        "[iter %s] ROUTING GUARDRAIL blocked %s after successful corp_db application recommendation",
+                        iteration,
+                        name,
+                    )
+                    tool_result = ToolResult(
+                        False,
+                        error=(
+                            "Routing guardrail: `corp_db_search(kind=application_recommendation)` already returned the answer contract "
+                            "for this broad-object request. Answer from that payload unless the user explicitly asks for wiki/document context."
+                        ),
+                    )
+                elif _is_wiki_tool_attempt(name, args):
+                    if routing_state["corp_db_company_fact_success"] and not routing_state["explicit_wiki_request"]:
+                        routing_state["wiki_after_corp_db_success"] = True
+                        routing_state["guardrail_activations"] += 1
+                        _update_routing_observability(routing_state, blocked_tool=name)
+                        agent_logger.warning(
+                            "[iter %s] ROUTING GUARDRAIL blocked %s after successful corp_db company-fact answer",
+                            iteration,
+                            name,
+                        )
+                        tool_result = ToolResult(
+                            False,
+                            error=(
+                                "Routing guardrail: `corp_db_search` already returned a confirmed company-fact answer. "
+                                "Answer from corp_db unless the user explicitly asks for wiki/document context."
+                            ),
+                        )
+                    else:
+                        routing_state["selected_source"] = "doc_search"
+                        _update_routing_observability(routing_state)
+                        tool_result = await execute_tool(name, args, tool_ctx)
+                else:
+                    # Execute tool
+                    tool_result = await execute_tool(name, args, tool_ctx)
+
                 agent_logger.info(f"[iter {iteration}] TOOL RESULT: success={tool_result.success}, output={len(tool_result.output or '')} chars, error={tool_result.error or 'none'}")
+
+                if name == "corp_db_search" and _is_successful_company_fact_kb_search(args, tool_result.output or "", message):
+                    routing_state["corp_db_company_fact_success"] = True
+                    routing_state["selected_source"] = "corp_db"
+                    _update_routing_observability(routing_state)
+                    agent_logger.info(
+                        "[iter %s] ROUTING selected_source=corp_db intent=%s explicit_wiki=%s",
+                        iteration,
+                        routing_state["intent"],
+                        routing_state["explicit_wiki_request"],
+                    )
+                if name == "corp_db_search" and _is_successful_application_recommendation(args, tool_result.output or "", message):
+                    routing_state["corp_db_application_success"] = True
+                    routing_state["selected_source"] = "corp_db"
+                    _update_routing_observability(routing_state)
+                    agent_logger.info(
+                        "[iter %s] ROUTING selected_source=corp_db intent=%s application_fast_path=true",
+                        iteration,
+                        routing_state["intent"],
+                    )
                 
                 # Dynamic tool loading: merge new definitions into active toolkit
                 if name == "load_tools" and tool_result.success and tool_result.metadata:
