@@ -155,6 +155,38 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "doc_search",
+            "description": "Search the normalized local document corpus across Markdown, PDFs, Office files, images, and promoted live records. Legacy doc/xls/ppt content is available only after doc-worker normalization.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query for the local document corpus"},
+                    "top": {"type": "integer", "description": "How many documents to return (default 5)"},
+                    "include_legacy": {"type": "boolean", "description": "Whether to include the legacy wiki corpus (default true)"},
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "corp_wiki_search",
+            "description": "Deprecated alias of doc_search. Search the normalized local document corpus for explicit document context or fallback after corp_db_search empty/error.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query for the local document corpus"},
+                    "top": {"type": "integer", "description": "How many documents to return (default 5)"},
+                    "include_legacy": {"type": "boolean", "description": "Whether to include the legacy wiki corpus (default true)"},
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "fetch_page",
             "description": "Fetch and parse URL content as markdown.",
             "parameters": {
@@ -286,6 +318,8 @@ TOOL_DEFINITIONS = [
 from tools.bash import tool_run_command
 from tools.files import tool_read_file, tool_write_file, tool_edit_file, tool_delete_file, tool_search_files, tool_search_text, tool_list_directory
 from tools.corp_db import tool_corp_db_search
+from tools.doc_search import tool_doc_search
+from tools.corp_wiki import tool_corp_wiki_search
 from tools.web import tool_search_web, tool_fetch_page
 from tools.memory import tool_memory
 from tools.scheduler import tool_schedule_task
@@ -510,6 +544,8 @@ TOOL_EXECUTORS = {
     "search_web": tool_search_web,
     "fetch_page": tool_fetch_page,
     "corp_db_search": tool_corp_db_search,
+    "doc_search": tool_doc_search,
+    "corp_wiki_search": tool_corp_wiki_search,
     "memory": tool_memory,
     "schedule_task": tool_schedule_task,
     "manage_tasks": tool_manage_tasks,

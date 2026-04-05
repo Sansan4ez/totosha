@@ -12,6 +12,7 @@ from typing import Optional, Any
 from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
+from documents.routing import select_route_card
 from logger import agent_logger, log_agent_step
 from observability import REQUEST_ID as OBS_REQUEST_ID
 from run_meta import run_meta_append_artifact, run_meta_get, run_meta_update_llm
@@ -182,11 +183,49 @@ def _is_application_fallback_attempt(name: str, args: dict) -> bool:
     return kind in {"hybrid_search", "category_lamps", "sphere_categories", "portfolio_by_sphere", "lamp_filters"}
 
 
+def _is_retrieval_tool_attempt(name: str, args: dict) -> bool:
+    if name == "corp_db_search":
+        return True
+    return _is_wiki_tool_attempt(name, args)
+
+
+def _preferred_source_error(route_hint: dict[str, Any], attempted_tool: str) -> str:
+    source = str(route_hint.get("source") or "")
+    tool_name = str(route_hint.get("tool_name") or "")
+    tool_args = route_hint.get("tool_args") or {}
+    route_id = str(route_hint.get("route_id") or "")
+    if source == "corp_db":
+        return (
+            f"Routing index selected `{route_id}` -> `{tool_name}` before `{attempted_tool}`. "
+            f"Сначала вызови `{tool_name}` с args {json.dumps(tool_args, ensure_ascii=False)}."
+        )
+    if source == "doc_search":
+        return (
+            f"Routing index selected `{route_id}` -> `{tool_name}` before `{attempted_tool}`. "
+            "Сначала используй `doc_search`, потому что вопрос относится к document corpus."
+        )
+    return ""
+
+
+def _route_hint_blocks_tool_attempt(route_hint: dict[str, Any] | None, name: str, args: dict, *, explicit_wiki_request: bool) -> bool:
+    if not route_hint:
+        return False
+    source = str(route_hint.get("source") or "")
+    if source == "corp_db":
+        return not explicit_wiki_request and _is_wiki_tool_attempt(name, args)
+    if source == "doc_search":
+        return name == "corp_db_search"
+    return False
+
+
 def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = "") -> None:
     meta = run_meta_get()
     if isinstance(meta, dict):
         meta["retrieval_intent"] = str(state.get("intent") or "")
         meta["retrieval_selected_source"] = str(state.get("selected_source") or "unknown")
+        meta["retrieval_route_id"] = str(state.get("route_id") or "")
+        meta["retrieval_route_source"] = str(state.get("route_source") or "")
+        meta["retrieval_route_score"] = int(state.get("route_score") or 0)
         meta["retrieval_explicit_wiki_request"] = bool(state.get("explicit_wiki_request"))
         meta["retrieval_wiki_after_corp_db_success"] = bool(state.get("wiki_after_corp_db_success"))
         meta["routing_guardrail_hits"] = int(state.get("guardrail_activations", 0))
@@ -197,6 +236,9 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
     try:
         span.set_attribute("retrieval.intent", str(state.get("intent") or ""))
         span.set_attribute("retrieval.selected_source", str(state.get("selected_source") or "unknown"))
+        span.set_attribute("retrieval.route_id", str(state.get("route_id") or ""))
+        span.set_attribute("retrieval.route_source", str(state.get("route_source") or ""))
+        span.set_attribute("retrieval.route_score", int(state.get("route_score") or 0))
         span.set_attribute("retrieval.explicit_wiki_request", bool(state.get("explicit_wiki_request")))
         span.set_attribute("retrieval.wiki_after_corp_db_success", bool(state.get("wiki_after_corp_db_success")))
         span.set_attribute("retrieval.guardrail_hits", int(state.get("guardrail_activations", 0)))
@@ -924,6 +966,16 @@ async def run_agent(
     if google_email:
         workspace_info += f"\nGoogle: {google_email} (authorized, use as user_google_email for Google Workspace tools)"
     
+    route_hint = select_route_card(message)
+    if route_hint:
+        workspace_info += (
+            "\nRouting hint: "
+            f"route_id={route_hint.get('route_id')} "
+            f"preferred_source={route_hint.get('source')} "
+            f"tool={route_hint.get('tool_name')} "
+            f"tool_args={json.dumps(route_hint.get('tool_args') or {}, ensure_ascii=False)}"
+        )
+
     messages = [{"role": "system", "content": system_prompt + workspace_info}]
     messages.extend(session.history)
     messages.append({"role": "user", "content": message})
@@ -953,11 +1005,15 @@ async def run_agent(
             else "other"
         ),
         "selected_source": "unknown",
+        "route_id": str(route_hint.get("route_id") or "") if route_hint else "",
+        "route_source": str(route_hint.get("source") or "") if route_hint else "",
+        "route_score": int(route_hint.get("score") or 0) if route_hint else 0,
         "explicit_wiki_request": _is_explicit_wiki_request(message),
         "corp_db_company_fact_success": False,
         "corp_db_application_success": False,
         "wiki_after_corp_db_success": False,
         "guardrail_activations": 0,
+        "retrieval_tool_used": False,
     }
     _update_routing_observability(routing_state)
     
@@ -1053,6 +1109,14 @@ async def run_agent(
                             "for this broad-object request. Answer from that payload unless the user explicitly asks for wiki/document context."
                         ),
                     )
+                elif (
+                    not routing_state["retrieval_tool_used"]
+                    and _is_retrieval_tool_attempt(name, args)
+                    and _route_hint_blocks_tool_attempt(route_hint, name, args, explicit_wiki_request=routing_state["explicit_wiki_request"])
+                ):
+                    routing_state["guardrail_activations"] += 1
+                    _update_routing_observability(routing_state, blocked_tool=name)
+                    tool_result = ToolResult(False, error=_preferred_source_error(route_hint or {}, name))
                 elif _is_wiki_tool_attempt(name, args):
                     if routing_state["corp_db_company_fact_success"] and not routing_state["explicit_wiki_request"]:
                         routing_state["wiki_after_corp_db_success"] = True
@@ -1077,6 +1141,9 @@ async def run_agent(
                 else:
                     # Execute tool
                     tool_result = await execute_tool(name, args, tool_ctx)
+
+                if _is_retrieval_tool_attempt(name, args):
+                    routing_state["retrieval_tool_used"] = True
 
                 agent_logger.info(f"[iter {iteration}] TOOL RESULT: success={tool_result.success}, output={len(tool_result.output or '')} chars, error={tool_result.error or 'none'}")
 

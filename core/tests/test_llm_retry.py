@@ -23,6 +23,17 @@ class _DummyLogger:
         return None
 
 
+class _DummySpan:
+    def set_attribute(self, *args, **kwargs):
+        return None
+
+
+class _DummyTrace:
+    @staticmethod
+    def get_current_span():
+        return _DummySpan()
+
+
 _MODULE_PATH = Path(__file__).resolve().parents[1] / "agent.py"
 _SPEC = importlib.util.spec_from_file_location("core_agent_module", _MODULE_PATH)
 assert _SPEC and _SPEC.loader
@@ -41,12 +52,13 @@ _stub_modules = {
         log_agent_step=lambda *args, **kwargs: None,
     ),
     "observability": types.SimpleNamespace(REQUEST_ID=ContextVar("request_id", default="-")),
-    "run_meta": types.SimpleNamespace(run_meta_update_llm=lambda **kwargs: None),
+    "run_meta": types.SimpleNamespace(run_meta_get=lambda: None, run_meta_update_llm=lambda **kwargs: None),
     "tools": types.SimpleNamespace(
         execute_tool=lambda *args, **kwargs: None,
         filter_tools_for_session=lambda *args, **kwargs: [],
     ),
-    "models": types.SimpleNamespace(ToolContext=object),
+    "models": types.SimpleNamespace(ToolContext=object, ToolResult=object),
+    "opentelemetry": types.SimpleNamespace(trace=_DummyTrace()),
 }
 _saved_modules = {name: sys.modules.get(name) for name in _stub_modules}
 try:

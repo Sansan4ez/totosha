@@ -166,6 +166,30 @@ services:
           cpus: '1.0'
           memory: 512M
 
+  # ============ DOC WORKER - Operator-only document ingestion/normalization ============
+  doc-worker:
+    build: ./doc-worker
+    container_name: doc-worker
+    profiles:
+      - operator
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - DOC_REPO_ROOT=/repo
+      - CORP_DOCS_ROOT=/data/corp_docs
+      - CORP_WIKI_PATH=/data/skills/corp-wiki-md-search/wiki
+      - DOC_SEARCH_ENABLE_LEGACY_OFFICE=1
+    volumes:
+      - .:/repo:ro
+      - ./workspace/_shared:/data
+    networks:
+      - agent-net
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
+
   # ============ MCP TEST SERVER ============
   mcp-test:
     build: ./mcp-test

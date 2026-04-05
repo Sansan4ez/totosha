@@ -8,9 +8,13 @@ import os
 import re
 import glob as globlib
 import subprocess
+import shutil
 from security import is_sensitive_file
 from logger import tool_logger
 from models import ToolResult, ToolContext
+
+DEFAULT_CORP_DOCS_ROOT = "/data/corp_docs"
+DEFAULT_LEGACY_DOCS_ROOT = "/data/skills/corp-wiki-md-search/wiki"
 
 
 def normalize_path(input_path: str, cwd: str) -> str:
@@ -34,27 +38,58 @@ def normalize_path(input_path: str, cwd: str) -> str:
     return input_path
 
 
+def _managed_document_roots() -> tuple[str, ...]:
+    return tuple(
+        os.path.realpath(path)
+        for path in (
+            os.getenv("CORP_DOCS_ROOT", DEFAULT_CORP_DOCS_ROOT),
+            os.getenv("CORP_WIKI_PATH", DEFAULT_LEGACY_DOCS_ROOT),
+        )
+    )
+
+
+def _is_within_root(resolved: str, root: str) -> bool:
+    return resolved == root or resolved.startswith(root + os.sep)
+
+
 def is_path_safe(path: str, cwd: str) -> tuple[bool, str]:
     """Check if path is within workspace or allowed directories"""
     resolved = os.path.realpath(path)
     resolved_cwd = os.path.realpath(cwd)
-    
+
+    for root in _managed_document_roots():
+        if _is_within_root(resolved, root):
+            return False, "Cannot access managed document corpus directly"
+
     # Allow reading from /data/skills/ (skills are read-only)
     if resolved.startswith("/data/skills") and (resolved == "/data/skills" or resolved.startswith("/data/skills/")):
         return True, ""
-    
+
     if not resolved.startswith(resolved_cwd):
         return False, "Path outside workspace"
-    
+
     # Block workspace root listing
     if resolved == "/workspace" or resolved == "/workspace/":
         return False, "Cannot access workspace root"
-    
+
     # Block _shared folder
     if "/_shared" in resolved:
         return False, "Cannot access shared folder"
-    
+
     return True, ""
+
+
+def _glob_anchor(pattern: str, cwd: str) -> str:
+    normalized = normalize_path(pattern or ".", cwd)
+    magic_match = re.search(r"[*?\[]", normalized)
+    if not magic_match:
+        return normalized
+    prefix = normalized[: magic_match.start()]
+    if prefix.endswith(os.sep):
+        anchor = prefix.rstrip(os.sep)
+    else:
+        anchor = os.path.dirname(prefix)
+    return anchor or os.sep
 
 
 async def tool_read_file(args: dict, ctx: ToolContext) -> ToolResult:
@@ -171,13 +206,24 @@ async def tool_delete_file(args: dict, ctx: ToolContext) -> ToolResult:
 async def tool_search_files(args: dict, ctx: ToolContext) -> ToolResult:
     """Search files by glob pattern"""
     pattern = args.get("pattern", "")
-    
+
+    anchor = _glob_anchor(pattern, ctx.cwd)
+    safe, reason = is_path_safe(anchor, ctx.cwd)
+    if not safe:
+        return ToolResult(False, error=f"🚫 {reason}")
+
     tool_logger.info(f"Searching files: {pattern}")
-    
+
     try:
-        files = globlib.glob(os.path.join(ctx.cwd, pattern), recursive=True)
+        normalized_pattern = normalize_path(pattern or ".", ctx.cwd)
+        files = globlib.glob(normalized_pattern, recursive=True)
         # Filter out node_modules and .git
-        files = [f for f in files if "node_modules" not in f and ".git" not in f]
+        files = [
+            f for f in files
+            if "node_modules" not in f
+            and ".git" not in f
+            and is_path_safe(f, ctx.cwd)[0]
+        ]
         result = "\n".join(files[:200]) if files else "(no matches)"
         return ToolResult(True, output=result)
     except Exception as e:
@@ -192,18 +238,36 @@ async def tool_search_text(args: dict, ctx: ToolContext) -> ToolResult:
     
     if not search_path.startswith("/"):
         search_path = os.path.join(ctx.cwd, search_path)
+
+    safe, reason = is_path_safe(search_path, ctx.cwd)
+    if not safe:
+        return ToolResult(False, error=f"🚫 {reason}")
     
     tool_logger.info(f"Searching text: '{pattern}' in {search_path}")
     
     try:
-        flags = ["-rn"]
-        if ignore_case:
-            flags.append("-i")
-        flags.extend(["--exclude-dir=node_modules", "--exclude-dir=.git"])
-        
-        cmd = f"grep {' '.join(flags)} '{pattern}' '{search_path}' 2>/dev/null | head -200"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
-        return ToolResult(True, output=result.stdout or "(no matches)")
+        rg_path = shutil.which("rg")
+        if rg_path:
+            cmd = [
+                rg_path,
+                "-n",
+                "--max-count",
+                "200",
+                "--glob",
+                "!node_modules/**",
+                "--glob",
+                "!.git/**",
+            ]
+            if ignore_case:
+                cmd.append("-i")
+            cmd.extend([pattern, search_path])
+        else:
+            cmd = ["grep", "-rn", "--exclude-dir=node_modules", "--exclude-dir=.git"]
+            if ignore_case:
+                cmd.append("-i")
+            cmd.extend([pattern, search_path])
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+        return ToolResult(True, output=(result.stdout or "").strip() or "(no matches)")
     except Exception as e:
         return ToolResult(True, output="(no matches)")
 

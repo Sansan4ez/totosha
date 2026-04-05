@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 
 class _DummyLogger:
     def debug(self, *args, **kwargs):
@@ -144,6 +146,8 @@ class RoutingGuardrailTests(unittest.TestCase):
         corp_db_args: dict | None = None,
         wiki_tool_name: str = "read_file",
         wiki_tool_args: dict | None = None,
+        route_index: dict | None = None,
+        tool_call_sequence: list[tuple[str, dict]] | None = None,
     ) -> tuple[str, AsyncMock, dict]:
         meta: dict = {}
         tool_defs = [
@@ -165,8 +169,8 @@ class RoutingGuardrailTests(unittest.TestCase):
             },
         ]
 
-        llm_responses = [
-            self._tool_call_response(
+        default_sequence = [
+            (
                 "corp_db_search",
                 corp_db_args
                 or {
@@ -176,12 +180,13 @@ class RoutingGuardrailTests(unittest.TestCase):
                     "query": "сайт компании",
                 },
             ),
-            self._tool_call_response(
+            (
                 wiki_tool_name,
                 wiki_tool_args or {"path": "/data/skills/corp-wiki-md-search/SKILL.md"},
             ),
-            self._final_response("Официальный сайт: https://ladzavod.ru"),
         ]
+        llm_responses = [self._tool_call_response(name, args) for name, args in (tool_call_sequence or default_sequence)]
+        llm_responses.append(self._final_response("Официальный сайт: https://ladzavod.ru"))
 
         async def fake_execute_tool(name, args, ctx):
             if name == "corp_db_search":
@@ -192,42 +197,51 @@ class RoutingGuardrailTests(unittest.TestCase):
 
         exec_mock = AsyncMock(side_effect=fake_execute_tool)
 
-        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
-            _MODULE.CONFIG, "workspace", tmpdir
-        ), patch.object(
-            _MODULE.CONFIG, "max_context_messages", 12
-        ), patch.object(
-            _MODULE.CONFIG, "max_history", 12
-        ), patch.object(
-            _MODULE.CONFIG, "max_tool_output", 4000
-        ), patch.object(
-            _MODULE, "get_tool_definitions", AsyncMock(return_value=tool_defs)
-        ), patch.object(
-            _MODULE, "_check_userbot_available", AsyncMock(return_value=False)
-        ), patch.object(
-            _MODULE, "load_skill_mentions", AsyncMock(return_value="")
-        ), patch.object(
-            _MODULE, "get_google_email", return_value=None
-        ), patch.object(
-            _MODULE, "_get_admin_id", return_value=0
-        ), patch.object(
-            _MODULE, "call_llm", AsyncMock(side_effect=llm_responses)
-        ), patch.object(
-            _MODULE, "execute_tool", exec_mock
-        ), patch.object(
-            _MODULE, "run_meta_get", lambda: meta
-        ):
-            _MODULE.sessions.sessions.clear()
-            response = asyncio.run(
-                _MODULE.run_agent(
-                    user_id=42,
-                    chat_id=42,
-                    message=user_message,
-                    username="bench",
-                    chat_type="private",
-                    source="bot",
+        with tempfile.TemporaryDirectory() as tmpdir:
+            if route_index is not None:
+                route_dir = Path(tmpdir) / "corp_docs" / "manifests" / "routes"
+                route_dir.mkdir(parents=True, exist_ok=True)
+                (route_dir / "index.json").write_text(json.dumps(route_index, ensure_ascii=False), encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs")},
+                clear=False,
+            ), patch.object(
+                _MODULE.CONFIG, "workspace", tmpdir
+            ), patch.object(
+                _MODULE.CONFIG, "max_context_messages", 12
+            ), patch.object(
+                _MODULE.CONFIG, "max_history", 12
+            ), patch.object(
+                _MODULE.CONFIG, "max_tool_output", 4000
+            ), patch.object(
+                _MODULE, "get_tool_definitions", AsyncMock(return_value=tool_defs)
+            ), patch.object(
+                _MODULE, "_check_userbot_available", AsyncMock(return_value=False)
+            ), patch.object(
+                _MODULE, "load_skill_mentions", AsyncMock(return_value="")
+            ), patch.object(
+                _MODULE, "get_google_email", return_value=None
+            ), patch.object(
+                _MODULE, "_get_admin_id", return_value=0
+            ), patch.object(
+                _MODULE, "call_llm", AsyncMock(side_effect=llm_responses)
+            ), patch.object(
+                _MODULE, "execute_tool", exec_mock
+            ), patch.object(
+                _MODULE, "run_meta_get", lambda: meta
+            ):
+                _MODULE.sessions.sessions.clear()
+                response = asyncio.run(
+                    _MODULE.run_agent(
+                        user_id=42,
+                        chat_id=42,
+                        message=user_message,
+                        username="bench",
+                        chat_type="private",
+                        source="bot",
+                    )
                 )
-            )
 
         return response, exec_mock, meta
 
@@ -308,6 +322,74 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
+
+    def test_route_index_blocks_doc_tool_before_corp_db_for_company_fact(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Какой официальный сайт у компании ЛАДзавод светотехники?",
+            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "https://ladzavod.ru"}]},
+            wiki_tool_name="doc_search",
+            wiki_tool_args={"query": "официальный сайт компании"},
+            route_index={
+                "generated_at": "2026-04-05T00:00:00Z",
+                "route_count": 1,
+                "routes": [
+                    {
+                        "route_id": "corp_db.company_profile",
+                        "source": "corp_db",
+                        "title": "Company profile",
+                        "keywords": ["сайт", "контакты", "компания"],
+                        "patterns": ["официальный сайт"],
+                        "tool_name": "corp_db_search",
+                        "tool_args": {"kind": "hybrid_search", "profile": "kb_search", "entity_types": ["company"]},
+                    }
+                ],
+            },
+            tool_call_sequence=[
+                ("doc_search", {"query": "официальный сайт компании"}),
+                (
+                    "corp_db_search",
+                    {"kind": "hybrid_search", "profile": "kb_search", "entity_types": ["company"], "query": "официальный сайт компании"},
+                ),
+            ],
+        )
+
+        self.assertIn("ladzavod.ru", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
+        self.assertEqual(meta["retrieval_route_source"], "corp_db")
+        self.assertEqual(meta["retrieval_route_id"], "corp_db.company_profile")
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
+
+    def test_route_index_blocks_corp_db_before_doc_search_for_document_topic(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Найди пожарный сертификат line и покажи фрагмент",
+            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+            corp_db_args={"kind": "hybrid_search", "profile": "kb_search", "query": "пожарный сертификат line"},
+            wiki_tool_name="doc_search",
+            wiki_tool_args={"query": "пожарный сертификат line"},
+            route_index={
+                "generated_at": "2026-04-05T00:00:00Z",
+                "route_count": 1,
+                "routes": [
+                    {
+                        "route_id": "doc_search.doc_fire_line",
+                        "source": "doc_search",
+                        "title": "Пожарный сертификат LINE",
+                        "keywords": ["пожарный", "сертификат", "line"],
+                        "patterns": ["пожарный сертификат line"],
+                        "tool_name": "doc_search",
+                        "tool_args": {"preferred_document_ids": ["doc_fire_line"]},
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("ladzavod.ru", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "doc_search")
+        self.assertEqual(meta["retrieval_route_source"], "doc_search")
+        self.assertEqual(meta["retrieval_route_id"], "doc_search.doc_fire_line")
         self.assertEqual(meta["routing_guardrail_hits"], 1)
 
 

@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy all Python modules
 COPY *.py ./
+COPY documents/ ./documents/
 COPY tools/ ./tools/
 COPY tests/ ./tests/
 

@@ -156,6 +156,8 @@ async def get_base_tools():
         # Web and Telegram
         "search_web", "fetch_page",
         "corp_db_search",
+        "doc_search",
+        "corp_wiki_search",
         "telegram_channel", "telegram_send", "telegram_dialogs",
         "telegram_history", "telegram_join"
     ]
