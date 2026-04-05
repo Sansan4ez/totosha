@@ -26,7 +26,10 @@ import statistics
 from pathlib import Path
 from typing import Any, Optional
 
-from bench_lib import BENCH_DIR, estimate_cost_usd, eval_checks, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
+try:
+    from .bench_lib import BENCH_DIR, estimate_cost_usd, evaluate_case_result, get_validation, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
+except ImportError:  # pragma: no cover - CLI script fallback
+    from bench_lib import BENCH_DIR, estimate_cost_usd, evaluate_case_result, get_validation, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
 
 
 DEFAULT_DATASET = BENCH_DIR / "golden" / "v1.jsonl"
@@ -119,6 +122,8 @@ def build_run_report(dataset: list[dict[str, Any]], dataset_path: Path, results_
 
     tag_totals: dict[str, int] = {}
     tag_pass: dict[str, int] = {}
+    validation_mode_totals: dict[str, int] = {}
+    validation_mode_pass: dict[str, int] = {}
 
     cases_out: list[dict[str, Any]] = []
 
@@ -128,13 +133,16 @@ def build_run_report(dataset: list[dict[str, Any]], dataset_path: Path, results_
             continue
 
         tags = _norm_tags(case.get("tags"))
+        validation = get_validation(case)
+        validation_mode = str(validation.get("mode") or "legacy_text")
+        validation_mode_totals[validation_mode] = validation_mode_totals.get(validation_mode, 0) + 1
         for t in tags:
             tag_totals[t] = tag_totals.get(t, 0) + 1
 
         question = str(case.get("question") or "")
         golden = case.get("golden") if isinstance(case.get("golden"), dict) else {}
         golden_answer = str(golden.get("answer") or "")
-        checks = golden.get("checks") if isinstance(golden.get("checks"), list) else []
+        routing = case.get("routing") if isinstance(case.get("routing"), dict) else {}
         evidence = case.get("evidence") if isinstance(case.get("evidence"), list) else []
 
         row = by_case.get(case_id)
@@ -146,7 +154,7 @@ def build_run_report(dataset: list[dict[str, Any]], dataset_path: Path, results_
                     "case_id": case_id,
                     "tags": tags,
                     "question": question,
-                    "golden": {"answer": golden_answer, "checks": checks, "evidence": evidence},
+                    "golden": {"answer": golden_answer, "checks": golden.get("checks"), "routing": routing, "evidence": evidence, "validation": validation},
                     "result": None,
                     "scoring": {"passed": False, "errors": ["missing_result"], "missing": True},
                 }
@@ -183,23 +191,24 @@ def build_run_report(dataset: list[dict[str, Any]], dataset_path: Path, results_
             errors = [f"status={status}"]
             failures.append({"case_id": case_id, "request_id": request_id, "reason": errors[0]})
         else:
-            ok, errs = eval_checks(answer, checks)
-            passed = ok
-            errors = errs
-            if ok:
+            evaluation = evaluate_case_result(case, row)
+            passed = bool(evaluation["passed"])
+            errors = list(evaluation["errors"])
+            if passed:
                 pass_count += 1
+                validation_mode_pass[validation_mode] = validation_mode_pass.get(validation_mode, 0) + 1
                 for t in tags:
                     tag_pass[t] = tag_pass.get(t, 0) + 1
             else:
                 fail_count += 1
-                failures.append({"case_id": case_id, "request_id": request_id, "reason": "; ".join(errs[:5])})
+                failures.append({"case_id": case_id, "request_id": request_id, "reason": "; ".join(errors[:5])})
 
         cases_out.append(
             {
                 "case_id": case_id,
                 "tags": tags,
                 "question": question,
-                "golden": {"answer": golden_answer, "checks": checks, "evidence": evidence},
+                "golden": {"answer": golden_answer, "checks": golden.get("checks"), "routing": routing, "evidence": evidence, "validation": validation},
                 "result": {
                     "status": status,
                     "request_id": request_id,
@@ -208,6 +217,10 @@ def build_run_report(dataset: list[dict[str, Any]], dataset_path: Path, results_
                     "duration_ms": row.get("duration_ms"),
                     "answer": answer,
                     "meta": meta,
+                    "primary_artifact": row.get("primary_artifact"),
+                    "bench_artifacts": row.get("bench_artifacts"),
+                    "execution_mode": row.get("execution_mode"),
+                    "validation_mode": row.get("validation_mode"),
                     "estimated_cost_usd": None if cost is None else round(float(cost), 8),
                 },
                 "scoring": {"passed": bool(passed), "errors": errors, "missing": False},
@@ -245,6 +258,14 @@ def build_run_report(dataset: list[dict[str, Any]], dataset_path: Path, results_
                 "pass_rate": round(tag_pass.get(t, 0) / tag_totals[t], 4) if tag_totals.get(t) else 0.0,
             }
             for t in sorted(tag_totals.keys())
+        },
+        "validation_modes": {
+            mode: {
+                "pass": validation_mode_pass.get(mode, 0),
+                "total": validation_mode_totals.get(mode, 0),
+                "pass_rate": round(validation_mode_pass.get(mode, 0) / validation_mode_totals[mode], 4) if validation_mode_totals.get(mode) else 0.0,
+            }
+            for mode in sorted(validation_mode_totals.keys())
         },
     }
 

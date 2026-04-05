@@ -15,7 +15,10 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-from bench_lib import BENCH_DIR, estimate_cost_usd, eval_checks, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
+try:
+    from .bench_lib import BENCH_DIR, estimate_cost_usd, evaluate_case_result, get_validation, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
+except ImportError:  # pragma: no cover - CLI script fallback
+    from bench_lib import BENCH_DIR, estimate_cost_usd, evaluate_case_result, get_validation, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
 
 DEFAULT_DATASET = BENCH_DIR / "golden" / "v1.jsonl"
 DEFAULT_PRICING = BENCH_DIR / "pricing.json"
@@ -65,10 +68,15 @@ def main() -> None:
 
     tag_totals: dict[str, int] = {}
     tag_pass: dict[str, int] = {}
+    validation_mode_totals: dict[str, int] = {}
+    validation_mode_pass: dict[str, int] = {}
 
     for case in dataset:
         case_id = str(case.get("id") or "")
         tags = case.get("tags") if isinstance(case.get("tags"), list) else []
+        validation = get_validation(case)
+        validation_mode = str(validation.get("mode") or "legacy_text")
+        validation_mode_totals[validation_mode] = validation_mode_totals.get(validation_mode, 0) + 1
         for t in tags:
             if isinstance(t, str) and t:
                 tag_totals[t] = tag_totals.get(t, 0) + 1
@@ -107,12 +115,11 @@ def main() -> None:
             failures.append({"case_id": case_id, "request_id": request_id, "reason": f"status={status}"})
             continue
 
-        golden = case.get("golden") if isinstance(case.get("golden"), dict) else {}
-        checks = golden.get("checks") if isinstance(golden.get("checks"), list) else []
-
-        ok, errors = eval_checks(answer, checks)
-        if ok:
+        evaluation = evaluate_case_result(case, row)
+        errors = evaluation["errors"]
+        if evaluation["passed"]:
             pass_count += 1
+            validation_mode_pass[validation_mode] = validation_mode_pass.get(validation_mode, 0) + 1
             for t in tags:
                 if isinstance(t, str) and t:
                     tag_pass[t] = tag_pass.get(t, 0) + 1
@@ -150,6 +157,14 @@ def main() -> None:
             }
             for t in sorted(tag_totals.keys())
         },
+        "validation_modes": {
+            mode: {
+                "pass": validation_mode_pass.get(mode, 0),
+                "total": validation_mode_totals.get(mode, 0),
+                "pass_rate": round(validation_mode_pass.get(mode, 0) / validation_mode_totals[mode], 4) if validation_mode_totals.get(mode) else 0.0,
+            }
+            for mode in sorted(validation_mode_totals.keys())
+        },
     }
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -177,6 +192,11 @@ def main() -> None:
         for t in sorted(tag_totals.keys()):
             s = summary["tags"][t]
             lines.append(f"- `{t}`: {s['pass']}/{s['total']} (pass_rate={s['pass_rate']})")
+        lines.append("")
+        lines.append("## Validation modes")
+        for mode in sorted(validation_mode_totals.keys()):
+            s = summary["validation_modes"][mode]
+            lines.append(f"- `{mode}`: {s['pass']}/{s['total']} (pass_rate={s['pass_rate']})")
         lines.append("")
         if failures:
             lines.append("## Failures")

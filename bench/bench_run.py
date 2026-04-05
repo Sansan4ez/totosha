@@ -21,10 +21,14 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
-from bench_lib import BENCH_DIR, estimate_cost_usd, load_pricing, repo_rel, resolve_repo_path
+try:
+    from .bench_lib import BENCH_DIR, estimate_cost_usd, get_execution, get_validation, load_pricing, repo_rel, resolve_repo_path
+except ImportError:  # pragma: no cover - CLI script fallback
+    from bench_lib import BENCH_DIR, estimate_cost_usd, get_execution, get_validation, load_pricing, repo_rel, resolve_repo_path
 
 
 DEFAULT_CORE_URL = "http://127.0.0.1:4000"
+DEFAULT_TOOLS_API_URL = "http://127.0.0.1:8100"
 DEFAULT_DATASET = BENCH_DIR / "golden" / "v1.jsonl"
 DEFAULT_PRICING = BENCH_DIR / "pricing.json"
 DEFAULT_RESULTS_DIR = BENCH_DIR / "results"
@@ -113,6 +117,26 @@ def docker_exec_json_post(path: str, payload: dict[str, Any], request_id: str, t
         return result.returncode, {"error": text[:500]}
 
 
+def docker_exec_json_post_url(url: str, payload: dict[str, Any], request_id: str, timeout_s: float, headers: Optional[dict[str, str]] = None) -> tuple[int, dict[str, Any]]:
+    raw = json.dumps(payload, ensure_ascii=False)
+    raw = raw.replace("'", "'\"'\"'")
+    header_args = ["-H 'Content-Type: application/json'", f"-H 'X-Request-Id: {request_id}'"]
+    for key, value in (headers or {}).items():
+        header_args.append(f"-H '{key}: {value}'")
+    cmd = " ".join(["curl -sS -X POST", url, *header_args, f"-d '{raw}'"])
+    result = subprocess.run(
+        ["docker", "exec", "core", "sh", "-lc", cmd],
+        capture_output=True,
+        text=True,
+        timeout=timeout_s,
+    )
+    text = (result.stdout or "") + (result.stderr or "")
+    try:
+        return result.returncode, json.loads(text)
+    except Exception:
+        return result.returncode, {"error": text[:500]}
+
+
 def docker_exec_json_get(path: str, request_id: str, timeout_s: float) -> tuple[int, dict[str, Any]]:
     cmd = (
         "curl -sS "
@@ -138,6 +162,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", default="", help="Output JSONL path (default: bench/results/<run_id>.jsonl)")
     parser.add_argument("--pricing", default=repo_rel(DEFAULT_PRICING), help="Pricing JSON (default: bench/pricing.json)")
     parser.add_argument("--core-url", default=DEFAULT_CORE_URL, help="Core URL when ports are exposed")
+    parser.add_argument("--tools-api-url", default=DEFAULT_TOOLS_API_URL, help="Tools API URL for direct_tool mode")
     parser.add_argument("--user-id", type=int, default=None, help="user_id for /api/chat (default: auto)")
     parser.add_argument("--chat-id", type=int, default=None, help="chat_id for /api/chat (default: auto)")
     parser.add_argument("--limit", type=int, default=0, help="Only run first N cases")
@@ -226,21 +251,12 @@ def main() -> None:
             case_id = str(case.get("id") or "")
             question = str(case.get("question") or "")
             request_id = f"bench/{run_id}/{case_id}"
+            execution = get_execution(case)
+            validation = get_validation(case)
+            execution_mode = str(execution.get("mode") or "agent_chat")
 
             started_at = utc_now_iso()
             wall_started = time.perf_counter()
-
-            # Clear session to keep cases independent.
-            clear_payload = {"user_id": user_id, "chat_id": chat_id}
-            if args.docker_exec:
-                docker_exec_json_post("/api/clear", clear_payload, request_id=request_id, timeout_s=float(args.timeout_s))
-            else:
-                http_post_json(
-                    f"{args.core_url.rstrip('/')}/api/clear",
-                    clear_payload,
-                    headers={"X-Request-Id": request_id},
-                    timeout_s=float(args.timeout_s),
-                )
 
             chat_payload = {
                 "user_id": user_id,
@@ -257,32 +273,106 @@ def main() -> None:
             meta = None
             http_status = None
             error = ""
+            primary_artifact = None
+            bench_artifacts = None
 
             try:
-                if args.docker_exec:
-                    code, data = docker_exec_json_post("/api/chat", chat_payload, request_id=request_id, timeout_s=float(args.timeout_s))
-                    http_status = 200 if code == 0 else 500
-                else:
-                    http_status, data, _headers = http_post_json(
-                        f"{args.core_url.rstrip('/')}/api/chat",
-                        chat_payload,
-                        headers={"X-Request-Id": request_id},
-                        timeout_s=float(args.timeout_s),
-                    )
+                if execution_mode in {"agent_chat", "agent_chat_shadow"}:
+                    clear_payload = {"user_id": user_id, "chat_id": chat_id}
+                    if args.docker_exec:
+                        docker_exec_json_post("/api/clear", clear_payload, request_id=request_id, timeout_s=float(args.timeout_s))
+                    else:
+                        http_post_json(
+                            f"{args.core_url.rstrip('/')}/api/clear",
+                            clear_payload,
+                            headers={"X-Request-Id": request_id},
+                            timeout_s=float(args.timeout_s),
+                        )
 
-                if isinstance(data, dict) and data.get("access_denied"):
-                    status = "access_denied"
-                elif isinstance(data, dict) and data.get("disabled"):
-                    status = "disabled"
+                    if args.docker_exec:
+                        code, data = docker_exec_json_post("/api/chat", chat_payload, request_id=request_id, timeout_s=float(args.timeout_s))
+                        http_status = 200 if code == 0 else 500
+                    else:
+                        http_status, data, _headers = http_post_json(
+                            f"{args.core_url.rstrip('/')}/api/chat",
+                            chat_payload,
+                            headers={"X-Request-Id": request_id},
+                            timeout_s=float(args.timeout_s),
+                        )
 
-                if isinstance(data, dict):
-                    answer = str(data.get("response") or "")
-                    meta_val = data.get("meta")
-                    meta = meta_val if isinstance(meta_val, dict) else None
+                    if isinstance(data, dict) and data.get("access_denied"):
+                        status = "access_denied"
+                    elif isinstance(data, dict) and data.get("disabled"):
+                        status = "disabled"
+
+                    if isinstance(data, dict):
+                        answer = str(data.get("response") or "")
+                        meta_val = data.get("meta")
+                        meta = meta_val if isinstance(meta_val, dict) else None
+                    else:
+                        status = "error"
+                        error = "non_json_response"
+                        answer = str(data)
+                elif execution_mode == "direct_tool":
+                    tool_name = str(execution.get("tool") or "")
+                    tool_args = execution.get("args") if isinstance(execution.get("args"), dict) else {}
+                    if tool_name != "corp_db_search":
+                        status = "error"
+                        error = f"unsupported_direct_tool:{tool_name or 'missing'}"
+                    else:
+                        headers = {"X-User-Id": str(user_id), "X-Chat-Type": "private"}
+                        if args.docker_exec:
+                            code, data = docker_exec_json_post_url(
+                                "http://tools-api:8100/corp-db/search",
+                                tool_args,
+                                request_id=request_id,
+                                timeout_s=float(args.timeout_s),
+                                headers=headers,
+                            )
+                            http_status = 200 if code == 0 else 500
+                        else:
+                            http_status, data, _headers = http_post_json(
+                                f"{args.tools_api_url.rstrip('/')}/corp-db/search",
+                                tool_args,
+                                headers={"X-Request-Id": request_id, **headers},
+                                timeout_s=float(args.timeout_s),
+                            )
+
+                        if isinstance(data, dict) and http_status == 200:
+                            primary_artifact = {
+                                "tool": tool_name,
+                                "success": True,
+                                "kind": str(tool_args.get("kind") or data.get("kind") or ""),
+                                "captured_from": "direct_tool",
+                                "payload": data,
+                            }
+                            bench_artifacts = [primary_artifact]
+                            meta = {
+                                "llm_calls": 0,
+                                "llm_time_ms": 0.0,
+                                "llm_usage": None,
+                                "llm_models": [],
+                                "tools_used": [tool_name],
+                                "tool_stats": {tool_name: 1},
+                                "tools_time_ms": 0.0,
+                                "had_search_tool": False,
+                                "tool_errors": 0,
+                                "retrieval_intent": "",
+                                "retrieval_selected_source": "corp_db",
+                                "retrieval_explicit_wiki_request": False,
+                                "retrieval_wiki_after_corp_db_success": False,
+                                "routing_guardrail_hits": 0,
+                                "bench_artifacts": bench_artifacts,
+                                "primary_artifact": primary_artifact,
+                                "bench_artifacts_total_bytes": len(json.dumps(primary_artifact, ensure_ascii=False).encode("utf-8")),
+                                "bench_artifacts_dropped": 0,
+                            }
+                        else:
+                            status = "error"
+                            error = str(data.get("error") if isinstance(data, dict) else data)[:200]
                 else:
                     status = "error"
-                    error = "non_json_response"
-                    answer = str(data)
+                    error = f"unsupported_execution_mode:{execution_mode}"
             except subprocess.TimeoutExpired:
                 status = "timeout"
                 error = "docker_exec_timeout"
@@ -292,6 +382,13 @@ def main() -> None:
 
             duration_ms = (time.perf_counter() - wall_started) * 1000
             estimated_cost = estimate_cost_usd(meta, pricing)
+            if estimated_cost is None and execution_mode == "direct_tool" and status == "ok":
+                estimated_cost = 0.0
+            if meta is not None and primary_artifact is None:
+                primary_artifact = meta.get("primary_artifact") if isinstance(meta.get("primary_artifact"), dict) else None
+            if meta is not None and bench_artifacts is None:
+                raw_artifacts = meta.get("bench_artifacts")
+                bench_artifacts = raw_artifacts if isinstance(raw_artifacts, list) else None
 
             record: dict[str, Any] = {
                 "run_id": run_id,
@@ -305,8 +402,16 @@ def main() -> None:
                 "question": question,
                 "answer": answer,
                 "meta": meta,
+                "execution": execution,
+                "validation": validation,
+                "execution_mode": execution_mode,
+                "validation_mode": str(validation.get("mode") or ""),
                 "estimated_cost_usd": None if estimated_cost is None else round(float(estimated_cost), 8),
             }
+            if primary_artifact is not None:
+                record["primary_artifact"] = primary_artifact
+            if bench_artifacts is not None:
+                record["bench_artifacts"] = bench_artifacts
             if error:
                 record["error"] = error
 

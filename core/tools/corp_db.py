@@ -20,6 +20,16 @@ from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
 
+COMPANY_FACT_QUERY_HINTS = (
+    "сайт", "адрес", "офис", "контакт", "телефон", "email", "e-mail", "почт",
+    "реквизит", "инн", "кпп", "огрн", "соцсет", "телеграм", "telegram",
+    "youtube", "ютуб", "vk", "вконтакте", "канал", "год основания",
+    "основан", "основана", "сколько лет компании", "о компании", "гаранти",
+    "сервис", "консультац",
+)
+BENCH_ARTIFACT_LIST_LIMIT = 5
+BENCH_ARTIFACT_STRING_LIMIT = 320
+
 
 def _timeout_budget_seconds() -> dict[str, float]:
     connect = float(os.getenv("CORP_DB_SEARCH_TIMEOUT_CONNECT_S", "5"))
@@ -58,9 +68,99 @@ def _get_tracer():
     return trace.get_tracer("core.tools.corp_db")
 
 
-def _format_result_payload(data: object) -> str:
-    """Return the full tools-api payload without truncation or field loss."""
+def _normalize_text(value: object) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def _truncate_text(value: object, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _is_company_fact_kb_search(args: dict | None, data: object) -> bool:
+    if not isinstance(args, dict) or not isinstance(data, dict):
+        return False
+    if str(args.get("kind") or "") != "hybrid_search":
+        return False
+    if str(args.get("profile") or "") != "kb_search":
+        return False
+
+    entity_types = args.get("entity_types") or []
+    if isinstance(entity_types, list) and any(str(item).lower() == "company" for item in entity_types):
+        return True
+
+    query = _normalize_text(args.get("query"))
+    return any(token in query for token in COMPANY_FACT_QUERY_HINTS)
+
+
+def _compact_company_fact_payload(data: dict) -> dict:
+    results = data.get("results") if isinstance(data.get("results"), list) else []
+    compact_results: list[dict] = []
+
+    for row in results[:3]:
+        if not isinstance(row, dict):
+            continue
+        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        compact_results.append(
+            {
+                "entity_type": row.get("entity_type"),
+                "document_title": row.get("document_title") or metadata.get("document_title"),
+                "heading": row.get("heading") or row.get("title"),
+                "preview": _truncate_text(row.get("preview"), 280),
+                "source_file": metadata.get("source_file"),
+                "score": row.get("score"),
+            }
+        )
+
+    return {
+        "status": data.get("status"),
+        "kind": data.get("kind"),
+        "query": data.get("query"),
+        "filters": data.get("filters") or {},
+        "result_count": len(results),
+        "result_format": "compact_company_fact_v1",
+        "results": compact_results,
+    }
+
+
+def _format_result_payload(data: object, args: dict | None = None) -> str:
+    """Return a compact payload for company facts and full payload otherwise."""
+    if _is_company_fact_kb_search(args, data):
+        return json.dumps(_compact_company_fact_payload(data), ensure_ascii=False, indent=2)
     return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def _compact_bench_value(value: object, depth: int = 0) -> object:
+    if depth >= 4:
+        return _truncate_text(value, BENCH_ARTIFACT_STRING_LIMIT)
+    if isinstance(value, dict):
+        compact: dict[str, object] = {}
+        for key, item in value.items():
+            if item in (None, "", [], {}):
+                continue
+            compact[str(key)] = _compact_bench_value(item, depth + 1)
+        return compact
+    if isinstance(value, list):
+        return [_compact_bench_value(item, depth + 1) for item in value[:BENCH_ARTIFACT_LIST_LIMIT]]
+    if isinstance(value, str):
+        return _truncate_text(value, BENCH_ARTIFACT_STRING_LIMIT)
+    return value
+
+
+def _build_bench_artifact(args: dict | None, data: object) -> dict | None:
+    if not isinstance(data, dict):
+        return None
+    kind = str((args or {}).get("kind") or data.get("kind") or "")
+    payload = _compact_company_fact_payload(data) if _is_company_fact_kb_search(args, data) else _compact_bench_value(data)
+    return {
+        "tool": "corp_db_search",
+        "success": True,
+        "kind": kind or None,
+        "captured_from": "tool_result_metadata",
+        "payload": payload,
+    }
 
 
 async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
@@ -104,7 +204,10 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
                     try:
                         data = json.loads(text)
                         span.set_attribute("corp_db.status", str(data.get("status", "success")) if isinstance(data, dict) else "success")
-                        return ToolResult(True, output=_format_result_payload(data))
+                        response_format = "compact_company_fact_v1" if _is_company_fact_kb_search(args, data) else "full"
+                        span.set_attribute("corp_db.response_format", response_format)
+                        metadata = {"bench_artifact": _build_bench_artifact(args, data)}
+                        return ToolResult(True, output=_format_result_payload(data, args), metadata=metadata)
                     except Exception:
                         span.set_attribute("corp_db.status", "success")
                         return ToolResult(True, output=text)

@@ -7,11 +7,14 @@ import cycles.
 
 from __future__ import annotations
 
+import json
 from contextvars import ContextVar
 from typing import Any, Optional
 
 
 RUN_META: ContextVar[Optional[dict[str, Any]]] = ContextVar("run_meta", default=None)
+BENCH_ARTIFACTS_MAX_COUNT = 8
+BENCH_ARTIFACTS_MAX_BYTES = 128 * 1024
 
 
 def run_meta_get() -> Optional[dict[str, Any]]:
@@ -112,3 +115,36 @@ def run_meta_update_tool(name: str, duration_ms: float, success: bool, error: st
             # Keep small bounded list for debugging.
             if len(last_errors) < 5:
                 last_errors.append({"tool": name, "error": str(error)[:200]})
+
+
+def run_meta_append_artifact(artifact: dict[str, Any]) -> bool:
+    meta = RUN_META.get()
+    if not meta or not isinstance(artifact, dict) or not artifact:
+        return False
+
+    artifacts = meta.get("bench_artifacts")
+    if not isinstance(artifacts, list):
+        artifacts = []
+        meta["bench_artifacts"] = artifacts
+
+    if len(artifacts) >= BENCH_ARTIFACTS_MAX_COUNT:
+        meta["bench_artifacts_dropped"] = int(meta.get("bench_artifacts_dropped", 0)) + 1
+        return False
+
+    try:
+        serialized = json.dumps(artifact, ensure_ascii=False, separators=(",", ":"))
+    except Exception:
+        meta["bench_artifacts_dropped"] = int(meta.get("bench_artifacts_dropped", 0)) + 1
+        return False
+
+    artifact_size = len(serialized.encode("utf-8"))
+    current_size = int(meta.get("bench_artifacts_total_bytes", 0) or 0)
+    if current_size + artifact_size > BENCH_ARTIFACTS_MAX_BYTES:
+        meta["bench_artifacts_dropped"] = int(meta.get("bench_artifacts_dropped", 0)) + 1
+        return False
+
+    artifacts.append(artifact)
+    meta["bench_artifacts_total_bytes"] = current_size + artifact_size
+    if not isinstance(meta.get("primary_artifact"), dict):
+        meta["primary_artifact"] = artifact
+    return True

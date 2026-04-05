@@ -162,6 +162,15 @@ async def chat(req: ChatRequest):
             "tools_time_ms": 0.0,
             "had_search_tool": False,
             "tool_errors": 0,
+            "retrieval_intent": "",
+            "retrieval_selected_source": "unknown",
+            "retrieval_explicit_wiki_request": False,
+            "retrieval_wiki_after_corp_db_success": False,
+            "routing_guardrail_hits": 0,
+            "bench_artifacts": [],
+            "primary_artifact": None,
+            "bench_artifacts_total_bytes": 0,
+            "bench_artifacts_dropped": 0,
         }
         token = run_meta_set(meta)
 

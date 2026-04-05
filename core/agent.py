@@ -14,7 +14,7 @@ from pathlib import Path
 from config import CONFIG, get_model, get_temperature, get_max_iterations
 from logger import agent_logger, log_agent_step
 from observability import REQUEST_ID as OBS_REQUEST_ID
-from run_meta import run_meta_get, run_meta_update_llm
+from run_meta import run_meta_append_artifact, run_meta_get, run_meta_update_llm
 from tools import execute_tool, filter_tools_for_session
 from models import ToolContext, ToolResult
 from opentelemetry import trace
@@ -1079,6 +1079,10 @@ async def run_agent(
                     tool_result = await execute_tool(name, args, tool_ctx)
 
                 agent_logger.info(f"[iter {iteration}] TOOL RESULT: success={tool_result.success}, output={len(tool_result.output or '')} chars, error={tool_result.error or 'none'}")
+
+                bench_artifact = tool_result.metadata.get("bench_artifact") if isinstance(tool_result.metadata, dict) else None
+                if tool_result.success and isinstance(bench_artifact, dict):
+                    run_meta_append_artifact(bench_artifact)
 
                 if name == "corp_db_search" and _is_successful_company_fact_kb_search(args, tool_result.output or "", message):
                     routing_state["corp_db_company_fact_success"] = True

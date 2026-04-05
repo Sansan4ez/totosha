@@ -228,6 +228,11 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(decoded["result_format"], "compact_company_fact_v1")
         self.assertEqual(decoded["result_count"], 1)
         self.assertEqual(decoded["results"][0]["source_file"], "common_information_about_company.md")
+        self.assertIsInstance(result.metadata, dict)
+        artifact = result.metadata.get("bench_artifact")
+        self.assertEqual(artifact["tool"], "corp_db_search")
+        self.assertEqual(artifact["kind"], "hybrid_search")
+        self.assertEqual(artifact["payload"]["result_format"], "compact_company_fact_v1")
 
     def test_tool_preserves_structured_fields_for_sku_by_code(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
@@ -252,6 +257,30 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         decoded = json.loads(result.output)
         self.assertEqual(decoded["results"][0]["etm_code"], "1234567")
         self.assertEqual(decoded["results"][0]["oracl_code"], "OR-9988")
+
+    def test_tool_attaches_bench_artifact_for_application_recommendation(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {
+            "status": "success",
+            "kind": "application_recommendation",
+            "resolved_application": {"application_key": "sports_high_power"},
+            "recommended_lamps": [
+                {"name": "LAD LED R500-12-30-6-850LZD", "url": "https://ladzavod.ru/catalog/r500-12"}
+            ],
+            "portfolio_examples": [
+                {"name": "Освещение стадиона", "url": "https://ladzavod.ru/portfolio/stadium"}
+            ],
+            "follow_up_question": "Уточните высоту установки?",
+        }
+
+        with patch.object(_MODULE, "aiohttp", _aiohttp_stub_for_payload(payload)):
+            result = asyncio.run(tool_corp_db_search({"kind": "application_recommendation", "query": "стадион"}, ctx))
+
+        self.assertTrue(result.success)
+        artifact = result.metadata.get("bench_artifact")
+        self.assertEqual(artifact["kind"], "application_recommendation")
+        self.assertEqual(artifact["payload"]["resolved_application"]["application_key"], "sports_high_power")
+        self.assertEqual(artifact["payload"]["recommended_lamps"][0]["url"], "https://ladzavod.ru/catalog/r500-12")
 
     def test_tool_preserves_structured_fields_for_category_mountings(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
