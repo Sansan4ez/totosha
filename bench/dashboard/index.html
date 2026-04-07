@@ -35,8 +35,8 @@
           This page loads <code>bench/reports/index.json</code> and per-run <code>bench/reports/&lt;run_id&gt;.json</code>.
           Build them with:
           <code>python3 bench/bench_dashboard_build.py</code>
-          then serve the repo with:
-          <code>python3 -m http.server</code>
+          then serve the <code>bench</code> directory root:
+          <code>python3 -m http.server 8000 --directory bench</code>
         </div>
       </section>
 
