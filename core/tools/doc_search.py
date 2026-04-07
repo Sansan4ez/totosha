@@ -59,7 +59,7 @@ from models import ToolContext, ToolResult
 
 logger = logging.getLogger(__name__)
 BENCH_ARTIFACT_RESULTS_LIMIT = 5
-BENCH_ARTIFACT_PREVIEW_LIMIT = 280
+BENCH_ARTIFACT_PREVIEW_LIMIT = 600
 
 DOC_SEARCH_REQUESTS_TOTAL = Counter(
     "doc_search_requests_total",
@@ -133,7 +133,7 @@ def _build_bench_artifact(payload: dict, *, tool_name: str, alias_for: str | Non
                 "match_mode": row.get("match_mode"),
                 "source_type": row.get("source_type"),
                 "score": row.get("score"),
-                "preview": _truncate_text(row.get("preview"), BENCH_ARTIFACT_PREVIEW_LIMIT),
+                "preview": _truncate_text(row.get("preview") or row.get("snippet"), BENCH_ARTIFACT_PREVIEW_LIMIT),
             }
         )
 

@@ -212,6 +212,45 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(payload["normalization_missing_count"], 1)
             self.assertEqual(payload["backend_counts"]["normalization_missing"], 1)
 
+    def test_legacy_markdown_prefers_matching_lines_and_snippets(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
+            clear=False,
+        ):
+            legacy = Path(tmpdir) / "legacy"
+            legacy.mkdir(parents=True)
+            (legacy / "common_information_about_company.md").write_text(
+                "# О компании\n"
+                "ЛАДзавод светотехники основан в 2006 году.\n"
+                "Серия LAD LED R500 - эффективный светодиодный светильник.\n"
+                "Серия LAD LED R700 - используется закаленное стекло.\n"
+                "Серия LAD LED LINE - используется закаленное стекло, кроме OZ.\n"
+                "Сертификат CE LAD LED R500: https://example.test/sertif-CE-LAD-LED-R500-2027.pdf\n"
+                "Сертификат РОСС LAD LED LINE пожарный: https://example.test/sertif-ROSS-LAD-LED-LINE-fire-2026.pdf\n"
+                "Сертификат РОСС LAD LED R700 пожарный: https://example.test/sertif-ROSS-LAD-LED-R700-fire-2026.pdf\n",
+                encoding="utf-8",
+            )
+            (legacy / "normy_osveschennosty.md").write_text(
+                ("LED освещение для дорог и тоннелей. " * 60),
+                encoding="utf-8",
+            )
+
+            certs = search_documents(query="сертификат CE LAD LED R500 пожарный сертификат LAD LED LINE LAD LED R700", top=3)
+            compare = search_documents(query="чем отличается серия LAD LED R500 от LAD LED R700", top=3)
+
+            self.assertEqual(certs["status"], "success")
+            self.assertEqual(certs["results"][0]["relative_path"], "common_information_about_company.md")
+            self.assertIn("sertif-CE-LAD-LED-R500-2027.pdf", certs["results"][0]["snippet"])
+            self.assertIn("sertif-ROSS-LAD-LED-LINE-fire-2026.pdf", certs["results"][0]["snippet"])
+            self.assertIn("sertif-ROSS-LAD-LED-R700-fire-2026.pdf", certs["results"][0]["snippet"])
+
+            self.assertEqual(compare["status"], "success")
+            self.assertEqual(compare["results"][0]["relative_path"], "common_information_about_company.md")
+            self.assertIn("LAD LED R500", compare["results"][0]["snippet"])
+            self.assertIn("LAD LED R700", compare["results"][0]["snippet"])
+            self.assertIn("закал", compare["results"][0]["snippet"].lower())
+
     def test_legacy_binary_office_formats_are_rejected_on_ingest(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             os.environ,

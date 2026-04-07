@@ -192,6 +192,12 @@ class RoutingGuardrailTests(unittest.TestCase):
             if name == "corp_db_search":
                 return _ToolResult(True, output=json.dumps(corp_db_payload, ensure_ascii=False))
             if name == wiki_tool_name:
+                if wiki_tool_name in {"doc_search", "corp_wiki_search"}:
+                    payload = {
+                        "status": "success",
+                        "results": [{"relative_path": "common_information_about_company.md", "snippet": "wiki preview"}],
+                    }
+                    return _ToolResult(True, output=json.dumps(payload, ensure_ascii=False))
                 return _ToolResult(True, output="wiki preview")
             raise AssertionError(f"unexpected tool call: {name}")
 
@@ -322,6 +328,25 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
+
+    def test_guardrail_blocks_corp_db_after_successful_doc_search_for_document_lookup(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Нужен пожарный сертификат LINE, дай прямую ссылку.",
+            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+            corp_db_args={"kind": "hybrid_search", "profile": "kb_search", "query": "пожарный сертификат line"},
+            wiki_tool_name="doc_search",
+            wiki_tool_args={"query": "пожарный сертификат line"},
+            tool_call_sequence=[
+                ("doc_search", {"query": "пожарный сертификат line"}),
+                ("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "пожарный сертификат line"}),
+            ],
+        )
+
+        self.assertIn("ladzavod.ru", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "doc_search")
+        self.assertEqual(meta["retrieval_selected_source"], "doc_search")
         self.assertEqual(meta["routing_guardrail_hits"], 1)
 
     def test_route_index_blocks_doc_tool_before_corp_db_for_company_fact(self):

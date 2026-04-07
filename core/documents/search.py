@@ -18,6 +18,58 @@ from .storage import (
 logger = logging.getLogger(__name__)
 
 WORD_RE = re.compile(r"[\wА-Яа-яЁё]+", re.UNICODE)
+SEARCH_STOPWORDS = {
+    "а",
+    "без",
+    "бы",
+    "в",
+    "во",
+    "где",
+    "дай",
+    "для",
+    "до",
+    "если",
+    "есть",
+    "же",
+    "и",
+    "из",
+    "или",
+    "какая",
+    "какие",
+    "каких",
+    "какой",
+    "как",
+    "компания",
+    "компании",
+    "когда",
+    "коротко",
+    "ладзавод",
+    "ли",
+    "мне",
+    "на",
+    "о",
+    "об",
+    "от",
+    "по",
+    "под",
+    "покажи",
+    "покажите",
+    "прямую",
+    "прямые",
+    "прямой",
+    "про",
+    "с",
+    "со",
+    "светотехники",
+    "светильник",
+    "светильники",
+    "светильников",
+    "ссылка",
+    "ссылки",
+    "то",
+    "у",
+    "чем",
+}
 
 
 def _query_terms(query: str) -> list[str]:
@@ -28,22 +80,141 @@ def _collapse_space(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
+def _normalized_query_terms(query_terms: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw_term in query_terms:
+        term = str(raw_term or "").strip().lower()
+        if not term or term in SEARCH_STOPWORDS:
+            continue
+        if len(term) <= 1:
+            continue
+        if term in seen:
+            continue
+        seen.add(term)
+        normalized.append(term)
+    return normalized
+
+
+def _query_phrases(query_terms: list[str]) -> list[str]:
+    phrases: list[str] = []
+    seen: set[str] = set()
+    max_window = min(3, len(query_terms))
+    for window in range(max_window, 1, -1):
+        for index in range(0, len(query_terms) - window + 1):
+            phrase = " ".join(query_terms[index : index + window]).strip()
+            if len(phrase) < 5 or phrase in seen:
+                continue
+            seen.add(phrase)
+            phrases.append(phrase)
+    return phrases
+
+
+def _line_score(line_text: str, query_terms: list[str], query_phrases: list[str]) -> int:
+    line = _collapse_space(line_text).lower()
+    if not line:
+        return 0
+    score = 0
+    matched_terms = 0
+    for phrase in query_phrases:
+        if phrase in line:
+            score += 18 + phrase.count(" ") * 4
+    for term in query_terms:
+        occurrences = line.count(term)
+        if occurrences <= 0:
+            continue
+        matched_terms += 1
+        score += 6 + min(occurrences, 2) * 2 + min(len(term), 12) // 3
+    if "сертификат" in query_terms and "сертификат" not in line:
+        score -= 12
+    if any(term in query_terms for term in ("закаленное", "закалённое", "стекло")) and not any(
+        term in line for term in ("закаленное", "закалённое", "стекло")
+    ):
+        score -= 12
+    if matched_terms >= 2:
+        score += matched_terms * 3
+    if len(line) > 180:
+        score -= min(20, len(line) // 30)
+    return score
+
+
+def _matched_query_terms(line_text: str, query_terms: list[str]) -> set[str]:
+    line = _collapse_space(line_text).lower()
+    if not line:
+        return set()
+    return {term for term in query_terms if term in line}
+
+
+def _best_matching_lines(text: str, query_terms: list[str], query_phrases: list[str]) -> tuple[int, str]:
+    limits = load_search_limits()
+    snippet_limit = max(limits.max_context_chars, 480)
+    scored_lines: list[tuple[int, str, int, set[str]]] = []
+    for index, raw_line in enumerate((text or "").splitlines()):
+        compact = _collapse_space(raw_line)
+        if not compact:
+            continue
+        score = _line_score(compact, query_terms, query_phrases)
+        if score <= 0:
+            continue
+        matched_terms = _matched_query_terms(compact, query_terms)
+        scored_lines.append((score, compact, index, matched_terms))
+
+    if not scored_lines:
+        return 0, ""
+
+    scored_lines.sort(key=lambda item: (-item[0], item[2]))
+    chosen: list[str] = []
+    seen_lines: set[str] = set()
+    total_score = 0
+    remaining = list(scored_lines)
+    uncovered_terms = set(query_terms)
+    while remaining and len(chosen) < 4:
+        best_idx = 0
+        best_rank: tuple[int, int, int] | None = None
+        for idx, (score, line, line_index, matched_terms) in enumerate(remaining):
+            if line in seen_lines:
+                continue
+            new_terms = len(uncovered_terms.intersection(matched_terms))
+            rank = (new_terms, score, -line_index)
+            if best_rank is None or rank > best_rank:
+                best_rank = rank
+                best_idx = idx
+        score, line, _line_index, matched_terms = remaining.pop(best_idx)
+        if line in seen_lines:
+            continue
+        seen_lines.add(line)
+        chosen.append(line)
+        total_score += score
+        uncovered_terms.difference_update(matched_terms)
+    snippet = " | ".join(chosen)
+    if len(snippet) > snippet_limit:
+        snippet = snippet[: max(0, snippet_limit - 1)].rstrip() + "…"
+    return total_score, snippet
+
+
 def _score_text(query_terms: list[str], text: str, filename: str) -> tuple[int, str]:
     haystack = _collapse_space(text).lower()
     if not haystack:
         return 0, ""
-    score = 0
+    normalized_terms = _normalized_query_terms(query_terms)
+    if not normalized_terms:
+        normalized_terms = _normalized_query_terms([term for term in query_terms if len(term) > 1])
+    phrases = _query_phrases(normalized_terms)
+    line_score, line_snippet = _best_matching_lines(text, normalized_terms, phrases)
+    score = line_score
     best_index = -1
-    for term in query_terms:
+    for term in normalized_terms:
         index = haystack.find(term)
         if index >= 0:
             best_index = index if best_index < 0 else min(best_index, index)
-            score += 10 + haystack.count(term)
+            score += 2
     if not query_terms and haystack:
         best_index = 0
         score = 1
-    if any(term in filename.lower() for term in query_terms):
+    if any(term in filename.lower() for term in normalized_terms):
         score += 3
+    if line_snippet:
+        return score, line_snippet
     return score, _snippet_from_index(haystack, best_index)
 
 
@@ -99,6 +270,7 @@ def _result_from_record(
         "file_type": record.get("file_type"),
         "match_mode": match_mode,
         "snippet": snippet,
+        "preview": snippet,
         "page": page,
         "sheet": sheet,
         "slide": slide,

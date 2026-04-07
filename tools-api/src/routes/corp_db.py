@@ -66,6 +66,7 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
 
 ENTITY_TYPE_ALIASES: dict[str, str] = {
     "kb": "kb_chunk",
+    "company": "kb_chunk",
 }
 QUERY_TOKEN_RE = re.compile(r"[0-9A-Za-zА-Яа-я/+.-]+")
 IP_RE = re.compile(r"\bip[\s-]?(\d{2,3})\b", re.IGNORECASE)
@@ -213,6 +214,10 @@ APPLICATION_PROFILES: dict[str, dict[str, Any]] = {
         "aliases": (
             "высокий пролет",
             "высокие пролеты",
+            "высоких пролетов",
+            "высоких пролётов",
+            "высокий пролет склада",
+            "высокие пролеты склада",
             "high-bay",
             "high bay",
             "высота подвеса",
@@ -230,6 +235,7 @@ APPLICATION_PROFILES: dict[str, dict[str, Any]] = {
         "sphere_name": "Светильники специального назначения",
         "aliases": (
             "агрессивная среда",
+            "агрессивной среды",
             "агрессивной среде",
             "химическое производство",
             "химически агрессивная",
@@ -586,7 +592,8 @@ def _application_terms(value: str) -> list[str]:
 
 
 def _application_contains_phrase(text: str, phrase: str) -> bool:
-    normalized_text = f" {_normalize_application_text(text)} "
+    normalized_text = f" {_normalize_application_text(text).replace('.', ' ')} "
+    normalized_text = _normalize_ws(normalized_text)
     normalized_phrase = _normalize_application_text(phrase)
     if not normalized_phrase:
         return False
@@ -1252,24 +1259,27 @@ def _resolve_application(query: str, reference: dict[str, Any]) -> dict[str, Any
     synonym_ranked = [candidate for candidate in candidates if candidate["synonym_score"] > 0]
     synonym_ranked.sort(key=lambda item: (-item["synonym_score"], item["application_key"]))
     if " или " in f" {normalized_query} " and len(synonym_ranked) >= 2:
-        ambiguity_candidates = []
-        for candidate in synonym_ranked[:3]:
-            sphere_row = candidate["sphere_row"] or {}
-            ambiguity_candidates.append(
-                {
-                    "application_key": candidate["application_key"],
-                    "sphere_id": sphere_row.get("sphere_id"),
-                    "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[candidate["application_key"]]["sphere_name"],
-                    "score": round(candidate["synonym_score"], 3),
-                }
-            )
-        return {
-            "status": "ambiguous",
-            "confidence": round(ambiguity_candidates[0]["score"] / 10.0, 3),
-            "resolution_strategy": "ambiguity",
-            "alias_version": APPLICATION_ALIAS_VERSION,
-            "candidates": ambiguity_candidates,
-        }
+        top_score = float(synonym_ranked[0]["synonym_score"])
+        second_score = float(synonym_ranked[1]["synonym_score"])
+        if top_score <= second_score + 1.0:
+            ambiguity_candidates = []
+            for candidate in synonym_ranked[:3]:
+                sphere_row = candidate["sphere_row"] or {}
+                ambiguity_candidates.append(
+                    {
+                        "application_key": candidate["application_key"],
+                        "sphere_id": sphere_row.get("sphere_id"),
+                        "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[candidate["application_key"]]["sphere_name"],
+                        "score": round(candidate["synonym_score"], 3),
+                    }
+                )
+            return {
+                "status": "ambiguous",
+                "confidence": round(ambiguity_candidates[0]["score"] / 10.0, 3),
+                "resolution_strategy": "ambiguity",
+                "alias_version": APPLICATION_ALIAS_VERSION,
+                "candidates": ambiguity_candidates,
+            }
     if synonym_ranked:
         clear_synonym = len(synonym_ranked) == 1 or synonym_ranked[0]["synonym_score"] >= synonym_ranked[1]["synonym_score"] + 2.0
         if clear_synonym:
@@ -1345,6 +1355,38 @@ def _resolve_application(query: str, reference: dict[str, Any]) -> dict[str, Any
         "alias_version": APPLICATION_ALIAS_VERSION,
         "matched_terms": [],
     }
+
+
+def _resolve_portfolio_sphere_query(query: str, reference: dict[str, Any]) -> str:
+    query_terms = {term for term in _application_terms(query) if term and term not in APPLICATION_NOISE_TERMS}
+    ranked: list[tuple[float, str]] = []
+    for application_key, config in APPLICATION_PROFILES.items():
+        score = 0.0
+        for alias in config["aliases"]:
+            alias_terms = [term for term in _application_terms(alias) if term and term not in APPLICATION_NOISE_TERMS]
+            if not alias_terms:
+                continue
+            if _application_contains_phrase(query, alias):
+                score = max(score, 5.0 + len(alias_terms))
+                continue
+            if all(term in query_terms for term in alias_terms):
+                score = max(score, 3.0 + len(alias_terms))
+                continue
+            if len(alias_terms) == 1 and any(query_term.startswith(alias_terms[0]) or alias_terms[0].startswith(query_term) for query_term in query_terms):
+                score = max(score, 2.5)
+        if score > 0:
+            ranked.append((score, application_key))
+
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    if not ranked:
+        return ""
+
+    top_score, application_key = ranked[0]
+    second_score = ranked[1][0] if len(ranked) > 1 else -1.0
+    if len(ranked) > 1 and top_score < second_score + 1.0:
+        return ""
+    sphere_row = _application_profile_sphere_row(reference, application_key) or {}
+    return str(sphere_row.get("name") or APPLICATION_PROFILES[application_key]["sphere_name"]).strip()
 
 
 def _application_category_search_terms(*values: str) -> list[str]:
@@ -2539,23 +2581,43 @@ async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, li
 
 async def _portfolio_by_sphere(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     sphere = _req_str(req.sphere, "sphere")
-    rows = await conn.fetch(
-        """
-        SELECT p.portfolio_id, p.name, p.url, p.group_name, p.image_url, s.sphere_id, s.name AS sphere_name
-        FROM corp.portfolio p
-        JOIN corp.spheres s ON s.sphere_id = p.sphere_id
-        WHERE CASE
-            WHEN $1 THEN s.name ILIKE ('%' || $2 || '%')
-            ELSE lower(s.name) = lower($2)
-        END
-        ORDER BY p.name
-        LIMIT $3 OFFSET $4
-        """,
-        req.fuzzy,
-        sphere,
-        limit,
-        offset,
-    )
+    async def _fetch_rows(*, sphere_query: str, fuzzy: bool) -> list[asyncpg.Record]:
+        return await conn.fetch(
+            """
+            SELECT p.portfolio_id, p.name, p.url, p.group_name, p.image_url, s.sphere_id, s.name AS sphere_name
+            FROM corp.portfolio p
+            JOIN corp.spheres s ON s.sphere_id = p.sphere_id
+            WHERE CASE
+                WHEN $1 THEN s.name ILIKE ('%' || $2 || '%')
+                ELSE lower(s.name) = lower($2)
+            END
+            ORDER BY p.name
+            LIMIT $3 OFFSET $4
+            """,
+            fuzzy,
+            sphere_query,
+            limit,
+            offset,
+        )
+
+    rows = await _fetch_rows(sphere_query=sphere, fuzzy=bool(req.fuzzy))
+    if not rows:
+        reference = await _fetch_application_reference_data(conn)
+        resolved_sphere_name = _resolve_portfolio_sphere_query(sphere, reference)
+        if not resolved_sphere_name:
+            resolved_application = _resolve_application(sphere, reference)
+            resolved_sphere_name = str(resolved_application.get("sphere_name") or "").strip()
+        if resolved_sphere_name:
+            rows = await _fetch_rows(sphere_query=resolved_sphere_name, fuzzy=False)
+        if not rows and not req.fuzzy:
+            strong_terms = _strong_query_terms(sphere)
+            for token_query in [sphere, _normalize_application_text(sphere), " ".join(strong_terms[:3])]:
+                token_query = _normalize_ws(token_query)
+                if not token_query:
+                    continue
+                rows = await _fetch_rows(sphere_query=token_query, fuzzy=True)
+                if rows:
+                    break
     return _success(
         "portfolio_by_sphere",
         query=sphere,

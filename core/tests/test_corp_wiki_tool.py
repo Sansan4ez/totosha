@@ -73,6 +73,7 @@ class CorpWikiToolTests(unittest.TestCase):
         self.assertEqual(artifact["kind"], "doc_search")
         self.assertEqual(artifact["payload"]["search_substrate"], "parsed_sidecars")
         self.assertIn("common_information_about_company.md", artifact["payload"]["results"][0]["relative_path"])
+        self.assertIn("lad@ladled.ru", artifact["payload"]["results"][0]["preview"])
 
     def test_alias_and_canonical_tools_share_usage_stats_path(self):
         with tempfile.TemporaryDirectory() as tmpdir:

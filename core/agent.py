@@ -31,11 +31,20 @@ _userbot_check_time = 0
 USERBOT_CHECK_TTL = 30  # seconds
 
 COMPANY_FACT_KEYWORDS = (
-    "сайт", "официальный сайт", "адрес", "офис", "головной офис", "контак", "телефон",
+    "сайт", "официальный сайт", "адрес", "головной офис", "контак", "телефон",
     "email", "e-mail", "почт", "реквизит", "инн", "кпп", "огрн", "соцсет", "телеграм",
     "telegram", "youtube", "ютуб", "vk", "вконтакте", "канал", "год основания",
     "основан", "основана", "сколько лет компании", "о компании", "общая информация о компании",
     "гаранти", "сервис", "консультац",
+)
+DOCUMENT_LOOKUP_KEYWORDS = (
+    "сертификат", "пожарный сертификат", "ce", "pdf", "паспорт", "документ",
+    "закаленное стекло", "закалённое стекло", "закал", "стекл",
+    "чем отличается серия", "отличается серия", "отличие между серией",
+)
+PORTFOLIO_LOOKUP_KEYWORDS = (
+    "портфолио", "пример проекта", "пример объекта", "примеры реализации",
+    "какие проекты были", "где применялся", "покажи проекты", "покажи объект",
 )
 APPLICATION_RECOMMENDATION_KEYWORDS = (
     "стадион", "арена", "спорткомплекс", "футболь", "карьер", "рудник", "гок",
@@ -98,8 +107,23 @@ def _is_explicit_wiki_request(message: str) -> bool:
     return _text_has_any(_normalize_routing_text(message), EXPLICIT_WIKI_KEYWORDS)
 
 
+def _is_document_lookup_intent(message: str) -> bool:
+    return _text_has_any(_normalize_routing_text(message), DOCUMENT_LOOKUP_KEYWORDS)
+
+
+def _is_portfolio_lookup_intent(message: str) -> bool:
+    normalized = _normalize_routing_text(message)
+    return _text_has_any(normalized, PORTFOLIO_LOOKUP_KEYWORDS) and _text_has_any(
+        normalized,
+        APPLICATION_RECOMMENDATION_KEYWORDS + ("наружн", "уличн", "дорожн", "промышлен", "тяжел"),
+    )
+
+
 def _is_company_fact_intent(message: str) -> bool:
-    return _text_has_any(_normalize_routing_text(message), COMPANY_FACT_KEYWORDS)
+    normalized = _normalize_routing_text(message)
+    if _is_document_lookup_intent(normalized) or _is_portfolio_lookup_intent(normalized) or _is_application_recommendation_intent(normalized):
+        return False
+    return _text_has_any(normalized, COMPANY_FACT_KEYWORDS)
 
 
 def _is_application_recommendation_intent(message: str) -> bool:
@@ -148,6 +172,28 @@ def _is_successful_application_recommendation(args: dict, tool_output: str, mess
     return _text_has_any(query, APPLICATION_RECOMMENDATION_KEYWORDS)
 
 
+def _is_successful_portfolio_by_sphere(args: dict, tool_output: str, message: str) -> bool:
+    if str(args.get("kind") or "") != "portfolio_by_sphere":
+        return False
+    payload = _parse_json_object(tool_output)
+    if payload.get("status") != "success":
+        return False
+    results = payload.get("results")
+    return isinstance(results, list) and len(results) > 0
+
+
+def _is_successful_document_lookup(name: str, args: dict, tool_output: str, message: str) -> bool:
+    if name not in {"doc_search", "corp_wiki_search"}:
+        return False
+    if not _is_document_lookup_intent(message) and not _is_explicit_wiki_request(message):
+        return False
+    payload = _parse_json_object(tool_output)
+    if payload.get("status") != "success":
+        return False
+    results = payload.get("results")
+    return isinstance(results, list) and len(results) > 0
+
+
 def _is_wiki_tool_attempt(name: str, args: dict) -> bool:
     if name in {"doc_search", "corp_wiki_search"}:
         return True
@@ -181,6 +227,21 @@ def _is_application_fallback_attempt(name: str, args: dict) -> bool:
         return False
     kind = str(args.get("kind") or "")
     return kind in {"hybrid_search", "category_lamps", "sphere_categories", "portfolio_by_sphere", "lamp_filters"}
+
+
+def _is_portfolio_fallback_attempt(name: str, args: dict) -> bool:
+    if _is_wiki_tool_attempt(name, args):
+        return True
+    if name != "corp_db_search":
+        return False
+    kind = str(args.get("kind") or "")
+    return kind in {"hybrid_search", "application_recommendation", "category_lamps", "sphere_categories"}
+
+
+def _is_document_fallback_attempt(name: str, args: dict) -> bool:
+    if name == "corp_db_search":
+        return True
+    return False
 
 
 def _is_retrieval_tool_attempt(name: str, args: dict) -> bool:
@@ -998,10 +1059,14 @@ async def run_agent(
     has_search_tool = False  # Track if search_web was called
     routing_state = {
         "intent": (
-            "company_fact"
-            if _is_company_fact_intent(message)
+            "document_lookup"
+            if _is_document_lookup_intent(message)
+            else "portfolio_lookup"
+            if _is_portfolio_lookup_intent(message)
             else "application_recommendation"
             if _is_application_recommendation_intent(message)
+            else "company_fact"
+            if _is_company_fact_intent(message)
             else "other"
         ),
         "selected_source": "unknown",
@@ -1011,6 +1076,8 @@ async def run_agent(
         "explicit_wiki_request": _is_explicit_wiki_request(message),
         "corp_db_company_fact_success": False,
         "corp_db_application_success": False,
+        "corp_db_portfolio_success": False,
+        "doc_search_document_success": False,
         "wiki_after_corp_db_success": False,
         "guardrail_activations": 0,
         "retrieval_tool_used": False,
@@ -1109,6 +1176,37 @@ async def run_agent(
                             "for this broad-object request. Answer from that payload unless the user explicitly asks for wiki/document context."
                         ),
                     )
+                elif routing_state["doc_search_document_success"] and _is_document_fallback_attempt(name, args):
+                    routing_state["guardrail_activations"] += 1
+                    _update_routing_observability(routing_state, blocked_tool=name)
+                    agent_logger.warning(
+                        "[iter %s] ROUTING GUARDRAIL blocked %s after successful doc_search document lookup",
+                        iteration,
+                        name,
+                    )
+                    tool_result = ToolResult(
+                        False,
+                        error=(
+                            "Routing guardrail: `doc_search` already returned confirmed document evidence for this question. "
+                            "Answer from that payload unless the user explicitly asks for an additional structured corp_db lookup."
+                        ),
+                    )
+                elif routing_state["corp_db_portfolio_success"] and not routing_state["explicit_wiki_request"] and _is_portfolio_fallback_attempt(name, args):
+                    routing_state["wiki_after_corp_db_success"] = _is_wiki_tool_attempt(name, args)
+                    routing_state["guardrail_activations"] += 1
+                    _update_routing_observability(routing_state, blocked_tool=name)
+                    agent_logger.warning(
+                        "[iter %s] ROUTING GUARDRAIL blocked %s after successful corp_db portfolio lookup",
+                        iteration,
+                        name,
+                    )
+                    tool_result = ToolResult(
+                        False,
+                        error=(
+                            "Routing guardrail: `corp_db_search(kind=portfolio_by_sphere)` already returned confirmed portfolio examples "
+                            "for this query. Answer from that payload unless the user explicitly asks for wiki/document context."
+                        ),
+                    )
                 elif (
                     not routing_state["retrieval_tool_used"]
                     and _is_retrieval_tool_attempt(name, args)
@@ -1167,6 +1265,24 @@ async def run_agent(
                     _update_routing_observability(routing_state)
                     agent_logger.info(
                         "[iter %s] ROUTING selected_source=corp_db intent=%s application_fast_path=true",
+                        iteration,
+                        routing_state["intent"],
+                    )
+                if name == "corp_db_search" and _is_successful_portfolio_by_sphere(args, tool_result.output or "", message):
+                    routing_state["corp_db_portfolio_success"] = True
+                    routing_state["selected_source"] = "corp_db"
+                    _update_routing_observability(routing_state)
+                    agent_logger.info(
+                        "[iter %s] ROUTING selected_source=corp_db intent=%s portfolio_lookup=true",
+                        iteration,
+                        routing_state["intent"],
+                    )
+                if _is_successful_document_lookup(name, args, tool_result.output or "", message):
+                    routing_state["doc_search_document_success"] = True
+                    routing_state["selected_source"] = "doc_search"
+                    _update_routing_observability(routing_state)
+                    agent_logger.info(
+                        "[iter %s] ROUTING selected_source=doc_search intent=%s document_lookup=true",
                         iteration,
                         routing_state["intent"],
                     )

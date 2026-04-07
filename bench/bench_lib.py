@@ -370,6 +370,8 @@ def select_artifact(row: dict[str, Any], selector: Optional[dict[str, Any]]) -> 
     selector = selector if isinstance(selector, dict) else {}
     tool = str(selector.get("tool") or "")
     kind = str(selector.get("kind") or "")
+    all_matches = bool(selector.get("all_matches"))
+    matching: list[dict[str, Any]] = []
     for artifact in artifacts:
         artifact_tool = str(artifact.get("tool") or "")
         artifact_kind = str(artifact.get("kind") or "")
@@ -377,7 +379,36 @@ def select_artifact(row: dict[str, Any], selector: Optional[dict[str, Any]]) -> 
             continue
         if kind and artifact_kind != kind:
             continue
+        if all_matches:
+            matching.append(artifact)
+            continue
         return artifact, artifact.get("payload"), None
+    if all_matches and matching:
+        payloads = [artifact.get("payload") for artifact in matching if isinstance(artifact.get("payload"), dict)]
+        combined_payload: dict[str, Any] = {}
+        if payloads:
+            combined_payload.update(payloads[0])
+        combined_results: list[Any] = []
+        queries: list[str] = []
+        for payload in payloads:
+            if isinstance(payload.get("results"), list):
+                combined_results.extend(payload.get("results") or [])
+            query = payload.get("query")
+            if isinstance(query, str) and query:
+                queries.append(query)
+        if combined_results:
+            combined_payload["results"] = combined_results
+            combined_payload["result_count"] = len(combined_results)
+        if queries:
+            combined_payload["queries"] = queries
+        if payloads and "status" not in combined_payload:
+            combined_payload["status"] = payloads[0].get("status")
+        combined_artifact = {
+            "tool": tool or str(matching[0].get("tool") or ""),
+            "kind": kind or str(matching[0].get("kind") or ""),
+            "combined_artifacts": len(matching),
+        }
+        return combined_artifact, combined_payload, None
     return None, None, f"missing_artifact_selector:tool={tool or '*'} kind={kind or '*'}"
 
 

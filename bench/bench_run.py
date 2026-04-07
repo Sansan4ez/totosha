@@ -10,6 +10,7 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import json
 import os
@@ -32,6 +33,21 @@ DEFAULT_TOOLS_API_URL = "http://127.0.0.1:8100"
 DEFAULT_DATASET = BENCH_DIR / "golden" / "v1.jsonl"
 DEFAULT_PRICING = BENCH_DIR / "pricing.json"
 DEFAULT_RESULTS_DIR = BENCH_DIR / "results"
+
+
+def _direct_tool_routing_meta(tool_name: str, tool_args: dict[str, Any]) -> tuple[str, str]:
+    if tool_name == "doc_search":
+        return "document_lookup", "doc_search"
+    if tool_name != "corp_db_search":
+        return "", "unknown"
+    kind = str(tool_args.get("kind") or "")
+    if kind == "hybrid_search" and str(tool_args.get("profile") or "") == "kb_search":
+        return "company_fact", "corp_db"
+    if kind in {"application_recommendation", "portfolio_by_sphere"}:
+        return "application_recommendation", "corp_db"
+    if kind in {"lamp_exact", "lamp_filters", "sku_by_code"}:
+        return "catalog_lookup", "corp_db"
+    return "", "corp_db"
 
 
 def utc_now_iso() -> str:
@@ -131,6 +147,38 @@ def docker_exec_json_post_url(url: str, payload: dict[str, Any], request_id: str
         timeout=timeout_s,
     )
     text = (result.stdout or "") + (result.stderr or "")
+    try:
+        return result.returncode, json.loads(text)
+    except Exception:
+        return result.returncode, {"error": text[:500]}
+
+
+def docker_exec_doc_search(payload: dict[str, Any], timeout_s: float) -> tuple[int, dict[str, Any]]:
+    raw = base64.b64encode(json.dumps(payload, ensure_ascii=False).encode("utf-8")).decode("ascii")
+    cmd = (
+        "python - <<'PY'\n"
+        "import asyncio, base64, json, sys\n"
+        "sys.path.insert(0, '/app')\n"
+        "from models import ToolContext\n"
+        "from tools.doc_search import tool_doc_search\n"
+        f"args = json.loads(base64.b64decode('{raw}').decode('utf-8'))\n"
+        "ctx = ToolContext(cwd='/app', user_id=1, chat_id=1, chat_type='private')\n"
+        "result = asyncio.run(tool_doc_search(args, ctx))\n"
+        "payload = result.output if result.success else json.dumps({'error': result.error}, ensure_ascii=False)\n"
+        "print('__DOC_SEARCH_JSON__' + payload)\n"
+        "PY"
+    )
+    result = subprocess.run(
+        ["docker", "exec", "core", "sh", "-lc", cmd],
+        capture_output=True,
+        text=True,
+        timeout=timeout_s,
+    )
+    text = (result.stdout or "") + (result.stderr or "")
+    marker = "__DOC_SEARCH_JSON__"
+    marker_index = text.rfind(marker)
+    if marker_index >= 0:
+        text = text[marker_index + len(marker) :].strip()
     try:
         return result.returncode, json.loads(text)
     except Exception:
@@ -316,23 +364,31 @@ def main() -> None:
                 elif execution_mode == "direct_tool":
                     tool_name = str(execution.get("tool") or "")
                     tool_args = execution.get("args") if isinstance(execution.get("args"), dict) else {}
-                    if tool_name != "corp_db_search":
+                    if tool_name not in {"corp_db_search", "doc_search"}:
                         status = "error"
                         error = f"unsupported_direct_tool:{tool_name or 'missing'}"
                     else:
                         headers = {"X-User-Id": str(user_id), "X-Chat-Type": "private"}
+                        retrieval_intent, retrieval_selected_source = _direct_tool_routing_meta(tool_name, tool_args)
                         if args.docker_exec:
-                            code, data = docker_exec_json_post_url(
-                                "http://tools-api:8100/corp-db/search",
-                                tool_args,
-                                request_id=request_id,
-                                timeout_s=float(args.timeout_s),
-                                headers=headers,
-                            )
+                            if tool_name == "corp_db_search":
+                                code, data = docker_exec_json_post_url(
+                                    "http://tools-api:8100/corp-db/search",
+                                    tool_args,
+                                    request_id=request_id,
+                                    timeout_s=float(args.timeout_s),
+                                    headers=headers,
+                                )
+                            else:
+                                code, data = docker_exec_doc_search(tool_args, timeout_s=float(args.timeout_s))
                             http_status = 200 if code == 0 else 500
                         else:
+                            if tool_name == "corp_db_search":
+                                target_url = f"{args.tools_api_url.rstrip('/')}/corp-db/search"
+                            else:
+                                target_url = f"{args.core_url.rstrip('/')}/api/tools/doc_search"
                             http_status, data, _headers = http_post_json(
-                                f"{args.tools_api_url.rstrip('/')}/corp-db/search",
+                                target_url,
                                 tool_args,
                                 headers={"X-Request-Id": request_id, **headers},
                                 timeout_s=float(args.timeout_s),
@@ -342,7 +398,7 @@ def main() -> None:
                             primary_artifact = {
                                 "tool": tool_name,
                                 "success": True,
-                                "kind": str(tool_args.get("kind") or data.get("kind") or ""),
+                                "kind": str(tool_args.get("kind") or data.get("kind") or ("doc_search" if tool_name == "doc_search" else "")),
                                 "captured_from": "direct_tool",
                                 "payload": data,
                             }
@@ -357,8 +413,8 @@ def main() -> None:
                                 "tools_time_ms": 0.0,
                                 "had_search_tool": False,
                                 "tool_errors": 0,
-                                "retrieval_intent": "",
-                                "retrieval_selected_source": "corp_db",
+                                "retrieval_intent": retrieval_intent,
+                                "retrieval_selected_source": retrieval_selected_source,
                                 "retrieval_explicit_wiki_request": False,
                                 "retrieval_wiki_after_corp_db_success": False,
                                 "routing_guardrail_hits": 0,

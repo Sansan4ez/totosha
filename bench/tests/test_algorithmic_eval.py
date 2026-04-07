@@ -52,6 +52,31 @@ class BenchAlgorithmicEvalTests(unittest.TestCase):
         self.assertEqual(artifact["tool"], "doc_search")
         self.assertEqual(payload["status"], "success")
 
+    def test_select_artifact_can_combine_all_matching_artifacts(self):
+        row = {
+            "meta": {
+                "bench_artifacts": [
+                    {
+                        "tool": "doc_search",
+                        "kind": "doc_search",
+                        "payload": {"status": "success", "query": "q1", "results": [{"preview": "R500 cert"}]},
+                    },
+                    {
+                        "tool": "doc_search",
+                        "kind": "doc_search",
+                        "payload": {"status": "success", "query": "q2", "results": [{"preview": "R700 cert"}]},
+                    },
+                ],
+            }
+        }
+
+        artifact, payload, error = select_artifact(row, {"tool": "doc_search", "kind": "doc_search", "all_matches": True})
+        self.assertIsNone(error)
+        self.assertEqual(artifact["combined_artifacts"], 2)
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(len(payload["results"]), 2)
+        self.assertEqual(payload["queries"], ["q1", "q2"])
+
     def test_evaluate_case_result_runs_algorithmic_checks(self):
         case = {
             "id": "app-case",

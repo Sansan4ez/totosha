@@ -49,6 +49,32 @@ def _route_dir() -> Path:
 def default_corp_db_route_cards() -> list[dict[str, Any]]:
     return [
         {
+            "route_id": "doc_search.document_lookup",
+            "source": "doc_search",
+            "title": "Document lookup and certificates",
+            "summary": "Certificates, passports, PDFs, and free-text document facts such as material options or series differences.",
+            "keywords": [
+                "сертификат",
+                "пожарный сертификат",
+                "ce",
+                "pdf",
+                "паспорт",
+                "документ",
+                "закаленное стекло",
+                "закалённое стекло",
+                "чем отличается",
+            ],
+            "patterns": [
+                "пожарный сертификат",
+                "сертификат ce",
+                "закаленное стекло",
+                "закалённое стекло",
+                "чем отличается серия",
+            ],
+            "tool_name": "doc_search",
+            "tool_args": {"top": 5, "include_legacy": True},
+        },
+        {
             "route_id": "corp_db.company_profile",
             "source": "corp_db",
             "title": "Company profile and contacts",
@@ -79,6 +105,35 @@ def default_corp_db_route_cards() -> list[dict[str, Any]]:
             ],
             "tool_name": "corp_db_search",
             "tool_args": {"kind": "hybrid_search", "profile": "kb_search", "entity_types": ["company"]},
+        },
+        {
+            "route_id": "corp_db.portfolio_by_sphere",
+            "source": "corp_db",
+            "title": "Portfolio by sphere",
+            "summary": "Examples of completed projects, portfolio objects, and implementation references by application area.",
+            "keywords": [
+                "портфолио",
+                "проект",
+                "объект",
+                "пример проекта",
+                "пример объекта",
+                "примеры реализации",
+                "стадион",
+                "аэропорт",
+                "перрон",
+                "склад",
+                "офис",
+                "карьер",
+                "наружное освещение",
+            ],
+            "patterns": [
+                "пример проекта",
+                "пример объекта",
+                "из портфолио",
+                "портфолио по",
+            ],
+            "tool_name": "corp_db_search",
+            "tool_args": {"kind": "portfolio_by_sphere", "fuzzy": True},
         },
         {
             "route_id": "corp_db.application_recommendation",
@@ -172,14 +227,27 @@ def build_routing_index() -> dict[str, Any]:
 
 def load_routing_index() -> dict[str, Any]:
     index_path = _route_dir() / "index.json"
+    default_routes = default_corp_db_route_cards()
     if not index_path.exists():
         payload = {
             "generated_at": _utcnow(),
-            "route_count": len(default_corp_db_route_cards()),
-            "routes": default_corp_db_route_cards(),
+            "route_count": len(default_routes),
+            "routes": default_routes,
         }
         return payload
-    return json.loads(index_path.read_text(encoding="utf-8"))
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    existing_routes = payload.get("routes") if isinstance(payload.get("routes"), list) else []
+    merged_by_id: dict[str, dict[str, Any]] = {}
+    for card in default_routes:
+        if isinstance(card, dict) and card.get("route_id"):
+            merged_by_id[str(card["route_id"])] = dict(card)
+    for card in existing_routes:
+        if isinstance(card, dict) and card.get("route_id"):
+            merged_by_id[str(card["route_id"])] = dict(card)
+    merged_routes = list(merged_by_id.values())
+    payload["routes"] = merged_routes
+    payload["route_count"] = len(merged_routes)
+    return payload
 
 
 def select_route_card(query: str) -> dict[str, Any] | None:
