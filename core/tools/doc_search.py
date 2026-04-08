@@ -55,6 +55,11 @@ except Exception:  # pragma: no cover - local fallback
 from documents.search import search_documents
 from documents.usage import append_usage_stat
 from models import ToolContext, ToolResult
+from tool_output_policy import (
+    RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
+    build_output_contract_metadata,
+    serialize_runtime_json,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -199,8 +204,12 @@ async def _run_doc_search_tool(
                 span.set_attribute("doc_search.top_match_mode", str(results[0].get("match_mode") or ""))
                 span.set_attribute("doc_search.top_file_type", str(results[0].get("file_type") or ""))
                 span.set_attribute("doc_search.cache_hit", bool(results[0].get("cache_hit")))
-            metadata = {"bench_artifact": _build_bench_artifact(payload, tool_name=tool_name, alias_for=alias_for)}
-            return ToolResult(True, output=json.dumps(payload, ensure_ascii=False, indent=2), metadata=metadata)
+            metadata = build_output_contract_metadata(
+                bench_artifact=_build_bench_artifact(payload, tool_name=tool_name, alias_for=alias_for),
+                runtime_payload_format=RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
+                bench_payload_format="compact_doc_search_artifact_v1",
+            )
+            return ToolResult(True, output=serialize_runtime_json(payload), metadata=metadata)
         except Exception as exc:
             duration_ms = round((perf_counter() - started_at) * 1000, 2)
             logger.exception("doc_search failed after %sms", duration_ms)

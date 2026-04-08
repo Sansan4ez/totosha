@@ -44,7 +44,7 @@ _SPEC = importlib.util.spec_from_file_location("corp_db_tool_module", _MODULE_PA
 assert _SPEC and _SPEC.loader
 _MODULE = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MODULE)
-_format_result_payload = _MODULE._format_result_payload
+_serialize_runtime_payload = _MODULE._serialize_runtime_payload
 tool_corp_db_search = _MODULE.tool_corp_db_search
 
 from models import ToolContext
@@ -94,7 +94,7 @@ def _aiohttp_stub_for_payload(payload: object, *, status: int = 200):
 
 
 class CorpDbToolFormattingTests(unittest.TestCase):
-    def test_format_result_payload_preserves_all_rows_and_fields(self):
+    def test_runtime_payload_preserves_all_rows_and_fields(self):
         data = {
             "status": "success",
             "kind": "hybrid_search",
@@ -109,13 +109,13 @@ class CorpDbToolFormattingTests(unittest.TestCase):
             ],
         }
 
-        payload = json.loads(_format_result_payload(data))
+        payload = json.loads(_serialize_runtime_payload(data))
 
         self.assertEqual(len(payload["results"]), 6)
         self.assertEqual(len(payload["results"][0]["facts"]), 8)
         self.assertEqual(payload["results"][5]["title"], "Lamp 5")
 
-    def test_format_result_payload_compacts_company_fact_kb_search(self):
+    def test_runtime_payload_keeps_full_company_fact_rows(self):
         data = {
             "status": "success",
             "kind": "hybrid_search",
@@ -132,7 +132,7 @@ class CorpDbToolFormattingTests(unittest.TestCase):
                         "document_title": "Общая информация о компании ЛАДзавод светотехники",
                         "source_hash": "abc123",
                     },
-                    "preview": "Мы занимаем одно из ведущих мест на рынке промышленного светотехнического оборудования в России.",
+                    "preview": "Мы занимаем одно из ведущих мест на рынке промышленного светотехнического оборудования в России." * 4,
                 },
                 {
                     "entity_type": "kb_chunk",
@@ -150,21 +150,13 @@ class CorpDbToolFormattingTests(unittest.TestCase):
             ],
         }
 
-        payload = json.loads(
-            _format_result_payload(
-                data,
-                {"kind": "hybrid_search", "profile": "kb_search", "entity_types": ["company"], "query": data["query"]},
-            )
-        )
+        payload = json.loads(_serialize_runtime_payload(data))
 
-        self.assertEqual(payload["result_format"], "compact_company_fact_v1")
-        self.assertEqual(payload["result_count"], 2)
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["kind"], "hybrid_search")
         self.assertEqual(len(payload["results"]), 2)
-        self.assertEqual(
-            sorted(payload["results"][0].keys()),
-            ["document_title", "entity_type", "heading", "preview", "score", "source_file"],
-        )
-        self.assertNotIn("metadata", payload["results"][0])
+        self.assertIn("metadata", payload["results"][0])
+        self.assertTrue(payload["results"][0]["preview"].endswith("России."))
 
     def test_tool_preserves_full_lamp_filters_payload(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
@@ -193,7 +185,7 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(decoded["results"][0]["name"], "NL Nova30-N-O")
         self.assertEqual(decoded["results"][0]["facts"]["color_rendering_index_ra"]["text"], "Ra 80")
 
-    def test_tool_compacts_company_fact_kb_search_payload(self):
+    def test_tool_returns_full_company_fact_runtime_payload_and_compact_artifact(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
         payload = {
             "status": "success",
@@ -210,7 +202,7 @@ class CorpDbToolFormattingTests(unittest.TestCase):
                         "source_file": "common_information_about_company.md",
                         "document_title": "Общая информация о компании ЛАДзавод светотехники",
                     },
-                    "preview": "Телефон +7 (351) 239-18-11, email lad@ladled.ru.",
+                    "preview": "Телефон +7 (351) 239-18-11, email lad@ladled.ru. " * 10,
                 }
             ],
         }
@@ -225,14 +217,18 @@ class CorpDbToolFormattingTests(unittest.TestCase):
 
         self.assertTrue(result.success)
         decoded = json.loads(result.output)
-        self.assertEqual(decoded["result_format"], "compact_company_fact_v1")
-        self.assertEqual(decoded["result_count"], 1)
-        self.assertEqual(decoded["results"][0]["source_file"], "common_information_about_company.md")
+        self.assertEqual(decoded["status"], "success")
+        self.assertEqual(decoded["kind"], "hybrid_search")
+        self.assertEqual(decoded["results"][0]["metadata"]["source_file"], "common_information_about_company.md")
+        self.assertTrue(decoded["results"][0]["preview"].endswith("lad@ladled.ru. "))
         self.assertIsInstance(result.metadata, dict)
+        self.assertEqual(result.metadata.get("runtime_payload_format"), "full_json")
+        self.assertEqual(result.metadata.get("bench_payload_format"), "compact_company_fact_v1")
         artifact = result.metadata.get("bench_artifact")
         self.assertEqual(artifact["tool"], "corp_db_search")
         self.assertEqual(artifact["kind"], "hybrid_search")
         self.assertEqual(artifact["payload"]["result_format"], "compact_company_fact_v1")
+        self.assertTrue(artifact["payload"]["results"][0]["preview"].endswith("…"))
 
     def test_tool_preserves_structured_fields_for_sku_by_code(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")

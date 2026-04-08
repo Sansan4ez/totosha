@@ -115,6 +115,47 @@ class BenchAlgorithmicEvalTests(unittest.TestCase):
         self.assertTrue(evaluation["passed"])
         self.assertEqual(evaluation["errors"], [])
 
+    def test_hybrid_validation_uses_bench_artifact_not_full_runtime_answer_shape(self):
+        case = {
+            "id": "company-fact-live",
+            "validation": {
+                "mode": "hybrid",
+                "artifact_selector": {"tool": "corp_db_search", "kind": "hybrid_search"},
+                "checks": [
+                    {"type": "equals", "path": "status", "value": "success"},
+                    {"type": "contains_any", "path": "results[*].preview", "value": ["239-18-11"]},
+                ],
+                "text_checks": [
+                    {"type": "contains_any", "value": ["239-18-11"]},
+                ],
+            },
+            "routing": {"selected_source": "corp_db"},
+        }
+        row = {
+            "status": "ok",
+            "answer": "Телефон: +7 (351) 239-18-11\nEmail: lad@ladled.ru",
+            "meta": {
+                "retrieval_selected_source": "corp_db",
+                "bench_artifacts": [
+                    {
+                        "tool": "corp_db_search",
+                        "kind": "hybrid_search",
+                        "payload": {
+                            "status": "success",
+                            "result_format": "compact_company_fact_v1",
+                            "results": [
+                                {"preview": "Телефон +7 (351) 239-18-11, email lad@ladled.ru."}
+                            ],
+                        },
+                    }
+                ],
+            },
+        }
+
+        evaluation = evaluate_case_result(case, row)
+        self.assertTrue(evaluation["passed"])
+        self.assertEqual(evaluation["artifact"]["tool"], "corp_db_search")
+
 
 if __name__ == "__main__":
     unittest.main()

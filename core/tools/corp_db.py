@@ -16,6 +16,11 @@ from time import perf_counter
 from models import ToolResult, ToolContext
 from observability import REQUEST_ID as OBS_REQUEST_ID
 from opentelemetry import trace
+from tool_output_policy import (
+    RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
+    build_output_contract_metadata,
+    serialize_runtime_json,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -29,6 +34,7 @@ COMPANY_FACT_QUERY_HINTS = (
 )
 BENCH_ARTIFACT_LIST_LIMIT = 5
 BENCH_ARTIFACT_STRING_LIMIT = 320
+COMPANY_FACT_RESULT_LIMIT = 5
 
 
 def _timeout_budget_seconds() -> dict[str, float]:
@@ -99,7 +105,7 @@ def _compact_company_fact_payload(data: dict) -> dict:
     results = data.get("results") if isinstance(data.get("results"), list) else []
     compact_results: list[dict] = []
 
-    for row in results[:3]:
+    for row in results[:COMPANY_FACT_RESULT_LIMIT]:
         if not isinstance(row, dict):
             continue
         metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
@@ -125,11 +131,9 @@ def _compact_company_fact_payload(data: dict) -> dict:
     }
 
 
-def _format_result_payload(data: object, args: dict | None = None) -> str:
-    """Return a compact payload for company facts and full payload otherwise."""
-    if _is_company_fact_kb_search(args, data):
-        return json.dumps(_compact_company_fact_payload(data), ensure_ascii=False, indent=2)
-    return json.dumps(data, ensure_ascii=False, indent=2)
+def _serialize_runtime_payload(data: object) -> str:
+    """Runtime path always receives full-fidelity JSON."""
+    return serialize_runtime_json(data)
 
 
 def _compact_bench_value(value: object, depth: int = 0) -> object:
@@ -204,10 +208,15 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
                     try:
                         data = json.loads(text)
                         span.set_attribute("corp_db.status", str(data.get("status", "success")) if isinstance(data, dict) else "success")
-                        response_format = "compact_company_fact_v1" if _is_company_fact_kb_search(args, data) else "full"
-                        span.set_attribute("corp_db.response_format", response_format)
-                        metadata = {"bench_artifact": _build_bench_artifact(args, data)}
-                        return ToolResult(True, output=_format_result_payload(data, args), metadata=metadata)
+                        bench_payload_format = "compact_company_fact_v1" if _is_company_fact_kb_search(args, data) else "compact_bench_value_v1"
+                        span.set_attribute("corp_db.runtime_payload_format", RUNTIME_PAYLOAD_FORMAT_FULL_JSON)
+                        span.set_attribute("corp_db.bench_payload_format", bench_payload_format)
+                        metadata = build_output_contract_metadata(
+                            bench_artifact=_build_bench_artifact(args, data),
+                            runtime_payload_format=RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
+                            bench_payload_format=bench_payload_format,
+                        )
+                        return ToolResult(True, output=_serialize_runtime_payload(data), metadata=metadata)
                     except Exception:
                         span.set_attribute("corp_db.status", "success")
                         return ToolResult(True, output=text)

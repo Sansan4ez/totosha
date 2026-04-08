@@ -16,6 +16,7 @@ from documents.routing import select_route_card
 from logger import agent_logger, log_agent_step
 from observability import REQUEST_ID as OBS_REQUEST_ID
 from run_meta import run_meta_append_artifact, run_meta_get, run_meta_update_llm
+from tool_output_policy import get_bench_payload_format, get_runtime_payload_format
 from tools import execute_tool, filter_tools_for_session
 from models import ToolContext, ToolResult
 from opentelemetry import trace
@@ -177,6 +178,16 @@ def _collect_row_texts(rows: list[dict[str, Any]]) -> list[str]:
     return texts
 
 
+def _collect_row_heading_texts(rows: list[dict[str, Any]]) -> list[str]:
+    texts: list[str] = []
+    for row in rows:
+        for key in ("heading", "title"):
+            value = str(row.get(key) or "").strip()
+            if value:
+                texts.append(value)
+    return texts
+
+
 def _collect_preview_texts(payload: dict[str, Any]) -> list[str]:
     texts: list[str] = []
     for row in _company_fact_rows(payload):
@@ -248,7 +259,7 @@ def _company_fact_payload_is_relevant(payload: dict[str, Any], message: str) -> 
         return bool(requisites) or _texts_contain_any(texts, ("реквизиты",))
     if subtype == "socials":
         return bool(socials)
-    return _texts_contain_any(texts, ("о компании", "наш профиль", "о заводе", "об организации"))
+    return _texts_contain_any(_collect_row_heading_texts(rows), ("о компании", "наш профиль", "о заводе", "об организации"))
 
 
 def _is_successful_company_fact_kb_search(args: dict, tool_output: str, message: str) -> bool:
@@ -407,6 +418,15 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["company_fact_payload_relevant"] = bool(state.get("company_fact_payload_relevant"))
         meta["company_fact_rendered"] = bool(state.get("company_fact_rendered"))
         meta["company_fact_fallback_reason"] = str(state.get("company_fact_fallback_reason") or "")
+        meta["company_fact_finalizer_mode"] = str(state.get("company_fact_finalizer_mode") or "")
+        meta["company_fact_runtime_payload_format"] = str(state.get("company_fact_runtime_payload_format") or "")
+        meta["company_fact_bench_payload_format"] = str(state.get("company_fact_bench_payload_format") or "")
+        runtime_formats = state.get("tool_runtime_output_formats")
+        if isinstance(runtime_formats, dict):
+            meta["tool_runtime_output_formats"] = dict(runtime_formats)
+        bench_formats = state.get("tool_bench_output_formats")
+        if isinstance(bench_formats, dict):
+            meta["tool_bench_output_formats"] = dict(bench_formats)
         if blocked_tool:
             meta["routing_guardrail_last_blocked_tool"] = blocked_tool
 
@@ -425,10 +445,40 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         span.set_attribute("company_fact.payload_relevant", bool(state.get("company_fact_payload_relevant")))
         span.set_attribute("company_fact.rendered", bool(state.get("company_fact_rendered")))
         span.set_attribute("company_fact.fallback_reason", str(state.get("company_fact_fallback_reason") or ""))
+        span.set_attribute("company_fact.finalizer_mode", str(state.get("company_fact_finalizer_mode") or ""))
+        span.set_attribute("company_fact.runtime_payload_format", str(state.get("company_fact_runtime_payload_format") or ""))
+        span.set_attribute("company_fact.bench_payload_format", str(state.get("company_fact_bench_payload_format") or ""))
         if blocked_tool:
             span.set_attribute("retrieval.guardrail_last_blocked_tool", blocked_tool)
     except Exception:
         return None
+
+
+def _record_tool_output_contract(name: str, tool_result: ToolResult, state: dict[str, Any]) -> None:
+    metadata = tool_result.metadata if isinstance(tool_result.metadata, dict) else {}
+    runtime_payload_format = get_runtime_payload_format(metadata)
+    bench_payload_format = get_bench_payload_format(metadata)
+
+    if runtime_payload_format:
+        runtime_formats = state.get("tool_runtime_output_formats")
+        if not isinstance(runtime_formats, dict):
+            runtime_formats = {}
+            state["tool_runtime_output_formats"] = runtime_formats
+        runtime_formats[name] = runtime_payload_format
+
+    if bench_payload_format:
+        bench_formats = state.get("tool_bench_output_formats")
+        if not isinstance(bench_formats, dict):
+            bench_formats = {}
+            state["tool_bench_output_formats"] = bench_formats
+        bench_formats[name] = bench_payload_format
+
+    if name == "corp_db_search" and state.get("intent") == "company_fact":
+        if runtime_payload_format:
+            state["company_fact_runtime_payload_format"] = runtime_payload_format
+        if bench_payload_format:
+            state["company_fact_bench_payload_format"] = bench_payload_format
+        _update_routing_observability(state)
 
 
 def _looks_like_contact_intent(message: str) -> bool:
@@ -488,8 +538,15 @@ def _preferred_company_fact_texts(payload: dict[str, Any], subtype: str) -> list
         return []
 
     heading_keywords: tuple[str, ...] = ()
+    heading_priority: dict[str, int] = {}
     if subtype == "about_company":
         heading_keywords = ("о компании", "наш профиль", "о заводе", "об организации")
+        heading_priority = {
+            "о компании": 0,
+            "наш профиль": 1,
+            "о заводе": 2,
+            "об организации": 3,
+        }
     elif subtype in {"contacts", "address"}:
         heading_keywords = ("контактная информация", "контакты")
     elif subtype == "requisites":
@@ -501,9 +558,18 @@ def _preferred_company_fact_texts(payload: dict[str, Any], subtype: str) -> list
         preferred_rows = [
             row
             for row in rows
-            if _texts_contain_any(_collect_row_texts([row]), heading_keywords)
+            if _texts_contain_any(_collect_row_heading_texts([row]), heading_keywords)
         ]
         if preferred_rows:
+            if heading_priority:
+                def _row_priority(row: dict[str, Any]) -> tuple[int, int]:
+                    heading_text = _normalize_routing_text(" ".join(_collect_row_heading_texts([row])))
+                    for keyword, priority in heading_priority.items():
+                        if _text_has_any(heading_text, (keyword,)):
+                            return priority, rows.index(row)
+                    return len(heading_priority), rows.index(row)
+
+                preferred_rows = sorted(preferred_rows, key=_row_priority)
             preferred_payload = {"results": preferred_rows}
             return _collect_result_texts(preferred_payload)
 
@@ -721,6 +787,7 @@ async def _deterministic_empty_response_fallback(
     bench_artifact = tool_result.metadata.get("bench_artifact") if isinstance(tool_result.metadata, dict) else None
     if isinstance(bench_artifact, dict):
         run_meta_append_artifact(bench_artifact)
+    _record_tool_output_contract(name, tool_result, routing_state)
 
     rendered = _render_deterministic_tool_output(name, args, tool_result.output or "", message)
     if not rendered and name == "corp_db_search" and _looks_like_contact_intent(message):
@@ -736,11 +803,14 @@ async def _deterministic_empty_response_fallback(
             bench_artifact = doc_result.metadata.get("bench_artifact") if isinstance(doc_result.metadata, dict) else None
             if isinstance(bench_artifact, dict):
                 run_meta_append_artifact(bench_artifact)
+            _record_tool_output_contract("doc_search", doc_result, routing_state)
             rendered = _render_deterministic_tool_output("doc_search", doc_args, doc_result.output or "", message)
             if rendered:
                 routing_state["selected_source"] = "doc_search"
                 routing_state["doc_search_document_success"] = True
+                routing_state["company_fact_fast_path"] = True
                 routing_state["company_fact_rendered"] = True
+                routing_state["company_fact_finalizer_mode"] = "deterministic_fallback"
                 _update_routing_observability(routing_state)
                 return rendered
     if not rendered:
@@ -755,7 +825,9 @@ async def _deterministic_empty_response_fallback(
         if kind == "hybrid_search":
             routing_state["corp_db_company_fact_success"] = True
             routing_state["company_fact_payload_relevant"] = True
+            routing_state["company_fact_fast_path"] = True
             routing_state["company_fact_rendered"] = True
+            routing_state["company_fact_finalizer_mode"] = "deterministic_fallback"
         elif kind == "application_recommendation":
             routing_state["corp_db_application_success"] = True
         elif kind == "portfolio_by_sphere":
@@ -1542,6 +1614,11 @@ async def run_agent(
         "company_fact_payload_relevant": False,
         "company_fact_rendered": False,
         "company_fact_fallback_reason": "",
+        "company_fact_finalizer_mode": "",
+        "company_fact_runtime_payload_format": "",
+        "company_fact_bench_payload_format": "",
+        "tool_runtime_output_formats": {},
+        "tool_bench_output_formats": {},
     }
     _update_routing_observability(routing_state)
     
@@ -1743,6 +1820,8 @@ async def run_agent(
                 bench_artifact = tool_result.metadata.get("bench_artifact") if isinstance(tool_result.metadata, dict) else None
                 if tool_result.success and isinstance(bench_artifact, dict):
                     run_meta_append_artifact(bench_artifact)
+                if tool_result.success:
+                    _record_tool_output_contract(name, tool_result, routing_state)
 
                 company_fact_success = name == "corp_db_search" and _is_successful_company_fact_kb_search(args, tool_result.output or "", message)
                 if name == "corp_db_search" and routing_state["intent"] == "company_fact":
@@ -1761,15 +1840,10 @@ async def run_agent(
                         routing_state["explicit_wiki_request"],
                     )
                     if not routing_state["explicit_wiki_request"]:
-                        rendered = _render_deterministic_tool_output(name, args, tool_result.output or "", message)
-                        if rendered:
-                            routing_state["company_fact_fast_path"] = True
-                            routing_state["company_fact_rendered"] = True
-                            routing_state["company_fact_fallback_reason"] = ""
-                            _update_routing_observability(routing_state)
-                            final_response = rendered
-                            break
-                        routing_state["company_fact_fallback_reason"] = "company_fact_renderer_empty"
+                        routing_state["company_fact_fast_path"] = False
+                        routing_state["company_fact_rendered"] = False
+                        routing_state["company_fact_fallback_reason"] = ""
+                        routing_state["company_fact_finalizer_mode"] = "llm"
                         _update_routing_observability(routing_state)
                 if name == "corp_db_search" and _is_successful_application_recommendation(args, tool_result.output or "", message):
                     routing_state["corp_db_application_success"] = True
@@ -1861,6 +1935,13 @@ async def run_agent(
         else:
             # No tool calls - this is the final response
             agent_logger.info(f"[iter {iteration}] FINAL RESPONSE (no tool calls)")
+            if (
+                routing_state["intent"] == "company_fact"
+                and routing_state["corp_db_company_fact_success"]
+                and not routing_state["explicit_wiki_request"]
+            ):
+                routing_state["company_fact_finalizer_mode"] = routing_state.get("company_fact_finalizer_mode") or "llm"
+                _update_routing_observability(routing_state)
             final_response = content
             
             # Debug: if content empty but tokens used, log raw message

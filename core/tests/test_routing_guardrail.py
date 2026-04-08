@@ -122,6 +122,35 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertNotIn("power_w_min", rewritten)
         self.assertNotIn("voltage_kind", rewritten)
         self.assertNotIn("explosion_protected", rewritten)
+        weak_about_payload = {
+            "status": "success",
+            "results": [
+                {
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                    "heading": "Дополнительные испытания в независимых аккредитованных лабораториях",
+                    "preview": "В рамках реализации долгосрочных проектов по разработке и поставке светотехнического оборудования...",
+                }
+            ],
+        }
+        self.assertFalse(_MODULE._company_fact_payload_is_relevant(weak_about_payload, "Расскажи о компании"))
+        ranked_about_payload = {
+            "status": "success",
+            "results": [
+                {
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                    "heading": "Наш профиль",
+                    "preview": "Наш профиль — промышленное освещение и работа в тяжёлых условиях эксплуатации.",
+                },
+                {
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                    "heading": "О компании",
+                    "preview": "Компания ЛАДзавод светотехники занимается разработкой и производством промышленного светотехнического оборудования.",
+                },
+            ],
+        }
+        preferred = _MODULE._preferred_company_fact_texts(ranked_about_payload, "about_company")
+        self.assertTrue(preferred)
+        self.assertIn("Компания ЛАДзавод светотехники занимается", preferred[0])
 
     def _tool_call_response(self, tool_name: str, args: dict) -> dict:
         return {
@@ -210,21 +239,42 @@ class RoutingGuardrailTests(unittest.TestCase):
 
         async def fake_execute_tool(name, args, ctx):
             if name == "corp_db_search":
-                return _ToolResult(True, output=json.dumps(corp_db_payload, ensure_ascii=False))
+                metadata = {
+                    "runtime_payload_format": "full_json",
+                    "bench_payload_format": "compact_company_fact_v1"
+                    if str(args.get("kind") or "") == "hybrid_search"
+                    else "compact_bench_value_v1",
+                    "bench_artifact": {
+                        "tool": "corp_db_search",
+                        "kind": str(args.get("kind") or corp_db_payload.get("kind") or ""),
+                        "payload": {"status": corp_db_payload.get("status"), "results": corp_db_payload.get("results", [])},
+                    },
+                }
+                return _ToolResult(True, output=json.dumps(corp_db_payload, ensure_ascii=False), metadata=metadata)
             if name == wiki_tool_name:
                 if wiki_tool_name == "doc_search":
                     payload = wiki_payload or {
                         "status": "success",
                         "results": [{"relative_path": "common_information_about_company.md", "snippet": "wiki preview"}],
                     }
-                    return _ToolResult(True, output=json.dumps(payload, ensure_ascii=False))
-                return _ToolResult(True, output="wiki preview")
+                    metadata = {
+                        "runtime_payload_format": "full_json",
+                        "bench_payload_format": "compact_doc_search_artifact_v1",
+                        "bench_artifact": {"tool": "doc_search", "kind": "doc_search", "payload": payload},
+                    }
+                    return _ToolResult(True, output=json.dumps(payload, ensure_ascii=False), metadata=metadata)
+                return _ToolResult(True, output="wiki preview", metadata={"runtime_payload_format": "full_text"})
             if name == "doc_search":
                 payload = wiki_payload or {
                     "status": "success",
                     "results": [{"relative_path": "common_information_about_company.md", "snippet": "wiki preview"}],
                 }
-                return _ToolResult(True, output=json.dumps(payload, ensure_ascii=False))
+                metadata = {
+                    "runtime_payload_format": "full_json",
+                    "bench_payload_format": "compact_doc_search_artifact_v1",
+                    "bench_artifact": {"tool": "doc_search", "kind": "doc_search", "payload": payload},
+                }
+                return _ToolResult(True, output=json.dumps(payload, ensure_ascii=False), metadata=metadata)
             raise AssertionError(f"unexpected tool call: {name}")
 
         exec_mock = AsyncMock(side_effect=fake_execute_tool)
@@ -287,9 +337,10 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
-        self.assertFalse(meta["retrieval_wiki_after_corp_db_success"])
-        self.assertEqual(meta["routing_guardrail_hits"], 0)
-        self.assertTrue(meta["company_fact_fast_path"])
+        self.assertTrue(meta["retrieval_wiki_after_corp_db_success"])
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertFalse(meta["company_fact_fast_path"])
+        self.assertEqual(meta["company_fact_finalizer_mode"], "llm")
 
     def test_empty_corp_db_allows_wiki_fallback(self):
         response, exec_mock, meta = self._run_flow(
@@ -328,9 +379,10 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("ladzavod.ru", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertFalse(meta["retrieval_wiki_after_corp_db_success"])
-        self.assertEqual(meta["routing_guardrail_hits"], 0)
-        self.assertTrue(meta["company_fact_fast_path"])
+        self.assertTrue(meta["retrieval_wiki_after_corp_db_success"])
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertFalse(meta["company_fact_fast_path"])
+        self.assertEqual(meta["company_fact_finalizer_mode"], "llm")
 
     def test_guardrail_blocks_fallback_after_successful_application_recommendation(self):
         response, exec_mock, meta = self._run_flow(
@@ -449,6 +501,11 @@ class RoutingGuardrailTests(unittest.TestCase):
                 ("list_directory", {"path": "/data/skills/corp-pg-db/"}),
                 ("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "о компании"}),
             ],
+            llm_responses_override=[
+                self._tool_call_response("list_directory", {"path": "/data/skills/corp-pg-db/"}),
+                self._tool_call_response("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "о компании"}),
+                self._final_response("Наш профиль — промышленное освещение и работа в тяжёлых условиях эксплуатации."),
+            ],
         )
 
         self.assertIn("промышленное освещение", response)
@@ -508,12 +565,13 @@ class RoutingGuardrailTests(unittest.TestCase):
 
         self.assertIn("239-18-11", response)
         self.assertIn("lad@ladled.ru", response)
+        self.assertNotIn("…", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertIn("lad@ladled.ru", exec_mock.await_args_list[0].args[1]["query"].lower())
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
 
-    def test_company_fact_fast_path_rewrites_primary_query_and_stops_early(self):
+    def test_company_fact_primary_query_rewrite_keeps_normal_llm_finalization(self):
         response, exec_mock, meta = self._run_flow(
             user_message="Подскажи контакты компании.",
             corp_db_payload={
@@ -532,7 +590,8 @@ class RoutingGuardrailTests(unittest.TestCase):
                 self._tool_call_response(
                     "corp_db_search",
                     {"kind": "hybrid_search", "profile": "kb_search", "query": "контакты компании"},
-                )
+                ),
+                self._final_response("Телефон: +7 (351) 239-18-11\nEmail: lad@ladled.ru\nСайт: https://ladzavod.ru"),
             ],
         )
 
@@ -540,10 +599,13 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("lad@ladled.ru", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertIn("lad@ladled.ru", exec_mock.await_args_list[0].args[1]["query"].lower())
-        self.assertTrue(meta["company_fact_fast_path"])
+        self.assertFalse(meta["company_fact_fast_path"])
         self.assertTrue(meta["company_fact_payload_relevant"])
-        self.assertTrue(meta["company_fact_rendered"])
+        self.assertFalse(meta["company_fact_rendered"])
         self.assertEqual(meta["company_fact_intent_type"], "contacts")
+        self.assertEqual(meta["company_fact_finalizer_mode"], "llm")
+        self.assertEqual(meta["company_fact_runtime_payload_format"], "full_json")
+        self.assertEqual(meta["company_fact_bench_payload_format"], "compact_company_fact_v1")
 
     def test_weak_company_fact_payload_does_not_block_doc_search_fallback(self):
         response, exec_mock, meta = self._run_flow(
@@ -586,7 +648,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["routing_guardrail_hits"], 0)
         self.assertEqual(meta["retrieval_selected_source"], "doc_search")
 
-    def test_about_company_fast_path_returns_summary_without_second_llm_turn(self):
+    def test_about_company_uses_llm_finalization_with_full_runtime_payload(self):
         response, exec_mock, meta = self._run_flow(
             user_message="Расскажи о компании",
             corp_db_payload={
@@ -605,14 +667,88 @@ class RoutingGuardrailTests(unittest.TestCase):
                 self._tool_call_response(
                     "corp_db_search",
                     {"kind": "hybrid_search", "profile": "kb_search", "query": "о компании"},
-                )
+                ),
+                self._final_response(
+                    "Компания ЛАДзавод светотехники занимается разработкой и производством промышленного "
+                    "светотехнического оборудования для промышленных объектов и тяжёлых условий эксплуатации."
+                ),
             ],
         )
 
         self.assertIn("разработкой и производством", response)
+        self.assertNotIn("…", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(meta["company_fact_intent_type"], "about_company")
-        self.assertTrue(meta["company_fact_fast_path"])
+        self.assertFalse(meta["company_fact_fast_path"])
+        self.assertEqual(meta["company_fact_finalizer_mode"], "llm")
+        self.assertEqual(meta["company_fact_runtime_payload_format"], "full_json")
+
+    def test_application_recommendation_runtime_answer_does_not_leak_compact_preview(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Подбери освещение для спортивного стадиона",
+            corp_db_payload={
+                "status": "success",
+                "kind": "application_recommendation",
+                "resolved_application": {
+                    "application_key": "sports_high_power",
+                    "sphere_name": "Спортивное и освещение высокой мощности",
+                },
+                "recommended_lamps": [
+                    {
+                        "name": "LAD LED R500-9-30-6-650LZD",
+                        "url": "https://ladzavod.ru/catalog/r500-9-lzd/ladled-r500-9-30-6-650lzd",
+                        "recommendation_reason": "высокая мощность для стадионного освещения",
+                    }
+                ],
+                "follow_up_question": "Уточните высоту установки.",
+            },
+            corp_db_args={"kind": "application_recommendation", "query": "стадион"},
+            llm_responses_override=[
+                self._tool_call_response("corp_db_search", {"kind": "application_recommendation", "query": "стадион"}),
+                self._final_response(
+                    "Для спортивного стадиона подойдёт серия LAD LED R500. "
+                    "Рекомендую модель LAD LED R500-9-30-6-650LZD для мощного заливающего света. "
+                    "Уточните высоту установки."
+                ),
+            ],
+        )
+
+        self.assertIn("LAD LED R500-9-30-6-650LZD", response)
+        self.assertIn("Уточните высоту установки", response)
+        self.assertNotIn("…", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+
+    def test_document_lookup_runtime_answer_does_not_leak_compact_preview(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Нужен пожарный сертификат LINE, дай прямую ссылку.",
+            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+            corp_db_args={"kind": "hybrid_search", "profile": "kb_search", "query": "пожарный сертификат line"},
+            wiki_tool_name="doc_search",
+            wiki_tool_args={"query": "пожарный сертификат line"},
+            wiki_payload={
+                "status": "success",
+                "results": [
+                    {
+                        "relative_path": "certs/line-fire.pdf",
+                        "document_title": "Пожарный сертификат LINE",
+                        "preview": "Пожарный сертификат LINE: https://ladzavod.ru/certs/line-fire.pdf",
+                    }
+                ],
+            },
+            llm_responses_override=[
+                self._tool_call_response("doc_search", {"query": "пожарный сертификат line"}),
+                self._final_response(
+                    "Нашёл пожарный сертификат LINE. "
+                    "Прямая ссылка: https://ladzavod.ru/certs/line-fire.pdf"
+                ),
+            ],
+        )
+
+        self.assertIn("https://ladzavod.ru/certs/line-fire.pdf", response)
+        self.assertNotIn("…", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(meta["retrieval_selected_source"], "doc_search")
 
     def test_empty_llm_completion_uses_doc_search_when_contact_kb_payload_has_no_contacts(self):
         response, exec_mock, meta = self._run_flow(

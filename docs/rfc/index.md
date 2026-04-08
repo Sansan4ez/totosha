@@ -23,3 +23,4 @@ RFCs
 - `docs/rfc/RFC-012-benchmark-algorithmic-validation-and-comparison.md`
 - `docs/rfc/RFC-013-observability-runtime-wiring-and-trace-propagation.md`
 - `docs/rfc/RFC-014-simple-company-fact-fast-path-and-kb-ranking.md`
+- `docs/rfc/RFC-015-runtime-vs-benchmark-pipeline-separation.md`
