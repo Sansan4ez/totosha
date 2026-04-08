@@ -52,7 +52,11 @@ _stub_modules = {
         log_agent_step=lambda *args, **kwargs: None,
     ),
     "observability": types.SimpleNamespace(REQUEST_ID=ContextVar("request_id", default="-")),
-    "run_meta": types.SimpleNamespace(run_meta_get=lambda: None, run_meta_update_llm=lambda **kwargs: None),
+    "run_meta": types.SimpleNamespace(
+        run_meta_get=lambda: None,
+        run_meta_update_llm=lambda **kwargs: None,
+        run_meta_append_artifact=lambda *args, **kwargs: False,
+    ),
     "tools": types.SimpleNamespace(
         execute_tool=lambda *args, **kwargs: None,
         filter_tools_for_session=lambda *args, **kwargs: [],
