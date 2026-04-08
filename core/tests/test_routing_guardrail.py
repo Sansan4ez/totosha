@@ -182,7 +182,7 @@ class RoutingGuardrailTests(unittest.TestCase):
             ),
             (
                 wiki_tool_name,
-                wiki_tool_args or {"path": "/data/skills/corp-wiki-md-search/SKILL.md"},
+                wiki_tool_args or {"path": "/data/corp_docs/live/doc_123.json"},
             ),
         ]
         llm_responses = [self._tool_call_response(name, args) for name, args in (tool_call_sequence or default_sequence)]
@@ -192,7 +192,7 @@ class RoutingGuardrailTests(unittest.TestCase):
             if name == "corp_db_search":
                 return _ToolResult(True, output=json.dumps(corp_db_payload, ensure_ascii=False))
             if name == wiki_tool_name:
-                if wiki_tool_name in {"doc_search", "corp_wiki_search"}:
+                if wiki_tool_name == "doc_search":
                     payload = {
                         "status": "success",
                         "results": [{"relative_path": "common_information_about_company.md", "snippet": "wiki preview"}],

@@ -27,7 +27,6 @@ COPY doc-worker/README.md /app/README.md
 
 ENV CORP_DOCS_ROOT=/data/corp_docs \
     DOC_REPO_ROOT=/repo \
-    CORP_WIKI_PATH=/data/skills/corp-wiki-md-search/wiki \
     DOC_SEARCH_ENABLE_LEGACY_OFFICE=1
 
 ENTRYPOINT ["python3", "/app/worker.py"]

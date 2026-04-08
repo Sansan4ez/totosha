@@ -25,13 +25,13 @@ class BenchRoutingEvalTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(errors, [])
 
-    def test_eval_routing_treats_wiki_and_doc_search_as_same_document_source(self):
+    def test_eval_routing_treats_document_source_as_doc_search(self):
         meta = {
             "retrieval_intent": "document_lookup",
             "retrieval_selected_source": "wiki",
             "retrieval_wiki_after_corp_db_success": False,
             "routing_guardrail_hits": 0,
-            "tools_used": ["corp_wiki_search"],
+            "tools_used": ["doc_search"],
         }
         routing = {
             "intent": "document_lookup",

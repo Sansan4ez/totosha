@@ -2,7 +2,6 @@
 
 from .storage import (
     DEFAULT_CORP_DOCS_ROOT,
-    DEFAULT_LEGACY_DOCS_ROOT,
     DocumentPaths,
     RepoPaths,
     detect_file_type,
@@ -25,7 +24,6 @@ from .routing import build_routing_index, load_routing_index, select_route_card
 
 __all__ = [
     "DEFAULT_CORP_DOCS_ROOT",
-    "DEFAULT_LEGACY_DOCS_ROOT",
     "DocumentPaths",
     "RepoPaths",
     "cache_version_key",

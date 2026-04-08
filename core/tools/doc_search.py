@@ -167,7 +167,6 @@ async def _run_doc_search_tool(
 ) -> ToolResult:
     query = str(args.get("query") or "").strip()
     top = int(args.get("top", 5) or 5)
-    include_legacy = bool(args.get("include_legacy", True))
 
     if not query:
         return ToolResult(False, error="Query is required")
@@ -177,10 +176,9 @@ async def _run_doc_search_tool(
         span.set_attribute("doc_search.tool_name", tool_name)
         if alias_for:
             span.set_attribute("doc_search.alias_for", alias_for)
-        span.set_attribute("doc_search.include_legacy", include_legacy)
         span.set_attribute("doc_search.top", top)
         try:
-            payload = search_documents(query=query, top=top, include_legacy=include_legacy)
+            payload = search_documents(query=query, top=top)
             payload["requested_top"] = top
             payload["tool_name"] = tool_name
             if alias_for:

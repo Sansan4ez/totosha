@@ -77,7 +77,7 @@ class BenchRunModesTests(unittest.TestCase):
                         "execution": {
                             "mode": "direct_tool",
                             "tool": "doc_search",
-                            "args": {"query": "сертификат line", "top": 3, "include_legacy": True},
+                            "args": {"query": "сертификат line", "top": 3},
                         },
                         "validation": {
                             "mode": "algorithmic",

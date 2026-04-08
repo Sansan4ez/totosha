@@ -1,6 +1,6 @@
 ---
 name: doc-search
-description: Многоформатный поиск по локальному document corpus: `md`, `pdf`, `docx`, `xlsx`, `pptx`, `png`, `jpg`, `tiff` и другим рабочим документам; legacy `doc/xls/ppt` доступны только после ingest через `doc-worker` с LiteParse/LibreOffice runtime. Используй tool `doc_search` как canonical document-search path. `corp_wiki_search` и `corp-wiki-md-search` — deprecated aliases на переходный период.
+description: Многоформатный поиск по локальному document corpus: `md`, `pdf`, `docx`, `xlsx`, `pptx`, `png`, `jpg`, `tiff` и другим рабочим документам; legacy `doc/xls/ppt` доступны только после ingest через `doc-worker` с LiteParse/LibreOffice runtime. Используй tool `doc_search` как canonical document-search path.
 ---
 
 # Doc search
@@ -10,7 +10,6 @@ Use this skill when the user explicitly asks for document context, citation, fra
 ## Core rules
 
 - Canonical tool: `doc_search`.
-- Deprecated alias: `corp_wiki_search`.
 - Canonical source name: `doc-search`.
 - Do not use this skill as default path for short company-fact questions if `corp_db_search` already returned a sufficient answer.
 - Prefer `corp_db_search` for company facts and promoted hot-path content.
@@ -20,7 +19,6 @@ Use this skill when the user explicitly asks for document context, citation, fra
 `doc_search` works across:
 - live document manifests under `/data/corp_docs/live/`
 - normalized sidecars under `/data/corp_docs/parsed/`
-- legacy wiki folder `/data/skills/corp-wiki-md-search/wiki/` during migration
 
 The tool reads normalized sidecars on the chat path. Heavy parsing and legacy Office conversion belong to `doc-worker`, not to shell commands inside the agent.
 
@@ -35,7 +33,7 @@ The tool reads normalized sidecars on the chat path. Heavy parsing and legacy Of
 ## Example
 
 ```json
-{"query":"сертификат CE LAD LED R500", "top":5, "include_legacy":true}
+{"query":"сертификат CE LAD LED R500", "top":5}
 ```
 
 ## Output rules

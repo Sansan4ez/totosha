@@ -1,6 +1,6 @@
 {
   "name": "doc-search",
-  "description": "Многоформатный поиск по локальному document corpus через tool doc_search. corp_wiki_search и corp-wiki-md-search остаются deprecated aliases.",
+  "description": "Многоформатный поиск по локальному document corpus через tool doc_search.",
   "version": "1.0.0",
   "author": "LAD",
   "system_prompt_file": "SKILL.md",

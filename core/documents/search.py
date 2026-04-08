@@ -10,7 +10,6 @@ from typing import Any
 from .normalize import extract_text_for_search, load_search_limits
 from .storage import (
     get_document_paths,
-    iter_legacy_documents,
     iter_live_documents,
 )
 
@@ -233,12 +232,9 @@ def _extract_text(record: dict[str, Any], *, limits) -> tuple[str, str, bool, di
     return extract_text_for_search(record, limits=limits)
 
 
-def _discover_documents(include_legacy: bool) -> list[dict[str, Any]]:
+def _discover_documents() -> list[dict[str, Any]]:
     paths = get_document_paths()
-    records = list(iter_live_documents(paths))
-    if include_legacy:
-        records.extend(list(iter_legacy_documents(paths)))
-    return records
+    return list(iter_live_documents(paths))
 
 
 def _result_from_record(
@@ -276,7 +272,7 @@ def _result_from_record(
         "slide": slide,
         "cache_hit": cache_hit,
         "score": score,
-        "source": "legacy_wiki" if str(record.get("status")) == "legacy" else "corp_docs_live",
+        "source": "corp_docs_live",
     }
 
 
@@ -284,7 +280,6 @@ def search_documents(
     *,
     query: str,
     top: int = 5,
-    include_legacy: bool = True,
 ) -> dict[str, Any]:
     started_at = perf_counter()
     limits = load_search_limits()
@@ -293,7 +288,7 @@ def search_documents(
     if not query:
         return {"status": "error", "error": "query_required", "results": []}
 
-    discovered = _discover_documents(include_legacy=include_legacy)
+    discovered = _discover_documents()
     results: list[dict[str, Any]] = []
     scanned = 0
     backend_counts: dict[str, int] = {}
@@ -372,5 +367,4 @@ def search_documents(
         "extraction_failures": extraction_failures,
         "search_substrate": "parsed_sidecars",
         "selected_source": "doc_search",
-        "include_legacy": include_legacy,
     }

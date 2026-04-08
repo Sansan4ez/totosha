@@ -1,8 +1,0 @@
-{
-  "name": "corp-wiki-md-search",
-  "description": "Deprecated alias for doc-search. Используй canonical skill doc-search и tool doc_search; corp_wiki_search остаётся backward-compatible alias.",
-  "version": "1.0.0",
-  "author": "LAD",
-  "system_prompt_file": "SKILL.md",
-  "enabled": true
-}

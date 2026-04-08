@@ -30,13 +30,13 @@ def _write_zip_xml(path: Path, entries: dict[str, str]) -> None:
             archive.writestr(name, content)
 
 
+def _env(tmpdir: str) -> dict[str, str]:
+    return {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs")}
+
+
 class DocSearchStackTests(unittest.TestCase):
     def test_ingest_uses_cas_and_deduplicates_identical_uploads(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             source_a = Path(tmpdir) / "a.md"
             source_b = Path(tmpdir) / "b.md"
             source_a.write_text("одинаковый документ", encoding="utf-8")
@@ -54,15 +54,16 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(len(manifest["aliases"]), 2)
 
     def test_parse_cache_reuses_same_sha(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             source = Path(tmpdir) / "one.md"
             source.write_text("сертификат CE на серию R500", encoding="utf-8")
             manifest = ingest_document(source, source="upload")
-            write_parse_cache(manifest["sha256"], text="cached text", structured={"pages": [{"page": 1, "text": "cached text"}]}, meta={"backend": "test"})
+            write_parse_cache(
+                manifest["sha256"],
+                text="cached text",
+                structured={"pages": [{"page": 1, "text": "cached text"}]},
+                meta={"backend": "test"},
+            )
             cached = load_parse_cache(manifest["sha256"])
 
             self.assertIsNotNone(cached)
@@ -70,11 +71,7 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(cached["meta"]["backend"], "test")
 
     def test_ingest_creates_normalized_sidecars_under_parsed_sha_version_dir(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             source = Path(tmpdir) / "policy.md"
             source.write_text("Политика обработки данных вступает в силу немедленно.", encoding="utf-8")
 
@@ -90,33 +87,25 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(cached["meta"]["status"], "success")
             self.assertEqual(manifest["normalization"]["status"], "success")
 
-    def test_search_discovers_live_and_legacy_documents(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
-            legacy = Path(tmpdir) / "legacy"
-            legacy.mkdir(parents=True)
-            (legacy / "company.md").write_text("Компания основана в 2006 году", encoding="utf-8")
-            live_source = Path(tmpdir) / "cert.md"
-            live_source.write_text("Сертификат CE для LAD LED R500", encoding="utf-8")
-            ingest_document(live_source, source="upload")
+    def test_search_discovers_live_documents(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
+            company_source = Path(tmpdir) / "company.md"
+            cert_source = Path(tmpdir) / "cert.md"
+            company_source.write_text("Компания основана в 2006 году", encoding="utf-8")
+            cert_source.write_text("Сертификат CE для LAD LED R500", encoding="utf-8")
+            ingest_document(company_source, source="upload")
+            ingest_document(cert_source, source="upload")
 
-            legacy_hits = search_documents(query="2006", top=3)
-            live_hits = search_documents(query="сертификат CE R500", top=3)
+            company_hits = search_documents(query="2006", top=3)
+            cert_hits = search_documents(query="сертификат CE R500", top=3)
 
-            self.assertEqual(legacy_hits["status"], "success")
-            self.assertEqual(legacy_hits["results"][0]["source"], "legacy_wiki")
-            self.assertEqual(live_hits["status"], "success")
-            self.assertEqual(live_hits["results"][0]["source"], "corp_docs_live")
+            self.assertEqual(company_hits["status"], "success")
+            self.assertEqual(company_hits["results"][0]["source"], "corp_docs_live")
+            self.assertEqual(cert_hits["status"], "success")
+            self.assertEqual(cert_hits["results"][0]["source"], "corp_docs_live")
 
     def test_office_xml_formats_are_searchable(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             docx = Path(tmpdir) / "sheet.docx"
             pptx = Path(tmpdir) / "slides.pptx"
             xlsx = Path(tmpdir) / "table.xlsx"
@@ -151,14 +140,10 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(search_documents(query="239-18-11", top=2)["status"], "success")
 
     def test_pdf_heuristic_and_cached_image_search(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             pdf = Path(tmpdir) / "fire.pdf"
             pdf.write_bytes(b"%PDF-1.4\nBT (fire certificate R700) Tj ET\n")
-            pdf_manifest = ingest_document(pdf, source="upload")
+            ingest_document(pdf, source="upload")
 
             image = Path(tmpdir) / "diagram.png"
             image.write_bytes(b"\x89PNG\r\n\x1a\nfake")
@@ -176,34 +161,30 @@ class DocSearchStackTests(unittest.TestCase):
     def test_search_read_path_does_not_require_layout_initialization(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             os.environ,
-            {
-                "CORP_DOCS_ROOT": str(Path(tmpdir) / "root_is_file"),
-                "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy"),
-            },
+            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "root_is_file")},
             clear=False,
         ):
-            legacy = Path(tmpdir) / "legacy"
-            legacy.mkdir(parents=True)
-            (legacy / "company.md").write_text("Компания основана в 2006 году", encoding="utf-8")
             (Path(tmpdir) / "root_is_file").write_text("not a directory", encoding="utf-8")
 
             payload = search_documents(query="2006", top=2)
 
-            self.assertEqual(payload["status"], "success")
-            self.assertEqual(payload["results"][0]["source"], "legacy_wiki")
+            self.assertEqual(payload["status"], "empty")
+            self.assertEqual(payload["scanned_documents"], 0)
 
-    def test_malformed_legacy_document_does_not_break_other_results(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
-            legacy = Path(tmpdir) / "legacy"
-            legacy.mkdir(parents=True)
-            (legacy / "broken.docx").write_bytes(b"this is not a zip archive")
-            source = Path(tmpdir) / "healthy.md"
-            source.write_text("Пожарный сертификат LINE действует до 2026 года", encoding="utf-8")
-            ingest_document(source, source="upload")
+    def test_missing_sidecar_does_not_break_other_results(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
+            broken_source = Path(tmpdir) / "broken.md"
+            healthy_source = Path(tmpdir) / "healthy.md"
+            broken_source.write_text("Компания основана в 2006 году", encoding="utf-8")
+            healthy_source.write_text("Пожарный сертификат LINE действует до 2026 года", encoding="utf-8")
+            broken_manifest = ingest_document(broken_source, source="upload")
+            ingest_document(healthy_source, source="upload")
+
+            sidecar_dir = current_sidecar_dir(broken_manifest["sha256"])
+            assert sidecar_dir is not None
+            for path in sidecar_dir.iterdir():
+                path.unlink()
+            sidecar_dir.rmdir()
 
             payload = search_documents(query="сертификат line", top=3)
 
@@ -212,15 +193,11 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(payload["normalization_missing_count"], 1)
             self.assertEqual(payload["backend_counts"]["normalization_missing"], 1)
 
-    def test_legacy_markdown_prefers_matching_lines_and_snippets(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
-            legacy = Path(tmpdir) / "legacy"
-            legacy.mkdir(parents=True)
-            (legacy / "common_information_about_company.md").write_text(
+    def test_live_markdown_prefers_matching_lines_and_snippets(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
+            company = Path(tmpdir) / "common_information_about_company.md"
+            norms = Path(tmpdir) / "normy_osveschennosty.md"
+            company.write_text(
                 "# О компании\n"
                 "ЛАДзавод светотехники основан в 2006 году.\n"
                 "Серия LAD LED R500 - эффективный светодиодный светильник.\n"
@@ -231,10 +208,9 @@ class DocSearchStackTests(unittest.TestCase):
                 "Сертификат РОСС LAD LED R700 пожарный: https://example.test/sertif-ROSS-LAD-LED-R700-fire-2026.pdf\n",
                 encoding="utf-8",
             )
-            (legacy / "normy_osveschennosty.md").write_text(
-                ("LED освещение для дорог и тоннелей. " * 60),
-                encoding="utf-8",
-            )
+            norms.write_text(("LED освещение для дорог и тоннелей. " * 60), encoding="utf-8")
+            ingest_document(company, source="upload")
+            ingest_document(norms, source="upload")
 
             certs = search_documents(query="сертификат CE LAD LED R500 пожарный сертификат LAD LED LINE LAD LED R700", top=3)
             compare = search_documents(query="чем отличается серия LAD LED R500 от LAD LED R700", top=3)
@@ -251,12 +227,8 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertIn("LAD LED R700", compare["results"][0]["snippet"])
             self.assertIn("закал", compare["results"][0]["snippet"].lower())
 
-    def test_legacy_binary_office_formats_are_rejected_on_ingest(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+    def test_binary_office_formats_are_rejected_on_ingest(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             for suffix in (".doc", ".xls", ".ppt"):
                 source = Path(tmpdir) / f"legacy{suffix}"
                 source.write_bytes(b"legacy office binary")
@@ -264,16 +236,18 @@ class DocSearchStackTests(unittest.TestCase):
                     ingest_document(source, source="upload")
 
     def test_usage_stats_drive_promotion_report_and_export(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             source = Path(tmpdir) / "promo.md"
             source.write_text("Пожарный сертификат LAD LED LINE действует до 2026 года.", encoding="utf-8")
             manifest = ingest_document(source, source="upload")
             payload = search_documents(query="пожарный сертификат line", top=3)
-            append_usage_stat(query="пожарный сертификат line", payload=payload, intent_class="document_lookup", answer_success=True, selected_result_rank=1)
+            append_usage_stat(
+                query="пожарный сертификат line",
+                payload=payload,
+                intent_class="document_lookup",
+                answer_success=True,
+                selected_result_rank=1,
+            )
             report = write_promotion_candidates_report(min_hits=1)
             exported = export_document_for_corp_db(manifest["document_id"])
 
@@ -286,11 +260,7 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(exported["chunk_source"], "normalized_sidecar")
 
     def test_promotion_export_requires_normalized_sidecar(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             source = Path(tmpdir) / "manual.md"
             source.write_text("Инструкция по монтажу LINE.", encoding="utf-8")
             manifest = ingest_document(source, source="upload")
@@ -305,14 +275,10 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(exported["status"], "normalization_missing")
             self.assertEqual(exported["error"], "normalized_sidecar_required")
 
-    def test_legacy_binary_office_is_allowed_only_with_doc_worker_runtime_gate(self):
+    def test_binary_office_is_allowed_only_with_doc_worker_runtime_gate(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             os.environ,
-            {
-                "CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"),
-                "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy"),
-                "DOC_SEARCH_ENABLE_LEGACY_OFFICE": "1",
-            },
+            {**_env(tmpdir), "DOC_SEARCH_ENABLE_LEGACY_OFFICE": "1"},
             clear=False,
         ):
             source = Path(tmpdir) / "legacy.doc"
@@ -339,10 +305,7 @@ class DocSearchStackTests(unittest.TestCase):
     def test_usage_stats_persistence_is_best_effort(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             os.environ,
-            {
-                "CORP_DOCS_ROOT": str(Path(tmpdir) / "root_is_file"),
-                "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy"),
-            },
+            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "root_is_file")},
             clear=False,
         ):
             (Path(tmpdir) / "root_is_file").write_text("not a directory", encoding="utf-8")
@@ -357,11 +320,7 @@ class DocSearchStackTests(unittest.TestCase):
     def test_sync_repo_ingests_inbox_and_reports_duplicates_and_rejections(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             os.environ,
-            {
-                "DOC_REPO_ROOT": str(Path(tmpdir) / "repo"),
-                "CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"),
-                "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy"),
-            },
+            {"DOC_REPO_ROOT": str(Path(tmpdir) / "repo"), **_env(tmpdir)},
             clear=False,
         ):
             repo_paths = get_repo_paths()
@@ -374,7 +333,10 @@ class DocSearchStackTests(unittest.TestCase):
             first.write_text("Пожарный сертификат LINE действует до 2027 года.", encoding="utf-8")
             duplicate.write_text("Пожарный сертификат LINE действует до 2027 года.", encoding="utf-8")
             invalid.write_text("bad", encoding="utf-8")
-            Path(f"{first}.meta.json").write_text(json.dumps({"tags": ["certificate"], "title": "Fire cert"}, ensure_ascii=False), encoding="utf-8")
+            Path(f"{first}.meta.json").write_text(
+                json.dumps({"tags": ["certificate"], "title": "Fire cert"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
 
             report = sync_repo_inbox()
             ingested = next(item for item in report["results"] if item["status"] == "ingested")
@@ -390,11 +352,7 @@ class DocSearchStackTests(unittest.TestCase):
     def test_sync_repo_rejects_invalid_metadata_sidecar(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             os.environ,
-            {
-                "DOC_REPO_ROOT": str(Path(tmpdir) / "repo"),
-                "CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"),
-                "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy"),
-            },
+            {"DOC_REPO_ROOT": str(Path(tmpdir) / "repo"), **_env(tmpdir)},
             clear=False,
         ):
             repo_paths = get_repo_paths()
@@ -409,11 +367,7 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(report["results"][0]["reason"], "invalid_metadata_type")
 
     def test_rebuild_parsed_recreates_missing_current_version_sidecars(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             source = Path(tmpdir) / "manual.md"
             source.write_text("Руководство по эксплуатации светильника R700.", encoding="utf-8")
             manifest = ingest_document(source, source="upload")
@@ -431,11 +385,7 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertIn("R700", cached["text"])
 
     def test_sidecar_version_key_invalidates_on_ocr_config_change(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             source = Path(tmpdir) / "passport.md"
             source.write_text("Паспорт изделия LAD LINE.", encoding="utf-8")
             manifest = ingest_document(source, source="upload")
@@ -450,11 +400,7 @@ class DocSearchStackTests(unittest.TestCase):
                 self.assertIsNotNone(load_parse_cache(manifest["sha256"]))
 
     def test_live_doc_search_degrades_when_current_sidecar_is_missing(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
-            os.environ,
-            {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"), "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy")},
-            clear=False,
-        ):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
             source = Path(tmpdir) / "guide.md"
             source.write_text("Руководство по монтажу серии LINE.", encoding="utf-8")
             manifest = ingest_document(source, source="upload")
@@ -464,7 +410,7 @@ class DocSearchStackTests(unittest.TestCase):
                 path.unlink()
             sidecar_dir.rmdir()
 
-            payload = search_documents(query="монтаж line", top=3, include_legacy=False)
+            payload = search_documents(query="монтаж line", top=3)
 
             self.assertEqual(payload["status"], "normalization_missing")
             self.assertEqual(payload["result_count"], 0)

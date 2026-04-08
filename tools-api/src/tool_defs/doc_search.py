@@ -11,7 +11,6 @@ TOOLS = {
             "properties": {
                 "query": {"type": "string", "description": "Search query for the local document corpus"},
                 "top": {"type": "integer", "description": "How many documents to return (default 5)"},
-                "include_legacy": {"type": "boolean", "description": "Whether to include the legacy wiki corpus (default true)"},
             },
             "required": ["query"],
         },

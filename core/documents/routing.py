@@ -72,7 +72,7 @@ def default_corp_db_route_cards() -> list[dict[str, Any]]:
                 "чем отличается серия",
             ],
             "tool_name": "doc_search",
-            "tool_args": {"top": 5, "include_legacy": True},
+            "tool_args": {"top": 5},
         },
         {
             "route_id": "corp_db.company_profile",
@@ -100,7 +100,9 @@ def default_corp_db_route_cards() -> list[dict[str, Any]]:
                 "официальный сайт",
                 "год основания",
                 "общая информация о компании",
+                "расскажи о компании",
                 "контакты компании",
+                "подскажи контакты компании",
                 "реквизиты компании",
             ],
             "tool_name": "corp_db_search",

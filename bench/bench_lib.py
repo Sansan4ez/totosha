@@ -19,7 +19,6 @@ SOURCE_ALIASES = {
     "corp_db": "corp_db",
 }
 TOOL_ALIASES = {
-    "corp_wiki_search": "doc_search",
     "doc_search": "doc_search",
 }
 EXECUTION_MODES = {"agent_chat", "direct_tool", "agent_chat_shadow"}

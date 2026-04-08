@@ -14,7 +14,6 @@ from logger import tool_logger
 from models import ToolResult, ToolContext
 
 DEFAULT_CORP_DOCS_ROOT = "/data/corp_docs"
-DEFAULT_LEGACY_DOCS_ROOT = "/data/skills/corp-wiki-md-search/wiki"
 
 
 def normalize_path(input_path: str, cwd: str) -> str:
@@ -41,10 +40,7 @@ def normalize_path(input_path: str, cwd: str) -> str:
 def _managed_document_roots() -> tuple[str, ...]:
     return tuple(
         os.path.realpath(path)
-        for path in (
-            os.getenv("CORP_DOCS_ROOT", DEFAULT_CORP_DOCS_ROOT),
-            os.getenv("CORP_WIKI_PATH", DEFAULT_LEGACY_DOCS_ROOT),
-        )
+        for path in (os.getenv("CORP_DOCS_ROOT", DEFAULT_CORP_DOCS_ROOT),)
     )
 
 

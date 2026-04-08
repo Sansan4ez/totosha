@@ -36,7 +36,6 @@ class DocWorkerFoundationTests(unittest.TestCase):
             env = {
                 "DOC_REPO_ROOT": str(repo_root),
                 "CORP_DOCS_ROOT": str(Path(tmpdir) / "data" / "corp_docs"),
-                "CORP_WIKI_PATH": str(Path(tmpdir) / "data" / "skills" / "corp-wiki-md-search" / "wiki"),
             }
             worker = REPO_ROOT / "doc-worker" / "worker.py"
             for args in (
@@ -64,7 +63,6 @@ class DocWorkerFoundationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             env = {
                 "CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"),
-                "CORP_WIKI_PATH": str(Path(tmpdir) / "legacy"),
             }
             import os
             import sys

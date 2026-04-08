@@ -44,8 +44,8 @@ description: Поиск по корпоративной базе Postgres: compa
   - точное коробочное название без описательных слов
 - Если вопрос про `примеры реализации`, `объекты`, `портфолио`, `где применялся`, `какие проекты были`, сначала используй `kind=portfolio_examples_by_lamp`.
 - Если `portfolio_examples_by_lamp` вернул `success`, считай модель и объекты подтверждёнными и отвечай по этому payload.
-- После успешного `portfolio_examples_by_lamp` не делай `hybrid_search`, `sphere_categories`, `portfolio_by_sphere`, wiki-поиск или shell-поиск, если пользователь не просил дополнительно свободный текстовый контекст.
-- Если `portfolio_examples_by_lamp` дал `empty`, честно скажи, что по найденной модели объекты портфолио не найдены; переходи к wiki только по явному запросу на расширенный контекст.
+- После успешного `portfolio_examples_by_lamp` не делай `hybrid_search`, `sphere_categories`, `portfolio_by_sphere`, `doc-search` или shell-поиск, если пользователь не просил дополнительно свободный текстовый контекст.
+- Если `portfolio_examples_by_lamp` дал `empty`, честно скажи, что по найденной модели объекты портфолио не найдены; переходи к `doc-search` только по явному запросу на расширенный контекст.
 - Если пользователь просит `портфолио`, `пример проекта`, `пример объекта`, но НЕ называет точную модель, сначала используй `kind=portfolio_by_sphere`.
 - Для таких запросов передавай короткую сферу/объект в `sphere` и ставь `fuzzy=true`.
 - После успешного `portfolio_by_sphere` не делай `application_recommendation`, `hybrid_search` или `doc-search` для того же ответа, если пользователь не просил свободный текстовый контекст.
@@ -86,7 +86,7 @@ description: Поиск по корпоративной базе Postgres: compa
 - Если вопрос про сайт, адрес, соцсети, контакты, реквизиты, сервис, гарантию, год основания, консультацию или общую информацию о компании, сначала используй `kind=hybrid_search` с `profile=kb_search`.
 - Когда это уместно, передавай `entity_types=["company"]`.
 - Если `corp_db_search(kind=hybrid_search, profile=kb_search)` вернул `success` для короткого company-fact вопроса, отвечай по этому payload и останавливайся.
-- После успешного company-fact `kb_search` не делай `doc-search`, `doc_search`, `corp-wiki-md-search`, `corp_wiki_search`, `run_command`, `list_directory`, `read_file` или `search_text`, если пользователь явно не просил wiki/document context.
+- После успешного company-fact `kb_search` не делай `doc-search`, `doc_search`, `run_command`, `list_directory`, `read_file` или `search_text`, если пользователь явно не просил document context.
 - Только если company-fact `kb_search` дал `empty` или ошибку, переключайся на `doc-search`.
 - Если вопрос по смыслу документный: `сертификат`, `PDF`, `паспорт`, `закалённое стекло`, `чем отличается серия`, сначала используй `doc-search`, а не company-fact `kb_search`.
 

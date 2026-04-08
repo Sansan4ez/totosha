@@ -38,9 +38,6 @@ class DocSecurityTests(unittest.TestCase):
         safe, reason = is_path_safe("/data/corp_docs/live/doc_123.json", "/workspace/42")
         self.assertFalse(safe)
         self.assertIn("managed document corpus", reason)
-        safe, reason = is_path_safe("/data/skills/corp-wiki-md-search/wiki/page.md", "/workspace/42")
-        self.assertFalse(safe)
-        self.assertIn("managed document corpus", reason)
 
     def test_search_text_uses_no_shell_and_respects_path_safety(self):
         ctx = ToolContext(cwd="/workspace/42", user_id=42, chat_id=42, chat_type="private")

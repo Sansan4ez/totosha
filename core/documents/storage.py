@@ -18,7 +18,6 @@ from typing import Iterator, Any
 
 
 DEFAULT_CORP_DOCS_ROOT = "/data/corp_docs"
-DEFAULT_LEGACY_DOCS_ROOT = "/data/skills/corp-wiki-md-search/wiki"
 DEFAULT_DOC_REPO_ROOT = "/repo"
 DEFAULT_MAX_FILE_BYTES = 32 * 1024 * 1024
 DEFAULT_REJECT_RETENTION_DAYS = 14
@@ -56,7 +55,6 @@ class DocumentPaths:
     rejected: Path
     manifests: Path
     cas: Path
-    legacy: Path
     usage_stats: Path
     promotion_candidates: Path
     sync_reports: Path
@@ -86,7 +84,6 @@ def detect_file_type(path: str | Path) -> str:
 
 def get_document_paths() -> DocumentPaths:
     root = Path(os.getenv("CORP_DOCS_ROOT", DEFAULT_CORP_DOCS_ROOT))
-    legacy = Path(os.getenv("CORP_WIKI_PATH", DEFAULT_LEGACY_DOCS_ROOT))
     manifests = root / "manifests"
     return DocumentPaths(
         root=root,
@@ -97,7 +94,6 @@ def get_document_paths() -> DocumentPaths:
         rejected=root / "rejected",
         manifests=manifests,
         cas=root / "cas",
-        legacy=legacy,
         usage_stats=manifests / "usage_stats.jsonl",
         promotion_candidates=manifests / "promotion_candidates.json",
         sync_reports=manifests / "sync_reports",
@@ -554,27 +550,6 @@ def iter_live_documents(paths: DocumentPaths | None = None) -> Iterator[dict[str
             yield json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
-
-
-def iter_legacy_documents(paths: DocumentPaths | None = None) -> Iterator[dict[str, Any]]:
-    paths = paths or get_document_paths()
-    if not paths.legacy.exists():
-        return
-    for file_path in sorted(path for path in paths.legacy.rglob("*") if path.is_file()):
-        rel_path = file_path.relative_to(paths.legacy)
-        document_id = f"legacy_{hashlib.sha256(str(rel_path).encode('utf-8')).hexdigest()[:16]}"
-        yield {
-            "document_id": document_id,
-            "sha256": None,
-            "cas_path": str(file_path),
-            "file_type": detect_file_type(file_path),
-            "media_type": _sniff_media_type(file_path),
-            "size_bytes": file_path.stat().st_size,
-            "status": "legacy",
-            "relative_path": str(rel_path),
-            "original_filename": file_path.name,
-            "aliases": [{"name": file_path.name, "relative_path": str(rel_path), "source": "legacy_wiki"}],
-        }
 
 
 def find_document_by_sha256(sha256: str, paths: DocumentPaths | None = None) -> dict[str, Any] | None:

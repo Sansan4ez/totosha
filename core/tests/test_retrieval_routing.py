@@ -16,7 +16,6 @@ class RetrievalRoutingPromptTests(unittest.TestCase):
         self.assertIn("ПРАВИЛА RETRY ПОСЛЕ EMPTY РЕЗУЛЬТАТА", prompt)
         self.assertIn("lamp_filters", prompt)
         self.assertIn("doc-search", prompt)
-        self.assertIn("corp-wiki-md-search", prompt)
         self.assertIn("weight_kg_min/max", prompt)
         self.assertIn("voltage_nominal_v_*", prompt)
         self.assertIn("`kind=portfolio_examples_by_lamp`", prompt)
@@ -32,7 +31,7 @@ class RetrievalRoutingPromptTests(unittest.TestCase):
         self.assertIn("Для вопросов вида «какой вес», «есть ли такая модель», «какая мощность»", prompt)
         self.assertIn("сайт, адрес, соцсети, контакты, реквизиты, сервис, гарантию, год основания", prompt)
         self.assertIn("`corp_db_search(kind=hybrid_search, profile=kb_search)` вернул `success`", prompt)
-        self.assertIn("Не делай после этого `doc-search`, `doc_search`, `corp-wiki-md-search`, `corp_wiki_search`, `run_command`, `list_directory`, `read_file` или `search_text`", prompt)
+        self.assertIn("Не делай после этого `doc-search`, `doc_search`, `run_command`, `list_directory`, `read_file` или `search_text`", prompt)
 
     def test_corp_pg_db_skill_documents_second_step_examples(self):
         skill = (_repo_root() / "shared_skills" / "skills" / "corp-pg-db" / "SKILL.md").read_text(encoding="utf-8")
@@ -47,26 +46,17 @@ class RetrievalRoutingPromptTests(unittest.TestCase):
         self.assertIn("Только если `lamp_exact` дал `empty`", skill)
         self.assertIn("company facts: год основания, сайт, адрес, соцсети, контакты", skill)
         self.assertIn("Если вопрос про сайт, адрес, соцсети, контакты, реквизиты", skill)
-        self.assertIn("После успешного company-fact `kb_search` не делай `doc-search`, `doc_search`, `corp-wiki-md-search`, `corp_wiki_search`", skill)
+        self.assertIn("После успешного company-fact `kb_search` не делай `doc-search`, `doc_search`, `run_command`, `list_directory`, `read_file` или `search_text`", skill)
         self.assertIn("Правило для broad-object подбора по сфере применения", skill)
         self.assertIn("Первый ответ по этому payload должен содержать", skill)
         self.assertIn("подбери мощный светильник для карьерна", skill)
-
-    def test_corp_wiki_skill_is_narrowed_to_fallback(self):
-        skill = (_repo_root() / "shared_skills" / "skills" / "corp-wiki-md-search" / "SKILL.md").read_text(encoding="utf-8")
-        skill_json = (_repo_root() / "shared_skills" / "skills" / "corp-wiki-md-search" / "skill.json").read_text(encoding="utf-8")
-        self.assertIn("Deprecated alias", skill)
-        self.assertIn("`doc_search`", skill)
-        self.assertIn("corp_wiki_search", skill_json)
-        self.assertNotIn("каждый раз, когда вопрос про компанию", skill)
-        self.assertNotIn("когда вопрос про компанию и нужно отвечать «согласно wiki»", skill_json)
 
     def test_doc_search_skill_is_canonical(self):
         skill = (_repo_root() / "shared_skills" / "skills" / "doc-search" / "SKILL.md").read_text(encoding="utf-8")
         skill_json = (_repo_root() / "shared_skills" / "skills" / "doc-search" / "skill.json").read_text(encoding="utf-8")
         self.assertIn("Canonical tool: `doc_search`", skill)
         self.assertIn("/data/corp_docs/live/", skill)
-        self.assertIn("deprecated aliases", skill_json)
+        self.assertNotIn("deprecated", skill_json.lower())
 
 
 if __name__ == "__main__":

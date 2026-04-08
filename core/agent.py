@@ -58,7 +58,6 @@ EXPLICIT_WIKI_KEYWORDS = (
     "из документа", "по документам", "в документе", "найди в документ", "doc search",
 )
 
-LEGACY_DOC_SKILL_PATH = "/data/skills/corp-wiki-md-search"
 CORP_DOCS_ROOT = "/data/corp_docs"
 
 # Google tokens (admin-only, configured via Admin UI)
@@ -183,7 +182,7 @@ def _is_successful_portfolio_by_sphere(args: dict, tool_output: str, message: st
 
 
 def _is_successful_document_lookup(name: str, args: dict, tool_output: str, message: str) -> bool:
-    if name not in {"doc_search", "corp_wiki_search"}:
+    if name != "doc_search":
         return False
     if not _is_document_lookup_intent(message) and not _is_explicit_wiki_request(message):
         return False
@@ -195,28 +194,18 @@ def _is_successful_document_lookup(name: str, args: dict, tool_output: str, mess
 
 
 def _is_wiki_tool_attempt(name: str, args: dict) -> bool:
-    if name in {"doc_search", "corp_wiki_search"}:
+    if name == "doc_search":
         return True
     if name in {"list_directory", "read_file", "search_text"}:
         path = _normalize_routing_text(args.get("path"))
-        return LEGACY_DOC_SKILL_PATH in path or CORP_DOCS_ROOT in path
+        return CORP_DOCS_ROOT in path
     if name == "search_files":
         pattern = _normalize_routing_text(args.get("pattern"))
         path = _normalize_routing_text(args.get("path"))
-        return (
-            LEGACY_DOC_SKILL_PATH in pattern
-            or CORP_DOCS_ROOT in pattern
-            or LEGACY_DOC_SKILL_PATH in path
-            or CORP_DOCS_ROOT in path
-        )
+        return CORP_DOCS_ROOT in pattern or CORP_DOCS_ROOT in path
     if name == "run_command":
         command = _normalize_routing_text(args.get("command"))
-        return (
-            "wiki_search.py" in command
-            or "corp-wiki-md-search" in command
-            or "/data/corp_docs" in command
-            or "lit parse" in command
-        )
+        return "/data/corp_docs" in command or "lit parse" in command
     return False
 
 

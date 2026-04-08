@@ -9,6 +9,12 @@ Layout
 - `inbox/` contains raw files that should be ingested into `/data/corp_docs`
 - `manifests/` is reserved for repo-side conventions and future operator metadata
 
+Canonical workflow
+------------------
+
+`doc-corpus/inbox/` is the only repo-managed source for searchable documents.
+`doc_search` does not read from legacy skill folders or ad-hoc wiki paths.
+
 Optional sidecar metadata
 -------------------------
 
@@ -28,3 +34,18 @@ docker compose run --rm --profile operator doc-worker sync-repo
 
 The repo remains read-only for `doc-worker`; runtime artifacts and reports are
 published under `/data/corp_docs`.
+
+Migration from legacy corp-wiki
+-------------------------------
+
+If an existing deployment still keeps Markdown files under the old
+`/data/skills/corp-wiki-md-search/wiki/` location, copy them into this repo
+folder under `doc-corpus/inbox/` and re-run:
+
+```bash
+docker compose run --rm --profile operator doc-worker sync-repo
+docker compose run --rm --profile operator doc-worker rebuild-routes
+```
+
+After that, only `/data/corp_docs/live/` and `/data/corp_docs/parsed/` are used
+by `doc_search` on the chat path.

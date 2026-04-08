@@ -25,6 +25,18 @@ Repo workflow
 3. Run `doc-worker sync-repo`.
 4. Check the JSON report and `doc-worker doctor`.
 
+Migration from legacy corp-wiki
+-------------------------------
+
+The old `/data/skills/corp-wiki-md-search/wiki/` path is no longer read by
+`doc_search`. For existing deployments:
+
+1. Copy legacy markdown files into `doc-corpus/inbox/` in this repository.
+2. Commit and deploy the repo update.
+3. Run `doc-worker sync-repo`.
+4. Run `doc-worker rebuild-routes`.
+5. Verify with `doc-worker doctor` that `route_index_present=true`.
+
 Doctor interpretation
 ---------------------
 
@@ -40,3 +52,4 @@ Failure modes
 - `legacy_office_binary_requires_doc_worker_runtime`: legacy `doc/xls/ppt` was ingested outside the guaranteed `doc-worker` runtime
 - `normalization_missing`: `core` saw a live document without a current sidecar; rebuild with `doc-worker rebuild-parsed`
 - `invalid_metadata_json` / `invalid_metadata_type`: fix the repo sidecar under `doc-corpus/inbox/`
+- `empty` on a document query after migration: verify the file was copied into `doc-corpus/inbox/` and that `sync-repo` published a live manifest

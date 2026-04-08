@@ -60,7 +60,6 @@ DEFAULT_PERMISSIONS = {
             "list_skills",
             "corp_db_search",
             "doc_search",
-            "corp_wiki_search",
         ],
         "description": "Minimal tools for sandboxed sessions"
     },
