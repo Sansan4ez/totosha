@@ -26,6 +26,52 @@ APPLICATION_DOC_ALIASES = {
     "АЗС": ["агрессивная среда", "азс"],
     "Специальное освещение": ["агрессивная среда", "специальное применение"],
 }
+KB_CHUNK_HEADING_ALIASES = {
+    "о компании": [
+        "о компании",
+        "общая информация о компании",
+        "профиль компании",
+        "ladzavod",
+        "ладзавод",
+        "лад завод",
+        "ladled",
+    ],
+    "наш профиль": [
+        "о компании",
+        "профиль компании",
+        "чем занимается компания",
+        "ладзавод",
+    ],
+    "контактная информация": [
+        "контакты компании",
+        "контактная информация",
+        "телефон",
+        "email",
+        "e-mail",
+        "почта",
+        "адрес офиса",
+        "консультация",
+        "ladzavod",
+    ],
+    "реквизиты": [
+        "реквизиты компании",
+        "инн",
+        "кпп",
+        "огрн",
+        "юридический адрес",
+        "ladzavod",
+    ],
+    "социальные сети компании": [
+        "соцсети компании",
+        "социальные сети компании",
+        "telegram",
+        "youtube",
+        "vk",
+        "вконтакте",
+        "канал компании",
+        "ladzavod",
+    ],
+}
 
 
 def _json_object(value: object) -> dict:
@@ -313,6 +359,22 @@ def _category_mounting_doc(category_mounting: dict, category_name: str | None, m
     }
 
 
+def _kb_chunk_aliases(chunk: dict) -> str:
+    heading = str(chunk.get("heading") or "").strip()
+    heading_key = heading.lower()
+    aliases = KB_CHUNK_HEADING_ALIASES.get(heading_key, [])
+    return join_nonempty(
+        [
+            chunk.get("document_title"),
+            heading,
+            tokenize_text(heading),
+            url_tokens(chunk.get("source_file")),
+            " ".join(aliases),
+        ],
+        sep=" ",
+    )
+
+
 def _kb_chunk_doc(chunk: dict) -> dict:
     metadata = _json_object(chunk.get("metadata"))
     metadata.setdefault("source_file", chunk["source_file"])
@@ -322,13 +384,7 @@ def _kb_chunk_doc(chunk: dict) -> dict:
         "entity_id": f"{chunk['source_file']}:{chunk['chunk_index']}",
         "title": chunk["heading"],
         "content": chunk["content"],
-        "aliases": join_nonempty(
-            [
-                chunk["document_title"],
-                url_tokens(chunk["source_file"]),
-            ],
-            sep=" ",
-        ),
+        "aliases": _kb_chunk_aliases(chunk),
         "metadata": metadata,
     }
 

@@ -37,6 +37,15 @@ COMPANY_FACT_KEYWORDS = (
     "основан", "основана", "сколько лет компании", "о компании", "общая информация о компании",
     "гаранти", "сервис", "консультац",
 )
+COMPANY_FACT_INTENT_KEYWORDS = {
+    "requisites": ("реквизит", "инн", "кпп", "огрн"),
+    "year_founded": ("сколько лет", "год основания", "основан", "основана", "история компании"),
+    "website": ("официальный сайт", "сайт"),
+    "address": ("головной офис", "адрес", "офис", "где находится"),
+    "socials": ("соцсет", "телеграм", "telegram", "youtube", "ютуб", "vk", "вконтакте", "канал"),
+    "contacts": ("контакт", "телефон", "email", "e-mail", "почт", "связат", "консультац"),
+    "about_company": ("о компании", "общая информация о компании", "расскажи о компании", "чем занимается компания", "наш профиль"),
+}
 DOCUMENT_LOOKUP_KEYWORDS = (
     "сертификат", "пожарный сертификат", "ce", "pdf", "паспорт", "документ",
     "закаленное стекло", "закалённое стекло", "закал", "стекл",
@@ -57,6 +66,11 @@ EXPLICIT_WIKI_KEYWORDS = (
     "в wiki", "в вики", "процит", "цитат", "покажи фрагмент", "фрагмент", "документ",
     "из документа", "по документам", "в документе", "найди в документ", "doc search",
 )
+
+URL_RE = re.compile(r"https?://[^\s)>\]]+")
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+PHONE_RE = re.compile(r"\+?\d[\d\-\(\)\s]{8,}\d")
+YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 
 CORP_DOCS_ROOT = "/data/corp_docs"
 
@@ -119,10 +133,19 @@ def _is_portfolio_lookup_intent(message: str) -> bool:
 
 
 def _is_company_fact_intent(message: str) -> bool:
+    return bool(_company_fact_intent_type(message))
+
+
+def _company_fact_intent_type(message: str) -> str:
     normalized = _normalize_routing_text(message)
     if _is_document_lookup_intent(normalized) or _is_portfolio_lookup_intent(normalized) or _is_application_recommendation_intent(normalized):
-        return False
-    return _text_has_any(normalized, COMPANY_FACT_KEYWORDS)
+        return ""
+    for subtype in ("requisites", "year_founded", "website", "address", "socials", "contacts", "about_company"):
+        if _text_has_any(normalized, COMPANY_FACT_INTENT_KEYWORDS[subtype]):
+            return subtype
+    if _text_has_any(normalized, COMPANY_FACT_KEYWORDS):
+        return "about_company"
+    return ""
 
 
 def _is_application_recommendation_intent(message: str) -> bool:
@@ -137,6 +160,97 @@ def _parse_json_object(raw_text: str) -> dict[str, Any]:
         return {}
 
 
+def _company_fact_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = payload.get("results")
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _collect_row_texts(rows: list[dict[str, Any]]) -> list[str]:
+    texts: list[str] = []
+    for row in rows:
+        for key in ("heading", "title", "document_title", "preview", "snippet", "value", "source_file"):
+            value = str(row.get(key) or "").strip()
+            if value:
+                texts.append(value)
+    return texts
+
+
+def _collect_preview_texts(payload: dict[str, Any]) -> list[str]:
+    texts: list[str] = []
+    for row in _company_fact_rows(payload):
+        preview = str(row.get("preview") or row.get("snippet") or row.get("value") or "").strip()
+        if preview:
+            texts.append(preview)
+    return texts
+
+
+def _texts_contain_any(texts: list[str], keywords: tuple[str, ...]) -> bool:
+    normalized_texts = [_normalize_routing_text(text) for text in texts if str(text or "").strip()]
+    return any(_text_has_any(text, keywords) for text in normalized_texts)
+
+
+def _extract_matching_text(texts: list[str], keywords: tuple[str, ...]) -> str:
+    for text in texts:
+        normalized = _normalize_routing_text(text)
+        if _text_has_any(normalized, keywords):
+            return str(text).strip()
+    return ""
+
+
+def _extract_address_text(texts: list[str]) -> str:
+    for text in texts:
+        match = re.search(r"адрес:\s*([^\\n]+?)(?:(?:телефон|e-mail|email|офис в|сайт):|$)", str(text), flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip(" ,.;")
+    return _extract_matching_text(
+        texts,
+        ("челябинск", "ул.", "улиц", "чайковского", "д.", "дом", "обл", "офис", "адрес"),
+    )
+
+
+def _extract_social_text(texts: list[str]) -> str:
+    return _extract_matching_text(texts, ("t.me/", "telegram", "youtube", "youtu", "vk.com", "вконтакте", "соцсет"))
+
+
+def _extract_requisites_text(texts: list[str]) -> str:
+    return _extract_matching_text(texts, ("инн", "кпп", "огрн", "реквизит"))
+
+
+def _company_fact_payload_is_relevant(payload: dict[str, Any], message: str) -> bool:
+    if payload.get("status") != "success":
+        return False
+
+    rows = _company_fact_rows(payload)
+    if not rows:
+        return False
+
+    subtype = _company_fact_intent_type(message)
+    texts = _collect_row_texts(rows)
+    website = _extract_first_match(URL_RE, texts)
+    email = _extract_first_match(EMAIL_RE, texts)
+    phone = _extract_first_match(PHONE_RE, texts)
+    year = _extract_first_match(YEAR_RE, texts)
+    address = _extract_address_text(texts)
+    socials = _extract_social_text(texts)
+    requisites = _extract_requisites_text(texts)
+
+    if subtype == "website":
+        return bool(website)
+    if subtype == "year_founded":
+        return bool(year)
+    if subtype == "address":
+        return bool(address) or _texts_contain_any(texts, ("контактная информация", "адрес", "офис"))
+    if subtype == "contacts":
+        return bool(phone or email or website or address) or _texts_contain_any(texts, ("контактная информация", "контакты"))
+    if subtype == "requisites":
+        return bool(requisites) or _texts_contain_any(texts, ("реквизиты",))
+    if subtype == "socials":
+        return bool(socials)
+    return _texts_contain_any(texts, ("о компании", "наш профиль", "о заводе", "об организации"))
+
+
 def _is_successful_company_fact_kb_search(args: dict, tool_output: str, message: str) -> bool:
     if str(args.get("kind") or "") != "hybrid_search":
         return False
@@ -144,18 +258,14 @@ def _is_successful_company_fact_kb_search(args: dict, tool_output: str, message:
         return False
 
     payload = _parse_json_object(tool_output)
-    if payload.get("status") != "success":
-        return False
-
     entity_types = args.get("entity_types") or []
-    if isinstance(entity_types, list) and any(str(item).lower() == "company" for item in entity_types):
-        return True
-
-    if _is_company_fact_intent(message):
-        return True
-
-    query = _normalize_routing_text(args.get("query"))
-    return _text_has_any(query, COMPANY_FACT_KEYWORDS)
+    if not (
+        (isinstance(entity_types, list) and any(str(item).lower() == "company" for item in entity_types))
+        or _is_company_fact_intent(message)
+        or _text_has_any(_normalize_routing_text(args.get("query")), COMPANY_FACT_KEYWORDS)
+    ):
+        return False
+    return _company_fact_payload_is_relevant(payload, message)
 
 
 def _is_successful_application_recommendation(args: dict, tool_output: str, message: str) -> bool:
@@ -207,6 +317,16 @@ def _is_wiki_tool_attempt(name: str, args: dict) -> bool:
         command = _normalize_routing_text(args.get("command"))
         return "/data/corp_docs" in command or "lit parse" in command
     return False
+
+
+def _is_skill_or_doc_browse_attempt(name: str, args: dict) -> bool:
+    if name not in {"list_directory", "read_file", "search_text", "search_files", "run_command"}:
+        return False
+    joined = " ".join(
+        _normalize_routing_text(args.get(key))
+        for key in ("path", "pattern", "command")
+    )
+    return "/data/skills" in joined or "/data/corp_docs" in joined
 
 
 def _is_application_fallback_attempt(name: str, args: dict) -> bool:
@@ -261,7 +381,10 @@ def _route_hint_blocks_tool_attempt(route_hint: dict[str, Any] | None, name: str
     if not route_hint:
         return False
     source = str(route_hint.get("source") or "")
+    route_id = str(route_hint.get("route_id") or "")
     if source == "corp_db":
+        if route_id == "corp_db.company_profile" and not explicit_wiki_request and _is_skill_or_doc_browse_attempt(name, args):
+            return True
         return not explicit_wiki_request and _is_wiki_tool_attempt(name, args)
     if source == "doc_search":
         return name == "corp_db_search"
@@ -279,6 +402,11 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["retrieval_explicit_wiki_request"] = bool(state.get("explicit_wiki_request"))
         meta["retrieval_wiki_after_corp_db_success"] = bool(state.get("wiki_after_corp_db_success"))
         meta["routing_guardrail_hits"] = int(state.get("guardrail_activations", 0))
+        meta["company_fact_intent_type"] = str(state.get("company_fact_intent_type") or "")
+        meta["company_fact_fast_path"] = bool(state.get("company_fact_fast_path"))
+        meta["company_fact_payload_relevant"] = bool(state.get("company_fact_payload_relevant"))
+        meta["company_fact_rendered"] = bool(state.get("company_fact_rendered"))
+        meta["company_fact_fallback_reason"] = str(state.get("company_fact_fallback_reason") or "")
         if blocked_tool:
             meta["routing_guardrail_last_blocked_tool"] = blocked_tool
 
@@ -292,10 +420,348 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         span.set_attribute("retrieval.explicit_wiki_request", bool(state.get("explicit_wiki_request")))
         span.set_attribute("retrieval.wiki_after_corp_db_success", bool(state.get("wiki_after_corp_db_success")))
         span.set_attribute("retrieval.guardrail_hits", int(state.get("guardrail_activations", 0)))
+        span.set_attribute("company_fact.intent_type", str(state.get("company_fact_intent_type") or ""))
+        span.set_attribute("company_fact.fast_path", bool(state.get("company_fact_fast_path")))
+        span.set_attribute("company_fact.payload_relevant", bool(state.get("company_fact_payload_relevant")))
+        span.set_attribute("company_fact.rendered", bool(state.get("company_fact_rendered")))
+        span.set_attribute("company_fact.fallback_reason", str(state.get("company_fact_fallback_reason") or ""))
         if blocked_tool:
             span.set_attribute("retrieval.guardrail_last_blocked_tool", blocked_tool)
     except Exception:
         return None
+
+
+def _looks_like_contact_intent(message: str) -> bool:
+    return _company_fact_intent_type(message) == "contacts"
+
+
+def _expand_company_fact_query(message: str) -> str:
+    subtype = _company_fact_intent_type(message)
+    if subtype == "year_founded":
+        return "Сколько лет компании ЛАДзавод светотехники? Если точный возраст не знаешь, назови год основания."
+    if subtype == "website":
+        return "официальный сайт компании ЛАДзавод светотехники"
+    if subtype == "address":
+        return "челябинск чайковского 3 адрес офиса ladzavod"
+    if subtype == "requisites":
+        return "реквизиты компании ладзавод инн кпп огрн"
+    if subtype == "socials":
+        return "telegram youtube vk соцсети ladzavod"
+    normalized = _normalize_routing_text(message)
+    if _text_has_any(normalized, ("консультац", "расчет", "расчёт", "освещен", "освещён")):
+        return "lad@ladled.ru 239-18-11 консультация расчет освещенности"
+    if subtype == "contacts":
+        return "239-18-11 lad@ladled.ru контакты ladzavod"
+    if subtype == "about_company":
+        return "общая информация о компании ЛАДзавод светотехники"
+    return message
+
+
+def _contact_doc_search_query(message: str) -> str:
+    normalized = _normalize_routing_text(message)
+    if _text_has_any(normalized, ("email", "e-mail", "почт")):
+        return "lad@ladled.ru"
+    if _text_has_any(normalized, ("телефон", "позвон", "связат")):
+        return "239-18-11"
+    return "lad@ladled.ru"
+
+
+def _extract_first_match(pattern: re.Pattern[str], texts: list[str]) -> str:
+    for text in texts:
+        match = pattern.search(text)
+        if match:
+            return match.group(0).rstrip(".,;")
+    return ""
+
+
+def _collect_result_texts(payload: dict[str, Any]) -> list[str]:
+    previews = _collect_preview_texts(payload)
+    if previews:
+        return previews
+    rows = _company_fact_rows(payload)
+    return _collect_row_texts(rows)
+
+
+def _preferred_company_fact_texts(payload: dict[str, Any], subtype: str) -> list[str]:
+    rows = _company_fact_rows(payload)
+    if not rows:
+        return []
+
+    heading_keywords: tuple[str, ...] = ()
+    if subtype == "about_company":
+        heading_keywords = ("о компании", "наш профиль", "о заводе", "об организации")
+    elif subtype in {"contacts", "address"}:
+        heading_keywords = ("контактная информация", "контакты")
+    elif subtype == "requisites":
+        heading_keywords = ("реквизиты",)
+    elif subtype == "socials":
+        heading_keywords = ("социальные сети",)
+
+    if heading_keywords:
+        preferred_rows = [
+            row
+            for row in rows
+            if _texts_contain_any(_collect_row_texts([row]), heading_keywords)
+        ]
+        if preferred_rows:
+            preferred_payload = {"results": preferred_rows}
+            return _collect_result_texts(preferred_payload)
+
+    return _collect_result_texts(payload)
+
+
+def _render_company_fact_payload(payload: dict[str, Any], message: str) -> str:
+    subtype = _company_fact_intent_type(message)
+    texts = _preferred_company_fact_texts(payload, subtype)
+    if not texts:
+        return ""
+    website = _extract_first_match(URL_RE, texts)
+    email = _extract_first_match(EMAIL_RE, texts)
+    phone = _extract_first_match(PHONE_RE, texts)
+    year = _extract_first_match(YEAR_RE, texts)
+    address = _extract_address_text(texts)
+    socials = _extract_social_text(texts)
+    requisites = _extract_requisites_text(texts)
+
+    if subtype == "website" and website:
+        return f"Официальный сайт компании: {website}"
+    if subtype == "year_founded" and year:
+        return f"Компания ЛАДзавод светотехники основана в {year} году."
+    if subtype == "address" and address:
+        return address
+    if subtype == "requisites" and requisites:
+        return requisites
+    if subtype == "socials" and socials:
+        return socials
+    if subtype == "contacts":
+        lines: list[str] = []
+        if phone:
+            lines.append(f"Телефон: {phone}")
+        if email:
+            lines.append(f"Email: {email}")
+        if address:
+            lines.append(f"Адрес: {address}")
+        if website:
+            lines.append(f"Сайт: {website}")
+        if lines:
+            return "\n".join(lines)
+        return ""
+
+    snippets = texts[:2]
+    lines = [snippets[0]]
+    if len(snippets) > 1 and snippets[1] != snippets[0]:
+        lines.append(snippets[1])
+    if website and all(website not in line for line in lines):
+        lines.append(f"Сайт: {website}")
+    return "\n".join(lines)
+
+
+def _rewrite_company_fact_search_args(args: dict[str, Any], message: str) -> dict[str, Any]:
+    rewritten: dict[str, Any] = {}
+    for key in ("limit", "offset"):
+        value = args.get(key)
+        if isinstance(value, int) and value > 0:
+            rewritten[key] = value
+    if bool(args.get("include_debug")):
+        rewritten["include_debug"] = True
+    rewritten["kind"] = "hybrid_search"
+    rewritten["profile"] = "kb_search"
+    rewritten["entity_types"] = ["company"]
+    rewritten["query"] = _expand_company_fact_query(message)
+    return rewritten
+
+
+def _render_document_payload(payload: dict[str, Any]) -> str:
+    results = payload.get("results") or []
+    if not isinstance(results, list) or not results:
+        return ""
+    row = results[0] if isinstance(results[0], dict) else {}
+    title = str(row.get("document_title") or row.get("title") or row.get("relative_path") or "Документ").strip()
+    preview = str(row.get("preview") or row.get("snippet") or "").strip()
+    url = _extract_first_match(URL_RE, [preview, str(row.get("url") or "")])
+    lines = [f"Нашёл документ: {title}"]
+    if url:
+        lines.append(url)
+    if preview:
+        lines.append(preview)
+    return "\n".join(lines)
+
+
+def _render_portfolio_payload(payload: dict[str, Any]) -> str:
+    results = payload.get("results") or []
+    if not isinstance(results, list) or not results:
+        return ""
+    lines = ["Нашёл примеры объектов по этой сфере:"]
+    for row in results[:3]:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or row.get("sphere_name") or "Объект").strip()
+        url = str(row.get("url") or "").strip()
+        lines.append(f"- {name}{f': {url}' if url else ''}")
+    return "\n".join(lines)
+
+
+def _render_application_payload(payload: dict[str, Any]) -> str:
+    status = str(payload.get("status") or "")
+    if status == "needs_clarification":
+        return str(payload.get("follow_up_question") or "").strip()
+    resolved = payload.get("resolved_application") if isinstance(payload.get("resolved_application"), dict) else {}
+    sphere_name = str(resolved.get("sphere_name") or "подходящей сферы").strip()
+    lamps = payload.get("recommended_lamps") if isinstance(payload.get("recommended_lamps"), list) else []
+    portfolio = payload.get("portfolio_examples") if isinstance(payload.get("portfolio_examples"), list) else []
+    lines = [f"Подобрал вариант для сферы: {sphere_name}."]
+    if lamps:
+        lines.append("Подходящие светильники:")
+        for row in lamps[:3]:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name") or "Модель").strip()
+            url = str(row.get("url") or "").strip()
+            reason = str(row.get("recommendation_reason") or "").strip()
+            detail = f"{name}{f' — {reason}' if reason else ''}"
+            if url:
+                detail += f" ({url})"
+            lines.append(f"- {detail}")
+    if portfolio:
+        row = portfolio[0] if isinstance(portfolio[0], dict) else {}
+        name = str(row.get("name") or "пример объекта").strip()
+        url = str(row.get("url") or "").strip()
+        lines.append(f"Пример объекта: {name}{f' — {url}' if url else ''}")
+    follow_up = str(payload.get("follow_up_question") or "").strip()
+    if follow_up:
+        lines.append(follow_up)
+    return "\n".join(lines)
+
+
+def _render_deterministic_tool_output(name: str, args: dict[str, Any], output: str, message: str) -> str:
+    payload = _parse_json_object(output)
+    if not payload:
+        return ""
+    if name == "doc_search":
+        return _render_document_payload(payload)
+    if name != "corp_db_search":
+        return ""
+    kind = str(args.get("kind") or payload.get("kind") or "")
+    if kind == "hybrid_search":
+        return _render_company_fact_payload(payload, message)
+    if kind == "application_recommendation":
+        return _render_application_payload(payload)
+    if kind == "portfolio_by_sphere":
+        return _render_portfolio_payload(payload)
+    return ""
+
+
+def _build_deterministic_fallback_call(
+    message: str,
+    route_hint: dict[str, Any] | None,
+    routing_state: dict[str, Any],
+) -> tuple[str, dict[str, Any]] | None:
+    if route_hint:
+        tool_name = str(route_hint.get("tool_name") or "").strip()
+        if tool_name:
+            args = dict(route_hint.get("tool_args") or {})
+            if tool_name == "doc_search":
+                args.setdefault("query", message)
+                args.setdefault("top", 5)
+            elif tool_name == "corp_db_search":
+                kind = str(args.get("kind") or "")
+                if kind == "hybrid_search":
+                    args = _rewrite_company_fact_search_args(args, message)
+                elif kind in {"application_recommendation", "portfolio_by_sphere", "lamp_exact"}:
+                    args["query"] = message
+                    if kind == "portfolio_by_sphere":
+                        args.setdefault("fuzzy", True)
+            return tool_name, args
+
+    intent = str(routing_state.get("intent") or "other")
+    if intent == "company_fact":
+        return (
+            "corp_db_search",
+            _rewrite_company_fact_search_args({}, message),
+        )
+    if intent == "document_lookup":
+        return ("doc_search", {"query": message, "top": 5})
+    if intent == "portfolio_lookup":
+        return ("corp_db_search", {"kind": "portfolio_by_sphere", "query": message, "fuzzy": True})
+    if intent == "application_recommendation":
+        return ("corp_db_search", {"kind": "application_recommendation", "query": message})
+    return None
+
+
+async def _deterministic_empty_response_fallback(
+    *,
+    message: str,
+    route_hint: dict[str, Any] | None,
+    routing_state: dict[str, Any],
+    tool_ctx: ToolContext,
+    iteration: int,
+) -> str:
+    fallback = _build_deterministic_fallback_call(message, route_hint, routing_state)
+    if not fallback:
+        return ""
+
+    name, args = fallback
+    agent_logger.warning(
+        "[iter %s] Empty LLM completion, executing deterministic fallback %s with args=%s",
+        iteration,
+        name,
+        json.dumps(args, ensure_ascii=False),
+    )
+    if routing_state.get("intent") == "company_fact":
+        routing_state["company_fact_fallback_reason"] = "empty_llm_completion"
+    tool_result = await execute_tool(name, args, tool_ctx)
+    if not tool_result.success:
+        agent_logger.warning(
+            "[iter %s] Deterministic fallback tool failed: %s",
+            iteration,
+            tool_result.error or "unknown_error",
+        )
+        return ""
+
+    bench_artifact = tool_result.metadata.get("bench_artifact") if isinstance(tool_result.metadata, dict) else None
+    if isinstance(bench_artifact, dict):
+        run_meta_append_artifact(bench_artifact)
+
+    rendered = _render_deterministic_tool_output(name, args, tool_result.output or "", message)
+    if not rendered and name == "corp_db_search" and _looks_like_contact_intent(message):
+        routing_state["company_fact_fallback_reason"] = "weak_contact_payload"
+        doc_args = {"query": _contact_doc_search_query(message), "top": 5}
+        agent_logger.warning(
+            "[iter %s] Empty contact payload after corp_db fallback, executing doc_search with args=%s",
+            iteration,
+            json.dumps(doc_args, ensure_ascii=False),
+        )
+        doc_result = await execute_tool("doc_search", doc_args, tool_ctx)
+        if doc_result.success:
+            bench_artifact = doc_result.metadata.get("bench_artifact") if isinstance(doc_result.metadata, dict) else None
+            if isinstance(bench_artifact, dict):
+                run_meta_append_artifact(bench_artifact)
+            rendered = _render_deterministic_tool_output("doc_search", doc_args, doc_result.output or "", message)
+            if rendered:
+                routing_state["selected_source"] = "doc_search"
+                routing_state["doc_search_document_success"] = True
+                routing_state["company_fact_rendered"] = True
+                _update_routing_observability(routing_state)
+                return rendered
+    if not rendered:
+        return ""
+
+    if name == "doc_search":
+        routing_state["selected_source"] = "doc_search"
+        routing_state["doc_search_document_success"] = True
+    elif name == "corp_db_search":
+        kind = str(args.get("kind") or "")
+        routing_state["selected_source"] = "corp_db"
+        if kind == "hybrid_search":
+            routing_state["corp_db_company_fact_success"] = True
+            routing_state["company_fact_payload_relevant"] = True
+            routing_state["company_fact_rendered"] = True
+        elif kind == "application_recommendation":
+            routing_state["corp_db_application_success"] = True
+        elif kind == "portfolio_by_sphere":
+            routing_state["corp_db_portfolio_success"] = True
+    _update_routing_observability(routing_state)
+    return rendered
 
 
 async def _check_userbot_available() -> bool:
@@ -1046,6 +1512,7 @@ async def run_agent(
     final_response = ""
     iteration = 0
     has_search_tool = False  # Track if search_web was called
+    company_fact_intent_type = _company_fact_intent_type(message)
     routing_state = {
         "intent": (
             "document_lookup"
@@ -1055,7 +1522,7 @@ async def run_agent(
             else "application_recommendation"
             if _is_application_recommendation_intent(message)
             else "company_fact"
-            if _is_company_fact_intent(message)
+            if bool(company_fact_intent_type)
             else "other"
         ),
         "selected_source": "unknown",
@@ -1063,6 +1530,7 @@ async def run_agent(
         "route_source": str(route_hint.get("source") or "") if route_hint else "",
         "route_score": int(route_hint.get("score") or 0) if route_hint else 0,
         "explicit_wiki_request": _is_explicit_wiki_request(message),
+        "company_fact_intent_type": company_fact_intent_type,
         "corp_db_company_fact_success": False,
         "corp_db_application_success": False,
         "corp_db_portfolio_success": False,
@@ -1070,6 +1538,10 @@ async def run_agent(
         "wiki_after_corp_db_success": False,
         "guardrail_activations": 0,
         "retrieval_tool_used": False,
+        "company_fact_fast_path": False,
+        "company_fact_payload_relevant": False,
+        "company_fact_rendered": False,
+        "company_fact_fallback_reason": "",
     }
     _update_routing_observability(routing_state)
     
@@ -1117,6 +1589,17 @@ async def run_agent(
                 })
                 continue  # Don't break, continue the loop
             else:
+                fallback_response = await _deterministic_empty_response_fallback(
+                    message=message,
+                    route_hint=route_hint,
+                    routing_state=routing_state,
+                    tool_ctx=tool_ctx,
+                    iteration=iteration,
+                )
+                if fallback_response:
+                    agent_logger.warning(f"[iter {iteration}] Empty response from model, deterministic fallback succeeded")
+                    final_response = fallback_response
+                    break
                 agent_logger.warning(f"[iter {iteration}] Empty response from model")
                 content = "(no response)"
                 break
@@ -1148,6 +1631,19 @@ async def run_agent(
                     if args is None:
                         agent_logger.error(f"[iter {iteration}] Could not fix JSON args for {name}")
                     args = {}
+
+                if (
+                    name == "corp_db_search"
+                    and routing_state["intent"] == "company_fact"
+                    and not routing_state["retrieval_tool_used"]
+                ):
+                    args = _rewrite_company_fact_search_args(args, message)
+                    agent_logger.info(
+                        "[iter %s] Rewrote company-fact corp_db args subtype=%s query=%s",
+                        iteration,
+                        routing_state.get("company_fact_intent_type") or "",
+                        args.get("query") or "",
+                    )
                 
                 if routing_state["corp_db_application_success"] and not routing_state["explicit_wiki_request"] and _is_application_fallback_attempt(name, args):
                     routing_state["wiki_after_corp_db_success"] = _is_wiki_tool_attempt(name, args)
@@ -1198,6 +1694,16 @@ async def run_agent(
                     )
                 elif (
                     not routing_state["retrieval_tool_used"]
+                    and route_hint
+                    and str(route_hint.get("route_id") or "") == "corp_db.company_profile"
+                    and not routing_state["explicit_wiki_request"]
+                    and _is_skill_or_doc_browse_attempt(name, args)
+                ):
+                    routing_state["guardrail_activations"] += 1
+                    _update_routing_observability(routing_state, blocked_tool=name)
+                    tool_result = ToolResult(False, error=_preferred_source_error(route_hint or {}, name))
+                elif (
+                    not routing_state["retrieval_tool_used"]
                     and _is_retrieval_tool_attempt(name, args)
                     and _route_hint_blocks_tool_attempt(route_hint, name, args, explicit_wiki_request=routing_state["explicit_wiki_request"])
                 ):
@@ -1238,7 +1744,13 @@ async def run_agent(
                 if tool_result.success and isinstance(bench_artifact, dict):
                     run_meta_append_artifact(bench_artifact)
 
-                if name == "corp_db_search" and _is_successful_company_fact_kb_search(args, tool_result.output or "", message):
+                company_fact_success = name == "corp_db_search" and _is_successful_company_fact_kb_search(args, tool_result.output or "", message)
+                if name == "corp_db_search" and routing_state["intent"] == "company_fact":
+                    routing_state["company_fact_payload_relevant"] = company_fact_success
+                    if not company_fact_success and tool_result.success:
+                        routing_state["company_fact_fallback_reason"] = "weak_company_fact_payload"
+
+                if company_fact_success:
                     routing_state["corp_db_company_fact_success"] = True
                     routing_state["selected_source"] = "corp_db"
                     _update_routing_observability(routing_state)
@@ -1248,6 +1760,17 @@ async def run_agent(
                         routing_state["intent"],
                         routing_state["explicit_wiki_request"],
                     )
+                    if not routing_state["explicit_wiki_request"]:
+                        rendered = _render_deterministic_tool_output(name, args, tool_result.output or "", message)
+                        if rendered:
+                            routing_state["company_fact_fast_path"] = True
+                            routing_state["company_fact_rendered"] = True
+                            routing_state["company_fact_fallback_reason"] = ""
+                            _update_routing_observability(routing_state)
+                            final_response = rendered
+                            break
+                        routing_state["company_fact_fallback_reason"] = "company_fact_renderer_empty"
+                        _update_routing_observability(routing_state)
                 if name == "corp_db_search" and _is_successful_application_recommendation(args, tool_result.output or "", message):
                     routing_state["corp_db_application_success"] = True
                     routing_state["selected_source"] = "corp_db"
@@ -1275,7 +1798,7 @@ async def run_agent(
                         iteration,
                         routing_state["intent"],
                     )
-                
+
                 # Dynamic tool loading: merge new definitions into active toolkit
                 if name == "load_tools" and tool_result.success and tool_result.metadata:
                     new_tools = tool_result.metadata.get("loaded_tools", [])
@@ -1330,6 +1853,10 @@ async def run_agent(
                     "tool_call_id": tc.get("id"),
                     "content": output
                 })
+                if final_response:
+                    break
+            if final_response:
+                break
         
         else:
             # No tool calls - this is the final response

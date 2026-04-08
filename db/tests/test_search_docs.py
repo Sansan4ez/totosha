@@ -76,6 +76,20 @@ class SearchDocsTests(unittest.TestCase):
         self.assertEqual(doc["metadata"]["document_title"], chunk["document_title"])
         self.assertTrue(doc["entity_id"].startswith("common_information_about_company.md:"))
 
+    def test_kb_chunk_doc_adds_targeted_company_aliases(self):
+        chunk = {
+            "source_file": "common_information_about_company.md",
+            "document_title": "Общая информация о компании ЛАДзавод светотехники",
+            "chunk_index": 1,
+            "heading": "Контактная информация",
+            "content": "Телефон +7 (351) 239-18-11, email lad@ladled.ru.",
+            "metadata": {"source_file": "common_information_about_company.md"},
+        }
+        doc = _kb_chunk_doc(chunk)
+        self.assertIn("контакты компании", doc["aliases"].lower())
+        self.assertIn("телефон", doc["aliases"].lower())
+        self.assertIn("ladzavod", doc["aliases"].lower())
+
     def test_category_doc_keeps_sphere_names_in_metadata(self):
         doc = _category_doc(
             {"category_id": 164, "name": "АЗС", "url": "https://ladzavod.ru/catalog/azs"},
