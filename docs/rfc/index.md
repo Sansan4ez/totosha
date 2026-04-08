@@ -20,3 +20,6 @@ RFCs
 - `docs/rfc/RFC-009-index-driven-routing-and-liteparse-first-doc-search.md`
 - `docs/rfc/RFC-010-liteparse-integration-and-document-search-optimization.md`
 - `docs/rfc/RFC-011-production-deployment-on-nixos-with-compose-and-victoria-observability.md`
+- `docs/rfc/RFC-012-benchmark-algorithmic-validation-and-comparison.md`
+- `docs/rfc/RFC-013-observability-runtime-wiring-and-trace-propagation.md`
+- `docs/rfc/RFC-014-simple-company-fact-fast-path-and-kb-ranking.md`
