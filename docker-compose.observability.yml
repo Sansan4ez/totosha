@@ -20,3 +20,11 @@ services:
       - "127.0.0.1:${BOT_PORT:-4001}:4001"
 
   corp-db-worker:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=corp-db-worker
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}

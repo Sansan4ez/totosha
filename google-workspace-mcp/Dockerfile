@@ -5,6 +5,7 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for faster dependency management
@@ -27,8 +28,6 @@ RUN mkdir -p /app/store_creds \
 # Copy entrypoint script before switching user
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh && chown app:app /app/entrypoint.sh
-
-USER app
 
 # Expose port (use default of 8000 if PORT not set)
 EXPOSE 8000

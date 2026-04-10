@@ -286,7 +286,7 @@ services:
       - TOOL_TIER=core
       # OAuth handled via Admin UI with user-configured credentials
     volumes:
-      - ./workspace/_shared/google_creds:/app/store_creds
+      - google-workspace-creds:/app/store_creds
     networks:
       - agent-net
     healthcheck:
@@ -369,7 +369,7 @@ services:
       - ./workspace:/workspace
       - ./workspace/_shared:/data  # Skills, shared data, and admin config
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./workspace/_shared/google_creds:/data/google_creds  # Share Google credentials with MCP
+      - google-workspace-creds:/data/google_creds  # Share Google credentials with MCP
     networks:
       - agent-net
     cap_drop:
@@ -552,6 +552,7 @@ secrets:
 
 volumes:
   corp-db-data:
+  google-workspace-creds:
 
 networks:
   agent-net:
