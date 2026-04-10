@@ -16,6 +16,8 @@ class RetrievalRoutingPromptTests(unittest.TestCase):
         self.assertIn("ПРАВИЛА RETRY ПОСЛЕ EMPTY РЕЗУЛЬТАТА", prompt)
         self.assertIn("lamp_filters", prompt)
         self.assertIn("doc-search", prompt)
+        self.assertIn("`doc_search` используй как primary route для явных document-domain запросов", prompt)
+        self.assertIn("prior KB miss не требуется", prompt)
         self.assertIn("weight_kg_min/max", prompt)
         self.assertIn("voltage_nominal_v_*", prompt)
         self.assertIn("`kind=portfolio_examples_by_lamp`", prompt)
@@ -38,6 +40,7 @@ class RetrievalRoutingPromptTests(unittest.TestCase):
         self.assertIn("Что делать после `empty`", skill)
         self.assertIn("нефтегаз", skill)
         self.assertIn("прожектор 100 ватт ip65", skill)
+        self.assertIn("primary `doc_domain` route", skill)
         self.assertIn("Как извлекать признаки в structured args", skill)
         self.assertIn("weight_kg_min", skill)
         self.assertIn("`kind=portfolio_examples_by_lamp`", skill)
@@ -55,7 +58,10 @@ class RetrievalRoutingPromptTests(unittest.TestCase):
         skill = (_repo_root() / "shared_skills" / "skills" / "doc-search" / "SKILL.md").read_text(encoding="utf-8")
         skill_json = (_repo_root() / "shared_skills" / "skills" / "doc-search" / "skill.json").read_text(encoding="utf-8")
         self.assertIn("Canonical tool: `doc_search`", skill)
+        self.assertIn("first-class `doc_domain` route", skill)
+        self.assertIn("run `doc_search` immediately", skill)
         self.assertIn("/data/corp_docs/live/", skill)
+        self.assertIn("first-class document-domain route", skill_json)
         self.assertNotIn("deprecated", skill_json.lower())
 
 

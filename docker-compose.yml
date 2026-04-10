@@ -12,6 +12,13 @@ services:
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - LOG_RAW=${LOG_RAW:-false}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=proxy
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     volumes:
       - ./workspace/_shared:/data
     extra_hosts:
@@ -87,6 +94,13 @@ services:
       - WORKSPACE_ROOT=/workspace
       - PROXY_URL=http://proxy:3200/v1
       - CORP_DB_STATEMENT_TIMEOUT_MS=${CORP_DB_STATEMENT_TIMEOUT_MS:-10000}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=tools-api
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     secrets:
       - corp_db_ro_dsn
     volumes:
@@ -153,6 +167,13 @@ services:
       - TZ=${TZ:-Europe/Moscow}
       - PROXY_URL=http://proxy:3200/v1
       - CORP_DB_RW_STATEMENT_TIMEOUT_MS=${CORP_DB_RW_STATEMENT_TIMEOUT_MS:-120000}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=corp-db-worker
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     secrets:
       - corp_db_rw_dsn
     volumes:
@@ -168,7 +189,9 @@ services:
 
   # ============ DOC WORKER - Operator-only document ingestion/normalization ============
   doc-worker:
-    build: ./doc-worker
+    build:
+      context: .
+      dockerfile: doc-worker/Dockerfile
     container_name: doc-worker
     profiles:
       - operator
@@ -177,6 +200,9 @@ services:
       - DOC_REPO_ROOT=/repo
       - CORP_DOCS_ROOT=/data/corp_docs
       - CORP_WIKI_PATH=/data/skills/corp-wiki-md-search/wiki
+      - DOC_SEARCH_OCR_ENABLED=0
+      - DOC_SEARCH_COMMAND_TIMEOUT_S=120
+      - DOC_SEARCH_MAX_MEMORY_MB=900
       - DOC_SEARCH_ENABLE_LEGACY_OFFICE=1
     volumes:
       - .:/repo:ro
@@ -222,6 +248,13 @@ services:
       - DATA_DIR=/data
       - CORE_URL=http://core:4000
       - BOT_URL=http://bot:4001
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=scheduler
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     volumes:
       - ./workspace/_shared:/data  # Persistent task storage
     networks:
@@ -322,6 +355,14 @@ services:
       - ADMIN_USER_ID=${ADMIN_USER_ID:-809532582}
       - ACCESS_MODE=${ACCESS_MODE:-public}
       - MODEL_NAME=${MODEL_NAME:-gpt-5.4}
+      - DOC_SEARCH_OCR_ENABLED=0
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=core
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     secrets:
       - model_name
     volumes:
@@ -384,6 +425,13 @@ services:
       - ASR_MAX_DURATION=${ASR_MAX_DURATION:-120}
       - ASR_TIMEOUT=${ASR_TIMEOUT:-60}
       - ASR_LANGUAGE=${ASR_LANGUAGE:-ru}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=bot
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     secrets:
       - telegram_token
       - model_name

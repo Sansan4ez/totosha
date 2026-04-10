@@ -50,7 +50,9 @@ def _write_atomic_text(path: Path, content: str) -> None:
     tmp_path = Path(tmp_name)
     try:
         tmp_path.write_text(content, encoding="utf-8")
+        tmp_path.chmod(0o644)
         os.replace(tmp_path, path)
+        path.chmod(0o644)
     finally:
         tmp_path.unlink(missing_ok=True)
 

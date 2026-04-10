@@ -1,0 +1,4 @@
+interface:
+  display_name: "tmux + br Orchestrator"
+  short_description: "Run br issue graphs in tmux with Codex"
+  default_prompt: "Use $tmux-br-orchestrator to execute the current br dependency graph in tmux windows with bounded parallelism and per-issue prompts."

@@ -2,7 +2,7 @@
   "uid": "harness-service-overview",
   "title": "Harness Service Overview",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "templating": {
     "list": [
@@ -122,6 +122,34 @@
       "targets": [
         {
           "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=\"$service\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Retrieval Routes",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (selected_route_id, selected_route_kind, selected_source) (rate(retrieval_route_requests_total{service_name=\"core\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Tool Executions By Route",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool_name, selected_route_id) (rate(tool_executions_total{service_name=\"core\"}[5m]))"
         }
       ]
     }

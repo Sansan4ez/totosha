@@ -340,7 +340,7 @@ Operator steps:
 3. запускает:
 
 ```bash
-docker compose run --rm --profile operator doc-worker sync-repo
+docker compose --profile operator run --rm doc-worker sync-repo
 ```
 
 4. смотрит report;

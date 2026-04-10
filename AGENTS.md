@@ -58,6 +58,7 @@ When monitoring and patching the system:
 │     └─ Or modify system prompt                                 │
 │                                                                 │
 │  4. DEPLOY                                                      │
+│     └─ docker compose -f victoriametrics/docker-compose.yml up -d │
 │     └─ docker compose up -d --build                            │
 │                                                                 │
 │  5. VERIFY                                                      │
@@ -149,7 +150,8 @@ docker logs gateway -f --tail 100
 docker ps
 
 # Restart after patch
-docker compose down && docker compose up -d --build
+docker compose -f victoriametrics/docker-compose.yml up -d
+docker compose up -d --build
 
 # View chat history
 cat workspace/_shared/CHAT_HISTORY.md | tail -100

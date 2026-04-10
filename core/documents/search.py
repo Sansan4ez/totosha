@@ -237,6 +237,21 @@ def _discover_documents() -> list[dict[str, Any]]:
     return list(iter_live_documents(paths))
 
 
+def _preferred_document_matches(record: dict[str, Any], preferred_document_ids: set[str]) -> bool:
+    candidates = {
+        str(record.get("document_id") or "").strip(),
+        str(record.get("relative_path") or "").strip(),
+        str(record.get("original_filename") or "").strip(),
+    }
+    for alias in record.get("aliases") or []:
+        if not isinstance(alias, dict):
+            continue
+        candidates.add(str(alias.get("relative_path") or "").strip())
+        candidates.add(str(alias.get("name") or "").strip())
+    normalized = {item.lower() for item in candidates if item}
+    return bool(normalized.intersection(preferred_document_ids))
+
+
 def _result_from_record(
     record: dict[str, Any],
     *,
@@ -280,6 +295,7 @@ def search_documents(
     *,
     query: str,
     top: int = 5,
+    preferred_document_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     started_at = perf_counter()
     limits = load_search_limits()
@@ -288,6 +304,11 @@ def search_documents(
     if not query:
         return {"status": "error", "error": "query_required", "results": []}
 
+    preferred_ids = {
+        str(item or "").strip().lower()
+        for item in (preferred_document_ids or [])
+        if str(item or "").strip()
+    }
     discovered = _discover_documents()
     results: list[dict[str, Any]] = []
     scanned = 0
@@ -298,6 +319,8 @@ def search_documents(
     normalization_missing_count = 0
 
     for record in discovered:
+        if preferred_ids and not _preferred_document_matches(record, preferred_ids):
+            continue
         if scanned >= limits.max_documents:
             break
         scanned += 1
@@ -367,4 +390,5 @@ def search_documents(
         "extraction_failures": extraction_failures,
         "search_substrate": "parsed_sidecars",
         "selected_source": "doc_search",
+        "preferred_document_ids": sorted(preferred_ids),
     }

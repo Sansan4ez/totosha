@@ -20,7 +20,7 @@ from .cache import (
     write_parse_cache,
     cache_version_key,
 )
-from .routing import build_routing_index, load_routing_index, select_route_card
+from .routing import build_routing_index, load_routing_index, select_route, select_route_card
 
 __all__ = [
     "DEFAULT_CORP_DOCS_ROOT",
@@ -39,6 +39,7 @@ __all__ = [
     "load_parse_cache",
     "build_routing_index",
     "load_routing_index",
+    "select_route",
     "select_route_card",
     "sync_repo_inbox",
     "write_parse_cache",

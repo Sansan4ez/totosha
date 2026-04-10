@@ -12,6 +12,9 @@ correlation:
   - trace_id
   - span_id
   - request_id
+  - selected_route_id
+  - selected_route_kind
+  - tool_name
 catalog:
   - name: platform.observability.baseline
     kind: log
@@ -57,7 +60,7 @@ catalog:
     kind: log
     emitter:
       path: docs/operations/observability-baseline.md
-      description: Shared request completion log line emitted by instrumented HTTP services with request_id, trace_id and span_id correlation.
+      description: Shared request completion log line emitted by instrumented HTTP services with request, trace, route, and tool correlation fields.
     consumers:
       - kind: smoke
         ref: victoriametrics/smoke_test.sh
@@ -72,15 +75,71 @@ catalog:
           - request_id
           - trace_id
           - span_id
+          - selected_route_id
+          - tool_name
       - path: core/observability.py
         contains:
           - HTTP request completed
           - request_id
           - trace_id
           - span_id
+          - selected_route_id
+          - tool_name
       - path: proxy/observability.py
         contains:
           - HTTP request completed
+  - name: retrieval_route_requests_total
+    kind: metric
+    service: core
+    emitter:
+      path: core/observability.py
+      description: Route-aware request counter keyed by selected route, source, and retrieval outcome.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: smoke
+        ref: victoriametrics/smoke_test.sh
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: docs/operations/observability-baseline.md
+        contains:
+          - retrieval_route_requests_total
+      - path: core/observability.py
+        contains:
+          - retrieval_route_requests_total
+      - path: victoriametrics/smoke_test.sh
+        contains:
+          - retrieval_route_requests_total
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - retrieval_route_requests_total
+  - name: tool_executions_total
+    kind: metric
+    service: core
+    emitter:
+      path: core/observability.py
+      description: Tool execution counter keyed by tool name and selected retrieval route.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: smoke
+        ref: victoriametrics/smoke_test.sh
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: docs/operations/observability-baseline.md
+        contains:
+          - tool_executions_total
+      - path: core/observability.py
+        contains:
+          - tool_executions_total
+      - path: victoriametrics/smoke_test.sh
+        contains:
+          - tool_executions_total
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - tool_executions_total
   - name: api.request
     kind: trace
     emitter:

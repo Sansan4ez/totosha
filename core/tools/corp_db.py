@@ -14,7 +14,12 @@ import os
 from time import perf_counter
 
 from models import ToolResult, ToolContext
-from observability import REQUEST_ID as OBS_REQUEST_ID
+from observability import (
+    REQUEST_ID as OBS_REQUEST_ID,
+    get_correlation_context,
+    inject_trace_context,
+    update_correlation_context,
+)
 from opentelemetry import trace
 from tool_output_policy import (
     RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
@@ -90,11 +95,13 @@ def _is_company_fact_kb_search(args: dict | None, data: object) -> bool:
         return False
     if str(args.get("kind") or "") != "hybrid_search":
         return False
-    if str(args.get("profile") or "") != "kb_search":
+    if str(args.get("profile") or "") not in {"kb_search", "kb_route_lookup"}:
         return False
 
     entity_types = args.get("entity_types") or []
     if isinstance(entity_types, list) and any(str(item).lower() == "company" for item in entity_types):
+        return True
+    if str(args.get("knowledge_route_id") or "") == "corp_kb.company_common":
         return True
 
     query = _normalize_text(args.get("query"))
@@ -125,6 +132,8 @@ def _compact_company_fact_payload(data: dict) -> dict:
         "kind": data.get("kind"),
         "query": data.get("query"),
         "filters": data.get("filters") or {},
+        "knowledge_route_id": data.get("filters", {}).get("knowledge_route_id") if isinstance(data.get("filters"), dict) else None,
+        "topic_facets": data.get("filters", {}).get("topic_facets") if isinstance(data.get("filters"), dict) else None,
         "result_count": len(results),
         "result_format": "compact_company_fact_v1",
         "results": compact_results,
@@ -172,21 +181,51 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
     budget = _timeout_budget_seconds()
 
     request_id = OBS_REQUEST_ID.get("-")
+    correlation_context = get_correlation_context()
     headers = {
         "X-User-Id": str(ctx.user_id),
         "X-Chat-Type": str(ctx.chat_type),
     }
-    if request_id and request_id != "-":
-        headers["X-Request-Id"] = request_id
+    for field, header_name in (
+        ("tool_call_id", "X-Tool-Call-Id"),
+        ("tool_call_seq", "X-Tool-Call-Seq"),
+    ):
+        value = str(correlation_context.get(field) or "").strip()
+        if value and value != "-":
+            headers[header_name] = value
+    headers = inject_trace_context(headers, request_id=request_id)
 
     started_at = perf_counter()
     with _get_tracer().start_as_current_span("tool.corp_db_search") as span:
+        knowledge_route_id = str(args.get("knowledge_route_id") or "").strip()
+        if knowledge_route_id:
+            update_correlation_context(knowledge_route_id=knowledge_route_id)
+            correlation_context = get_correlation_context()
         span.set_attribute("corp_db.kind", str(args.get("kind") or "unknown"))
         span.set_attribute("corp_db.timeout.connect_s", budget["connect"])
         span.set_attribute("corp_db.timeout.read_s", budget["read"])
         span.set_attribute("corp_db.timeout.total_s", budget["total"])
+        span.set_attribute("tool_name", "corp_db_search")
         if request_id and request_id != "-":
             span.set_attribute("request_id", request_id)
+        if knowledge_route_id:
+            span.set_attribute("knowledge_route_id", knowledge_route_id)
+        for field in (
+            "selected_route_id",
+            "selected_route_family",
+            "selected_route_kind",
+            "selected_source",
+            "document_id",
+            "tool_call_id",
+            "tool_call_seq",
+            "retrieval_phase",
+            "retrieval_evidence_status",
+            "retrieval_close_reason",
+            "finalizer_mode",
+        ):
+            value = str(correlation_context.get(field) or "").strip()
+            if value and value not in {"-", "unknown"}:
+                span.set_attribute(field, value)
 
         try:
             timeout = _aiohttp_timeout(budget)

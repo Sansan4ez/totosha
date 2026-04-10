@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import zipfile
 from dataclasses import dataclass
@@ -181,6 +183,25 @@ def _liteparse_available() -> bool:
     return shutil.which("lit") is not None
 
 
+@contextmanager
+def _liteparse_input_path(path: Path, *, file_type: str, original_filename: str | None) -> Path:
+    expected_suffix = Path(str(original_filename or "")).suffix.lower()
+    if not expected_suffix and file_type:
+        expected_suffix = f".{file_type.lower()}"
+
+    if expected_suffix and path.suffix.lower() != expected_suffix:
+        with tempfile.TemporaryDirectory(prefix="liteparse_") as tmpdir:
+            tmp_path = Path(tmpdir) / f"source{expected_suffix}"
+            try:
+                os.symlink(path, tmp_path)
+            except Exception:
+                shutil.copy2(path, tmp_path)
+            yield tmp_path
+        return
+
+    yield path
+
+
 def _parse_with_liteparse(path: Path, *, limits: SearchLimits) -> tuple[str, dict[str, Any]] | None:
     if not _liteparse_available():
         return None
@@ -285,7 +306,8 @@ def parse_record(record: dict[str, Any], *, limits: SearchLimits | None = None) 
             }
 
     if file_type in PARSER_FIRST_FILE_TYPES or file_type in OFFICE_XML_FILE_TYPES:
-        parsed = _parse_with_liteparse(path, limits=limits)
+        with _liteparse_input_path(path, file_type=file_type, original_filename=str(record.get("original_filename") or "")) as parse_path:
+            parsed = _parse_with_liteparse(parse_path, limits=limits)
         if parsed:
             text, structured = parsed
             return {
@@ -329,6 +351,8 @@ def normalize_record(record: dict[str, Any], *, force: bool = False, limits: Sea
         }
 
     parsed = parse_record(record, limits=limits)
+    relative_path = str(record.get("relative_path") or record.get("original_filename") or "")
+    routing = dict(record.get("routing") or {}) if isinstance(record.get("routing"), dict) else {}
     payload = write_parse_cache(
         sha256,
         text=str(parsed.get("text") or ""),
@@ -338,7 +362,11 @@ def normalize_record(record: dict[str, Any], *, force: bool = False, limits: Sea
             "status": parsed.get("status"),
             "source_sha256": sha256,
             "file_type": record.get("file_type"),
+            "document_id": record.get("document_id"),
+            "relative_path": relative_path,
+            "original_filename": record.get("original_filename"),
             "duration_ms": parsed.get("duration_ms"),
+            "routing": routing,
         },
     )
     return {

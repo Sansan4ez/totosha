@@ -854,6 +854,7 @@ CREATE OR REPLACE FUNCTION corp.corp_hybrid_search(
     fuzzy_weight double precision DEFAULT 0.3,
     rrf_k integer DEFAULT 60,
     entity_types text[] DEFAULT NULL,
+    source_files text[] DEFAULT NULL,
     include_debug boolean DEFAULT false
 )
 RETURNS TABLE (
@@ -880,7 +881,8 @@ WITH params AS (
 base_docs AS (
     SELECT *
     FROM corp.corp_search_docs d
-    WHERE entity_types IS NULL OR d.entity_type = ANY(entity_types)
+    WHERE (entity_types IS NULL OR d.entity_type = ANY(entity_types))
+      AND (source_files IS NULL OR coalesce(d.metadata->>'source_file', '') = ANY(source_files))
 ),
 full_text AS (
     SELECT

@@ -14,6 +14,9 @@ Canonical workflow
 
 `doc-corpus/inbox/` is the only repo-managed source for searchable documents.
 `doc_search` does not read from legacy skill folders or ad-hoc wiki paths.
+Published route manifests from this corpus feed the unified routing catalog as
+`route_kind=doc_domain`, so explicit document-domain requests should prefer
+`doc_search` directly rather than waiting for a prior KB miss.
 
 Optional sidecar metadata
 -------------------------
@@ -29,7 +32,7 @@ Operator workflow
 -----------------
 
 ```bash
-docker compose run --rm --profile operator doc-worker sync-repo
+docker compose --profile operator run --rm doc-worker sync-repo
 ```
 
 The repo remains read-only for `doc-worker`; runtime artifacts and reports are
@@ -43,8 +46,8 @@ If an existing deployment still keeps Markdown files under the old
 folder under `doc-corpus/inbox/` and re-run:
 
 ```bash
-docker compose run --rm --profile operator doc-worker sync-repo
-docker compose run --rm --profile operator doc-worker rebuild-routes
+docker compose --profile operator run --rm doc-worker sync-repo
+docker compose --profile operator run --rm doc-worker rebuild-routes
 ```
 
 After that, only `/data/corp_docs/live/` and `/data/corp_docs/parsed/` are used

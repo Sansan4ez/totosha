@@ -1,0 +1,128 @@
+{
+  "catalog_id": "totosha.unified-routing-catalog",
+  "schema_version": 1,
+  "catalog_version": "2026-04-08",
+  "generated_at": "2026-04-08T00:00:00Z",
+  "routes": [
+    {
+      "route_id": "corp_kb.company_common",
+      "route_family": "corp_kb.company_common",
+      "route_kind": "corp_table",
+      "authority": "primary",
+      "title": "Company common knowledge base",
+      "summary": "Source-scoped company KB for contacts, website, legal details, address, service, warranty, and general company facts.",
+      "topics": ["company", "contacts", "legal", "certification"],
+      "keywords": ["сайт", "адрес", "контакты", "телефон", "email", "e-mail", "реквизиты", "инн", "кпп", "огрн", "гарантия", "сервис", "о компании", "год основания", "соцсети"],
+      "patterns": ["официальный сайт", "год основания", "общая информация о компании", "расскажи о компании", "контакты компании", "подскажи контакты компании", "реквизиты компании", "о самой компании"],
+      "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 1},
+      "executor": "corp_db_search",
+      "executor_args_template": {
+        "kind": "hybrid_search",
+        "profile": "kb_route_lookup",
+        "knowledge_route_id": "corp_kb.company_common",
+        "source_files": ["common_information_about_company.md"]
+      },
+      "observability_labels": {"scope": "source_file"}
+    },
+    {
+      "route_id": "corp_kb.luxnet",
+      "route_family": "corp_kb.luxnet",
+      "route_kind": "corp_table",
+      "authority": "primary",
+      "title": "Luxnet knowledge base",
+      "summary": "Source-scoped Luxnet KB route.",
+      "topics": ["luxnet", "product"],
+      "keywords": ["luxnet", "люкснет"],
+      "patterns": ["что такое luxnet", "что такое люкснет", "расскажи про luxnet"],
+      "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 1},
+      "executor": "corp_db_search",
+      "executor_args_template": {
+        "kind": "hybrid_search",
+        "profile": "kb_route_lookup",
+        "knowledge_route_id": "corp_kb.luxnet",
+        "source_files": ["about_Luxnet.md"]
+      },
+      "observability_labels": {"scope": "source_file"}
+    },
+    {
+      "route_id": "corp_kb.lighting_norms",
+      "route_family": "corp_kb.lighting_norms",
+      "route_kind": "corp_table",
+      "authority": "primary",
+      "title": "Lighting norms knowledge base",
+      "summary": "Source-scoped lighting norms KB route.",
+      "topics": ["lighting_norms", "rules", "tables"],
+      "keywords": ["нормы освещенности", "нормы освещённости", "освещенность", "освещённость", "нормативы освещения"],
+      "patterns": ["какие нормы освещенности", "нормы освещения", "нормативы освещения"],
+      "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 1},
+      "executor": "corp_db_search",
+      "executor_args_template": {
+        "kind": "hybrid_search",
+        "profile": "kb_route_lookup",
+        "knowledge_route_id": "corp_kb.lighting_norms",
+        "source_files": ["normy_osveschennosty.md"]
+      },
+      "observability_labels": {"scope": "source_file"}
+    },
+    {
+      "route_id": "corp_db.catalog_lookup",
+      "route_family": "corp_db.catalog_lookup",
+      "route_kind": "corp_table",
+      "authority": "primary",
+      "title": "Lamp catalog lookup",
+      "summary": "Exact models, codes, series, categories, and structured catalog lookup.",
+      "topics": ["catalog", "lamp", "model"],
+      "keywords": ["модель", "серия", "артикул", "код", "светильник", "каталог", "характеристики", "крепление", "совместимость"],
+      "patterns": ["точная модель", "карточка светильника", "найди модель"],
+      "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 0},
+      "executor": "corp_db_search",
+      "executor_args_template": {"kind": "lamp_exact"},
+      "observability_labels": {"scope": "catalog"}
+    },
+    {
+      "route_id": "corp_db.portfolio_by_sphere",
+      "route_family": "corp_db.portfolio_by_sphere",
+      "route_kind": "corp_script",
+      "authority": "secondary",
+      "title": "Portfolio by sphere",
+      "summary": "Examples of completed projects, portfolio objects, and implementation references by application area.",
+      "topics": ["portfolio", "projects"],
+      "keywords": ["портфолио", "проект", "объект", "пример проекта", "пример объекта", "примеры реализации", "стадион", "аэропорт", "перрон", "склад", "офис", "карьер", "наружное освещение"],
+      "patterns": ["пример проекта", "пример объекта", "из портфолио", "портфолио по"],
+      "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 0},
+      "executor": "corp_db_search",
+      "executor_args_template": {"kind": "portfolio_by_sphere", "fuzzy": true},
+      "observability_labels": {"scope": "orchestration"}
+    },
+    {
+      "route_id": "corp_db.application_recommendation",
+      "route_family": "corp_db.application_recommendation",
+      "route_kind": "corp_script",
+      "authority": "secondary",
+      "title": "Application recommendation",
+      "summary": "Broad recommendation by application area such as stadiums, warehouses, airports, offices, or aggressive environments.",
+      "topics": ["recommendation", "application"],
+      "keywords": ["стадион", "арена", "спорткомплекс", "карьер", "рудник", "аэропорт", "склад", "офис", "кабинет", "агрессивная среда", "апрон", "высокие пролеты"],
+      "patterns": ["подбери освещение", "какие светильники подойдут", "рекомендация по освещению"],
+      "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 0},
+      "executor": "corp_db_search",
+      "executor_args_template": {"kind": "application_recommendation"},
+      "observability_labels": {"scope": "orchestration"}
+    },
+    {
+      "route_id": "doc_search.document_lookup",
+      "route_family": "doc_domain.document_lookup",
+      "route_kind": "doc_domain",
+      "authority": "secondary",
+      "title": "Document lookup and certificates",
+      "summary": "Certificates, passports, PDFs, and free-text document facts such as material options or series differences.",
+      "topics": ["documents", "certificates"],
+      "keywords": ["сертификат", "пожарный сертификат", "ce", "pdf", "паспорт", "документ", "закаленное стекло", "закалённое стекло", "чем отличается"],
+      "patterns": ["пожарный сертификат", "сертификат ce", "закаленное стекло", "закалённое стекло", "чем отличается серия"],
+      "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 0},
+      "executor": "doc_search",
+      "executor_args_template": {"top": 5},
+      "observability_labels": {"scope": "document_domain"}
+    }
+  ]
+}

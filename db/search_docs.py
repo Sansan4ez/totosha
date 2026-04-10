@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from decimal import Decimal
 
@@ -72,6 +73,251 @@ KB_CHUNK_HEADING_ALIASES = {
         "ladzavod",
     ],
 }
+KB_ROUTE_SPECS = {
+    "common_information_about_company.md": {
+        "knowledge_route_id": "corp_kb.company_common",
+        "route_family_aliases": [
+            "ladzavod",
+            "ладзавод",
+            "лад завод",
+            "ладзавод светотехники",
+            "лайт аудио дизайн",
+            "light audio design",
+            "общая информация о компании",
+            "компания ladzavod",
+        ],
+        "heading_specs": [
+            {
+                "match": "о компании",
+                "aliases": ["о компании", "общая информация о компании", "профиль компании", "история компании"],
+                "topic_facets": ["about_company"],
+            },
+            {
+                "match": "наш профиль",
+                "aliases": ["чем занимается компания", "профиль компании", "промышленное освещение", "тяжелые условия эксплуатации"],
+                "topic_facets": ["about_company"],
+            },
+            {
+                "match": "наш подход",
+                "aliases": ["подход компании", "клиентоориентированность", "инновации", "качество компании"],
+                "topic_facets": ["about_company"],
+            },
+            {
+                "match": "инженерные решения",
+                "aliases": ["инженерные решения компании", "собственные разработки", "цена качество"],
+                "topic_facets": ["about_company"],
+            },
+            {
+                "match": "доступные серии освещения",
+                "aliases": ["серии светильников", "доступные серии", "линейки светильников", "lad led r500", "lad led r700", "nl nova", "nl vega"],
+                "topic_facets": ["series"],
+            },
+            {
+                "match": "высокое качество продукции",
+                "aliases": ["качество продукции", "контроль качества", "стандарты качества", "надежность продукции"],
+                "topic_facets": ["quality"],
+            },
+            {
+                "match": "качество комплектующих",
+                "aliases": ["качество комплектующих", "cree led", "надежные комплектующие", "проверенные комплектующие"],
+                "topic_facets": ["quality"],
+            },
+            {
+                "match": "производство сборка контроль качества",
+                "aliases": ["производство в челябинске", "сборка продукции", "контроль качества производства"],
+                "topic_facets": ["quality"],
+            },
+            {
+                "match": "сертификация",
+                "aliases": ["сертификация продукции", "сертификаты", "сертификат eac", "сертификат ce"],
+                "topic_facets": ["certification"],
+            },
+            {
+                "match": "декларации соответствия",
+                "aliases": ["декларации соответствия", "декларация eac", "тр еаэс 037 2016"],
+                "topic_facets": ["certification"],
+            },
+            {
+                "match": "почему выбирают нас",
+                "aliases": ["почему выбирают компанию", "преимущества компании", "бесплатные расчеты", "технические консультации"],
+                "topic_facets": ["quality"],
+            },
+            {
+                "match": "гарантия и сервис",
+                "aliases": ["гарантия на продукцию", "сервис компании", "гарантийное обслуживание", "постгарантийное обслуживание"],
+                "topic_facets": ["quality"],
+            },
+            {
+                "match": "дополнительные испытания",
+                "aliases": ["независимые лаборатории", "испытания продукции", "аккредитованные лаборатории"],
+                "topic_facets": ["certification", "quality"],
+            },
+            {
+                "match": "бесплатные образцы продукции",
+                "aliases": ["бесплатные образцы", "тестовый светильник", "образцы продукции"],
+                "topic_facets": ["quality"],
+            },
+            {
+                "match": "новости компании",
+                "aliases": ["новости компании", "новости ladzavod"],
+                "topic_facets": ["news"],
+            },
+            {
+                "match": "правовая информация",
+                "aliases": ["правовая информация", "юридическая информация", "правила и условия использования сайта"],
+                "topic_facets": ["legal"],
+            },
+            {
+                "match": "контактная информация",
+                "aliases": ["контакты компании", "телефон компании", "email компании", "адрес офиса", "почта компании"],
+                "topic_facets": ["contacts"],
+            },
+            {
+                "match": "реквизиты",
+                "aliases": ["реквизиты компании", "инн", "кпп", "огрн", "ооо лайт аудио дизайн"],
+                "topic_facets": ["requisites"],
+            },
+            {
+                "match": "социальные сети компании",
+                "aliases": ["соцсети компании", "telegram компании", "youtube компании", "vk компании", "официальный сайт"],
+                "topic_facets": ["socials"],
+            },
+            {
+                "match": "прайс",
+                "aliases": ["прайс компании", "прайс лист", "цены компании"],
+                "topic_facets": ["price"],
+            },
+            {
+                "match": "расчет освещения",
+                "aliases": ["расчет освещения", "расчет освещенности", "светотехнический расчет"],
+                "topic_facets": ["lighting_calculation"],
+            },
+            {
+                "match": "классификация пожароопасных зон",
+                "aliases": ["пожароопасные зоны", "классификация пожароопасных зон", "пожарная зона"],
+                "topic_facets": ["fire_hazard_zones"],
+            },
+        ],
+    },
+    "about_Luxnet.md": {
+        "knowledge_route_id": "corp_kb.luxnet",
+        "route_family_aliases": [
+            "luxnet",
+            "люкснет",
+            "стандарт управления luxnet",
+            "система luxnet",
+            "беспроводное управление luxnet",
+        ],
+        "heading_specs": [
+            {
+                "match": "стандарт управления luxnet",
+                "aliases": ["что такое luxnet", "что такое люкснет", "описание luxnet", "система управления luxnet"],
+                "topic_facets": ["definition"],
+            },
+            {
+                "match": "luxnet возможности системы",
+                "aliases": ["возможности luxnet", "функции luxnet", "что умеет luxnet"],
+                "topic_facets": ["capabilities"],
+            },
+            {
+                "match": "преимущества luxnet",
+                "aliases": ["преимущества luxnet", "плюсы luxnet", "benefits luxnet"],
+                "topic_facets": ["benefits"],
+            },
+            {
+                "match": "эффекты от внедрения luxnet",
+                "aliases": ["эффекты от внедрения luxnet", "экономия luxnet", "эффективность luxnet"],
+                "topic_facets": ["benefits"],
+            },
+            {
+                "match": "luxnet индивидуальная настройка освещения",
+                "aliases": ["настройка освещения luxnet", "управление освещением luxnet", "сценарии luxnet"],
+                "topic_facets": ["lighting_control"],
+            },
+            {
+                "match": "luxnet мобильное приложение",
+                "aliases": ["мобильное приложение luxnet", "приложение luxnet", "bluetooth luxnet"],
+                "topic_facets": ["mobile_app"],
+            },
+            {
+                "match": "luxnet информационные панели и аналитика",
+                "aliases": ["аналитика luxnet", "информационные панели luxnet", "отчеты luxnet"],
+                "topic_facets": ["analytics"],
+            },
+            {
+                "match": "luxnet 3 года хранения данных",
+                "aliases": ["хранение данных luxnet", "база данных luxnet", "3 года хранения luxnet"],
+                "topic_facets": ["data_retention"],
+            },
+            {
+                "match": "дополнительное оборудование luxnet",
+                "aliases": ["оборудование luxnet", "датчик освещенности luxnet", "модуль luxnet", "персональная метка luxnet"],
+                "topic_facets": ["equipment"],
+            },
+            {
+                "match": "обязательная сертификация",
+                "aliases": ["сертификация luxnet", "сертификат luxnet", "eac luxnet"],
+                "topic_facets": ["certification"],
+            },
+        ],
+    },
+    "normy_osveschennosty.md": {
+        "knowledge_route_id": "corp_kb.lighting_norms",
+        "route_family_aliases": [
+            "нормы освещенности",
+            "нормы освещённости",
+            "нормы освещения",
+            "нормативы освещения",
+            "lighting norms",
+            "основные понятия и определения освещения",
+        ],
+        "heading_specs": [
+            {
+                "match": "освещенность",
+                "aliases": ["освещенность", "освещенность в люксах", "освещенность лк"],
+                "topic_facets": ["definitions"],
+            },
+            {
+                "match": "коэффициент",
+                "aliases": ["коэффициенты освещения", "показатели освещения", "нормативные коэффициенты"],
+                "topic_facets": ["definitions"],
+            },
+            {
+                "match": "таблица",
+                "aliases": ["таблица норм освещенности", "нормативная таблица освещения", "таблица освещения"],
+                "topic_facets": ["tables"],
+            },
+            {
+                "match": "норма",
+                "aliases": ["нормативы освещения", "нормы освещения", "правила освещения"],
+                "topic_facets": ["rules"],
+            },
+        ],
+        "default_topic_facets": ["definitions"],
+    },
+}
+KB_ROUTE_VALIDATION_CASES = (
+    {
+        "name": "company_common",
+        "query": "общая информация о компании ladzavod",
+        "expected_source_file": "common_information_about_company.md",
+        "expected_headings": {"о компании", "наш профиль"},
+    },
+    {
+        "name": "luxnet",
+        "query": "что такое luxnet",
+        "expected_source_file": "about_Luxnet.md",
+        "expected_headings": {"стандарт управления luxnet"},
+    },
+    {
+        "name": "lighting_norms",
+        "query": "нормы освещенности",
+        "expected_source_file": "normy_osveschennosty.md",
+        "expected_headings": set(),
+    },
+)
+HEADING_NUMBER_PREFIX_RE = re.compile(r"^\s*\d+(?:\.\d+)*(?:[A-Za-zА-Яа-яЁё])?\s*", re.UNICODE)
+TEXT_KEY_RE = re.compile(r"[\W_]+", re.UNICODE)
 
 
 def _json_object(value: object) -> dict:
@@ -123,6 +369,58 @@ def _json_scalar(value: object) -> object:
     if isinstance(value, Decimal):
         return float(value)
     return value
+
+
+def _json_string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    return []
+
+
+def _dedupe_strings(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        normalized = _text_key(item)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(str(item).strip())
+    return result
+
+
+def _merge_string_lists(existing: object, additions: list[str]) -> list[str]:
+    return _dedupe_strings([*_json_string_list(existing), *[item for item in additions if str(item).strip()]])
+
+
+def _text_key(value: object) -> str:
+    return TEXT_KEY_RE.sub(" ", str(value or "").lower()).strip()
+
+
+def _normalized_heading(heading: object) -> str:
+    text = str(heading or "").strip()
+    if not text:
+        return ""
+    stripped = HEADING_NUMBER_PREFIX_RE.sub("", text).strip(" .:-")
+    return re.sub(r"\s+", " ", stripped)
+
+
+def _kb_route_spec(source_file: str) -> dict | None:
+    return KB_ROUTE_SPECS.get(str(source_file or "").strip())
+
+
+def _kb_heading_spec(route_spec: dict | None, heading: str) -> dict:
+    if not route_spec:
+        return {}
+    heading_key = _text_key(heading)
+    for spec in route_spec.get("heading_specs", []):
+        match_key = _text_key(spec.get("match"))
+        if match_key and match_key in heading_key:
+            return spec
+    return {}
 
 
 def _lamp_metadata(lamp: dict, category_name: str | None, etm_codes: list[str], oracl_codes: list[str], has_sku: bool) -> dict:
@@ -363,13 +661,23 @@ def _kb_chunk_aliases(chunk: dict) -> str:
     heading = str(chunk.get("heading") or "").strip()
     heading_key = heading.lower()
     aliases = KB_CHUNK_HEADING_ALIASES.get(heading_key, [])
+    normalized_heading = _normalized_heading(heading)
+    route_spec = _kb_route_spec(str(chunk.get("source_file") or ""))
+    heading_spec = _kb_heading_spec(route_spec, normalized_heading or heading)
+    route_aliases = route_spec.get("route_family_aliases", []) if route_spec else []
+    heading_aliases = heading_spec.get("aliases", [])
     return join_nonempty(
         [
             chunk.get("document_title"),
+            tokenize_text(chunk.get("document_title")),
             heading,
+            normalized_heading if normalized_heading and normalized_heading != heading else None,
+            tokenize_text(normalized_heading) if normalized_heading else None,
             tokenize_text(heading),
             url_tokens(chunk.get("source_file")),
             " ".join(aliases),
+            " ".join(route_aliases),
+            " ".join(heading_aliases),
         ],
         sep=" ",
     )
@@ -377,16 +685,146 @@ def _kb_chunk_aliases(chunk: dict) -> str:
 
 def _kb_chunk_doc(chunk: dict) -> dict:
     metadata = _json_object(chunk.get("metadata"))
-    metadata.setdefault("source_file", chunk["source_file"])
-    metadata.setdefault("document_title", chunk["document_title"])
+    source_file = chunk["source_file"]
+    heading = str(chunk.get("heading") or "").strip()
+    normalized_heading = _normalized_heading(heading)
+    route_spec = _kb_route_spec(source_file)
+    heading_spec = _kb_heading_spec(route_spec, normalized_heading or heading)
+    route_family_aliases = list(route_spec.get("route_family_aliases", [])) if route_spec else []
+    heading_aliases = list(heading_spec.get("aliases", []))
+    topic_facets = list(heading_spec.get("topic_facets", []))
+    if route_spec and not topic_facets:
+        topic_facets = list(route_spec.get("default_topic_facets", []))
+    metadata["source_file"] = str(metadata.get("source_file") or source_file)
+    metadata["document_title"] = str(metadata.get("document_title") or chunk["document_title"])
+    metadata["source_file_scope"] = _merge_string_lists(metadata.get("source_file_scope"), [source_file])
+    if normalized_heading:
+        metadata["normalized_heading"] = str(metadata.get("normalized_heading") or normalized_heading)
+    if route_spec:
+        route_id = str(route_spec["knowledge_route_id"])
+        metadata["knowledge_route_id"] = str(metadata.get("knowledge_route_id") or route_id)
+        metadata["retrieval_route_family"] = str(metadata.get("retrieval_route_family") or route_id)
+        metadata["route_family_aliases"] = _merge_string_lists(metadata.get("route_family_aliases"), route_family_aliases)
+    if heading_aliases:
+        metadata["heading_aliases"] = _merge_string_lists(metadata.get("heading_aliases"), heading_aliases)
+    if topic_facets:
+        metadata["topic_facets"] = _merge_string_lists(metadata.get("topic_facets"), topic_facets)
     return {
         "entity_type": "kb_chunk",
-        "entity_id": f"{chunk['source_file']}:{chunk['chunk_index']}",
-        "title": chunk["heading"],
+        "entity_id": f"{source_file}:{chunk['chunk_index']}",
+        "title": heading,
         "content": chunk["content"],
         "aliases": _kb_chunk_aliases(chunk),
         "metadata": metadata,
     }
+
+
+def _validate_kb_route_rows(rows: list[dict]) -> dict:
+    errors: list[str] = []
+    sources: dict[str, dict] = {}
+    for source_file, route_spec in KB_ROUTE_SPECS.items():
+        source_rows = [row for row in rows if _json_object(row.get("metadata")).get("source_file") == source_file]
+        if not source_rows:
+            errors.append(f"missing indexed kb rows for {source_file}")
+            sources[source_file] = {"row_count": 0}
+            continue
+        route_id = str(route_spec["knowledge_route_id"])
+        route_aliases = [alias for alias in route_spec.get("route_family_aliases", []) if alias]
+        route_rows = 0
+        scoped_rows = 0
+        faceted_rows = 0
+        alias_rows = 0
+        for row in source_rows:
+            metadata = _json_object(row.get("metadata"))
+            aliases_key = _text_key(row.get("aliases"))
+            if metadata.get("knowledge_route_id") == route_id and metadata.get("retrieval_route_family") == route_id:
+                route_rows += 1
+            if source_file in _json_string_list(metadata.get("source_file_scope")):
+                scoped_rows += 1
+            if _json_string_list(metadata.get("topic_facets")):
+                faceted_rows += 1
+            if route_aliases and any(_text_key(alias) in aliases_key for alias in route_aliases):
+                alias_rows += 1
+        if route_rows != len(source_rows):
+            errors.append(f"{source_file}: missing knowledge_route_id/retrieval_route_family on some rows")
+        if scoped_rows != len(source_rows):
+            errors.append(f"{source_file}: missing source_file_scope on some rows")
+        if faceted_rows == 0:
+            errors.append(f"{source_file}: no topic facets materialized")
+        if alias_rows == 0:
+            errors.append(f"{source_file}: no route-family aliases materialized")
+        sources[source_file] = {
+            "row_count": len(source_rows),
+            "knowledge_route_id": route_id,
+            "route_rows": route_rows,
+            "scoped_rows": scoped_rows,
+            "faceted_rows": faceted_rows,
+            "alias_rows": alias_rows,
+        }
+    return {"sources": sources, "errors": errors}
+
+
+async def validate_search_docs(conn) -> dict:
+    rows = [
+        dict(row)
+        for row in await conn.fetch(
+            """
+            SELECT entity_id, title, aliases, metadata
+            FROM corp.corp_search_docs
+            WHERE entity_type = 'kb_chunk'
+              AND coalesce(metadata->>'source_file', '') = ANY($1::text[])
+            ORDER BY entity_id
+            """,
+            list(KB_ROUTE_SPECS.keys()),
+        )
+    ]
+    report = _validate_kb_route_rows(rows)
+    query_results: dict[str, dict] = {}
+    for case in KB_ROUTE_VALIDATION_CASES:
+        matches = [
+            dict(row)
+            for row in await conn.fetch(
+                """
+                SELECT entity_id, title, metadata, score
+                FROM corp.corp_hybrid_search(
+                    $1::text,
+                    NULL::vector,
+                    5::integer,
+                    1.0::double precision,
+                    0.0::double precision,
+                    0.6::double precision,
+                    60::integer,
+                    $2::text[],
+                    true::boolean
+                )
+                """,
+                case["query"],
+                ["kb_chunk"],
+            )
+        ]
+        top = matches[0] if matches else {}
+        top_metadata = _json_object(top.get("metadata"))
+        top_source_file = str(top_metadata.get("source_file") or "")
+        top_heading = _text_key(top.get("title"))
+        passed = bool(matches) and top_source_file == case["expected_source_file"]
+        if passed and case["expected_headings"]:
+            passed = top_heading in case["expected_headings"]
+        if not passed:
+            report["errors"].append(
+                f"ranking check failed for {case['name']}: expected {case['expected_source_file']}, got {top_source_file or 'empty'}"
+            )
+        query_results[case["name"]] = {
+            "query": case["query"],
+            "expected_source_file": case["expected_source_file"],
+            "top_source_file": top_source_file,
+            "top_heading": str(top.get("title") or ""),
+            "top_score": float(top["score"]) if top.get("score") is not None else None,
+            "passed": passed,
+        }
+    report["queries"] = query_results
+    if report["errors"]:
+        raise RuntimeError("search-doc validation failed: " + "; ".join(report["errors"]))
+    return report
 
 
 async def build_search_docs(conn, *, embeddings_enabled: bool = True) -> dict[str, int]:

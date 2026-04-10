@@ -8,13 +8,14 @@ import os
 import uuid
 from contextvars import ContextVar
 from time import perf_counter
+from typing import MutableMapping
 
 from aiohttp import web
 from opentelemetry import trace
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.propagate import extract
+from opentelemetry.propagate import extract, inject
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
@@ -133,6 +134,19 @@ def setup_observability(service_name: str) -> None:
         )
 
     INITIALIZED = True
+
+
+def inject_trace_context(
+    headers: MutableMapping[str, str] | None = None,
+    *,
+    request_id: str | None = None,
+) -> dict[str, str]:
+    carrier = dict(headers or {})
+    inject(carrier)
+    resolved_request_id = request_id or REQUEST_ID.get("-")
+    if resolved_request_id and resolved_request_id != "-":
+        carrier.setdefault("X-Request-Id", resolved_request_id)
+    return carrier
 
 
 @web.middleware

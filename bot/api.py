@@ -4,6 +4,7 @@ from typing import Optional
 import aiohttp
 
 from config import CORE_URL
+from observability import inject_trace_context
 
 
 class CoreResponse:
@@ -33,6 +34,7 @@ async def call_core(
                     "source": "bot",
                     "chat_type": chat_type
                 },
+                headers=inject_trace_context(),
                 timeout=aiohttp.ClientTimeout(total=300)  # 5 min: agent may need 20+ iterations with web search
             ) as resp:
                 if resp.status != 200:
@@ -55,7 +57,8 @@ async def clear_session(user_id: int) -> bool:
         async with aiohttp.ClientSession() as session:
             await session.post(
                 f"{CORE_URL}/api/clear",
-                json={"user_id": user_id}
+                json={"user_id": user_id},
+                headers=inject_trace_context(),
             )
         return True
     except:

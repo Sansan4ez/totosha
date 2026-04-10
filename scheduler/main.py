@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import logging
 
-from observability import instrument_fastapi, setup_observability
+from observability import inject_trace_context, instrument_fastapi, setup_observability
 
 setup_observability("scheduler")
 logger = logging.getLogger("scheduler")
@@ -152,7 +152,7 @@ async def execute_task(task: Task):
                     "text": f"⏰ Напоминание: {task.content}"
                 }
                 url = f"{BOT_URL}/send" if task.source == "bot" else f"{BOT_URL}/send_userbot"
-                async with session.post(url, json=payload, timeout=30) as resp:
+                async with session.post(url, json=payload, headers=inject_trace_context(), timeout=30) as resp:
                     if resp.status == 200:
                         logger.info(f"Task {task.id}: message sent")
                     else:
@@ -169,7 +169,12 @@ async def execute_task(task: Task):
                     "source": task.source,
                     "chat_type": "private"
                 }
-                async with session.post(f"{CORE_URL}/api/chat", json=payload, timeout=120) as resp:
+                async with session.post(
+                    f"{CORE_URL}/api/chat",
+                    json=payload,
+                    headers=inject_trace_context(),
+                    timeout=120,
+                ) as resp:
                     if resp.status == 200:
                         result = await resp.json()
                         response_text = result.get("response", "")
@@ -182,7 +187,12 @@ async def execute_task(task: Task):
                                 "text": f"📅 Scheduled task:\n\n{response_text}"
                             }
                             url = f"{BOT_URL}/send" if task.source == "bot" else f"{BOT_URL}/send_userbot"
-                            async with session.post(url, json=send_payload, timeout=30) as send_resp:
+                            async with session.post(
+                                url,
+                                json=send_payload,
+                                headers=inject_trace_context(),
+                                timeout=30,
+                            ) as send_resp:
                                 if send_resp.status == 200:
                                     logger.info(f"Task {task.id}: response sent to chat")
                                 else:

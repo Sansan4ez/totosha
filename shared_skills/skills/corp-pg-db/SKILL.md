@@ -19,6 +19,7 @@ description: Поиск по корпоративной базе Postgres: compa
 - Используй только tool `corp_db_search`.
 - Не используй `run_command`, SQL CLI и прямое чтение файлов как способ обратиться к корпоративной БД.
 - Для коротких company-fact вопросов `corp_db_search` является default-path.
+- Если пользователь явно просит документ, цитату, фрагмент, PDF, сертификат, паспорт, регламент, нормы или другой file-backed context, не удерживай такой запрос в `corp_db_search`: передавай его в `doc-search` как primary `doc_domain` route.
 - Если после поиска в БД нужен свободный текстовый контекст, правило или цитата из документа, дополнительно используй `doc-search`.
 
 ## Режимы поиска
@@ -88,7 +89,7 @@ description: Поиск по корпоративной базе Postgres: compa
 - Если `corp_db_search(kind=hybrid_search, profile=kb_search)` вернул `success` для короткого company-fact вопроса, отвечай по этому payload и останавливайся.
 - После успешного company-fact `kb_search` не делай `doc-search`, `doc_search`, `run_command`, `list_directory`, `read_file` или `search_text`, если пользователь явно не просил document context.
 - Только если company-fact `kb_search` дал `empty` или ошибку, переключайся на `doc-search`.
-- Если вопрос по смыслу документный: `сертификат`, `PDF`, `паспорт`, `закалённое стекло`, `чем отличается серия`, сначала используй `doc-search`, а не company-fact `kb_search`.
+- Если вопрос по смыслу document-domain: `сертификат`, `PDF`, `паспорт`, `регламент`, `нормы`, `скан`, `закалённое стекло`, `чем отличается серия`, сначала используй `doc-search`, а не company-fact `kb_search`. Для таких запросов prior KB miss не требуется.
 
 ## Как извлекать признаки в structured args
 

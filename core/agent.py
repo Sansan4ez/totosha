@@ -12,9 +12,14 @@ from typing import Optional, Any
 from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
-from documents.routing import select_route_card
+from documents.routing import select_route
 from logger import agent_logger, log_agent_step
-from observability import REQUEST_ID as OBS_REQUEST_ID
+from observability import (
+    REQUEST_ID as OBS_REQUEST_ID,
+    inject_trace_context,
+    record_span_event,
+    update_correlation_context,
+)
 from run_meta import run_meta_append_artifact, run_meta_get, run_meta_update_llm
 from tool_output_policy import get_bench_payload_format, get_runtime_payload_format
 from tools import execute_tool, filter_tools_for_session
@@ -47,6 +52,25 @@ COMPANY_FACT_INTENT_KEYWORDS = {
     "contacts": ("контакт", "телефон", "email", "e-mail", "почт", "связат", "консультац"),
     "about_company": ("о компании", "общая информация о компании", "расскажи о компании", "чем занимается компания", "наш профиль"),
 }
+COMPANY_COMMON_FACET_BY_SUBTYPE = {
+    "requisites": "requisites",
+    "year_founded": "about_company",
+    "website": "contacts",
+    "address": "contacts",
+    "socials": "socials",
+    "contacts": "contacts",
+    "about_company": "about_company",
+}
+COMPANY_COMMON_FACET_KEYWORDS = {
+    "certification": ("сертифик", "декларац", "экспертиз", "сертификац"),
+    "news": ("новост",),
+    "legal": ("правов", "юридическ", "договор", "политик"),
+    "price": ("прайс", "цена", "стоимост"),
+    "lighting_calculation": ("расчет освещ", "расчёт освещ", "освещен", "освещён"),
+    "fire_hazard_zones": ("пожароопас", "пожарная зона", "пожароопасных зон"),
+    "quality": ("качеств", "комплектующ", "надежн", "надёжн"),
+    "series": ("серии", "серия", "линейк", "модел"),
+}
 DOCUMENT_LOOKUP_KEYWORDS = (
     "сертификат", "пожарный сертификат", "ce", "pdf", "паспорт", "документ",
     "закаленное стекло", "закалённое стекло", "закал", "стекл",
@@ -60,6 +84,79 @@ APPLICATION_RECOMMENDATION_KEYWORDS = (
     "стадион", "арена", "спорткомплекс", "футболь", "карьер", "рудник", "гок",
     "аэропорт", "апрон", "перрон", "склад", "логист", "высокие прол", "high-bay",
     "high bay", "офис", "кабинет", "абк", "агрессивн", "мойка", "азс",
+)
+LUXNET_ROUTE_KEYWORDS = (
+    "luxnet",
+    "люкснет",
+)
+LIGHTING_NORMS_ROUTE_KEYWORDS = (
+    "нормы освещ",
+    "норма освещ",
+    "освещенност",
+    "освещённост",
+    "норматив освещ",
+    "естественное освещение",
+    "искусственное освещение",
+)
+KB_ROUTE_SPECS = {
+    "corp_kb.company_common": {
+        "title": "Company common knowledge base",
+        "source_files": ["common_information_about_company.md"],
+    },
+    "corp_kb.luxnet": {
+        "title": "Luxnet knowledge base",
+        "source_files": ["about_Luxnet.md"],
+    },
+    "corp_kb.lighting_norms": {
+        "title": "Lighting norms knowledge base",
+        "source_files": ["normy_osveschennosty.md"],
+    },
+}
+KB_ROUTE_LAMP_FILTER_KEYS = (
+    "category",
+    "mounting_type",
+    "ip",
+    "beam_pattern",
+    "climate_execution",
+    "electrical_protection_class",
+    "explosion_protection_marking",
+    "supply_voltage_raw",
+    "dimensions_raw",
+    "power_factor_operator",
+    "voltage_kind",
+    "explosion_protected",
+    "power_w_min",
+    "power_w_max",
+    "flux_lm_min",
+    "flux_lm_max",
+    "cct_k_min",
+    "cct_k_max",
+    "weight_kg_min",
+    "weight_kg_max",
+    "cri_ra_min",
+    "cri_ra_max",
+    "power_factor_min_min",
+    "power_factor_min_max",
+    "temp_c_min",
+    "temp_c_max",
+    "voltage_nominal_v_min",
+    "voltage_nominal_v_max",
+    "voltage_min_v_min",
+    "voltage_min_v_max",
+    "voltage_max_v_min",
+    "voltage_max_v_max",
+    "voltage_tol_minus_pct_min",
+    "voltage_tol_minus_pct_max",
+    "voltage_tol_plus_pct_min",
+    "voltage_tol_plus_pct_max",
+    "length_mm_min",
+    "length_mm_max",
+    "width_mm_min",
+    "width_mm_max",
+    "height_mm_min",
+    "height_mm_max",
+    "warranty_years_min",
+    "warranty_years_max",
 )
 
 EXPLICIT_WIKI_KEYWORDS = (
@@ -113,20 +210,59 @@ def _normalize_routing_text(text: Any) -> str:
     return re.sub(r"\s+", " ", str(text or "").lower()).strip()
 
 
+def _strip_transport_wrappers(text: Any) -> str:
+    lines: list[str] = []
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        normalized = _normalize_routing_text(line)
+        if normalized.startswith("[от:") and normalized.endswith("]"):
+            continue
+        if normalized.startswith("[реплай на сообщение") and normalized.endswith("]"):
+            continue
+        if normalized in {"[случайный комментарий]", "[random comment]"}:
+            continue
+        if "голосовое сообщение" in normalized or "voice message" in normalized:
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _routing_message_text(message: Any) -> str:
+    return _normalize_routing_text(_strip_transport_wrappers(message))
+
+
+def _routing_query_text(message: Any) -> str:
+    return re.sub(r"\s+", " ", _strip_transport_wrappers(message)).strip()
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        normalized = _normalize_routing_text(value)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(value)
+    return result
+
+
 def _text_has_any(text: str, keywords: tuple[str, ...]) -> bool:
     return any(keyword in text for keyword in keywords)
 
 
 def _is_explicit_wiki_request(message: str) -> bool:
-    return _text_has_any(_normalize_routing_text(message), EXPLICIT_WIKI_KEYWORDS)
+    return _text_has_any(_routing_message_text(message), EXPLICIT_WIKI_KEYWORDS)
 
 
 def _is_document_lookup_intent(message: str) -> bool:
-    return _text_has_any(_normalize_routing_text(message), DOCUMENT_LOOKUP_KEYWORDS)
+    return _text_has_any(_routing_message_text(message), DOCUMENT_LOOKUP_KEYWORDS)
 
 
 def _is_portfolio_lookup_intent(message: str) -> bool:
-    normalized = _normalize_routing_text(message)
+    normalized = _routing_message_text(message)
     return _text_has_any(normalized, PORTFOLIO_LOOKUP_KEYWORDS) and _text_has_any(
         normalized,
         APPLICATION_RECOMMENDATION_KEYWORDS + ("наружн", "уличн", "дорожн", "промышлен", "тяжел"),
@@ -138,7 +274,7 @@ def _is_company_fact_intent(message: str) -> bool:
 
 
 def _company_fact_intent_type(message: str) -> str:
-    normalized = _normalize_routing_text(message)
+    normalized = _routing_message_text(message)
     if _is_document_lookup_intent(normalized) or _is_portfolio_lookup_intent(normalized) or _is_application_recommendation_intent(normalized):
         return ""
     for subtype in ("requisites", "year_founded", "website", "address", "socials", "contacts", "about_company"):
@@ -150,7 +286,72 @@ def _company_fact_intent_type(message: str) -> str:
 
 
 def _is_application_recommendation_intent(message: str) -> bool:
-    return _text_has_any(_normalize_routing_text(message), APPLICATION_RECOMMENDATION_KEYWORDS)
+    return _text_has_any(_routing_message_text(message), APPLICATION_RECOMMENDATION_KEYWORDS)
+
+
+def _company_common_topic_facets(message: str) -> list[str]:
+    normalized = _routing_message_text(message)
+    facets: list[str] = []
+    subtype = _company_fact_intent_type(message)
+    mapped = COMPANY_COMMON_FACET_BY_SUBTYPE.get(subtype)
+    if mapped:
+        facets.append(mapped)
+    for facet, keywords in COMPANY_COMMON_FACET_KEYWORDS.items():
+        if _text_has_any(normalized, keywords):
+            facets.append(facet)
+    if not facets and _text_has_any(normalized, ("компан", "ладзавод", "ladzavod", "лайт аудио дизайн")):
+        facets.append("about_company")
+    return _dedupe_strings(facets)
+
+
+def _lighting_norms_topic_facets(message: str) -> list[str]:
+    normalized = _routing_message_text(message)
+    facets: list[str] = []
+    if _text_has_any(normalized, ("таблиц", "нормативн", "lx", "люкс")):
+        facets.append("tables")
+    if _text_has_any(normalized, ("естествен", "искусствен")):
+        facets.append("definitions")
+    if _text_has_any(normalized, ("правил", "требован", "как нужно", "какие нормы")):
+        facets.append("rules")
+    return _dedupe_strings(facets)
+
+
+def _authoritative_kb_route_hint(message: str) -> dict[str, Any] | None:
+    normalized = _routing_message_text(message)
+    if not normalized:
+        return None
+    route_id = ""
+    topic_facets: list[str] = []
+    if _text_has_any(normalized, LUXNET_ROUTE_KEYWORDS):
+        route_id = "corp_kb.luxnet"
+    elif _text_has_any(normalized, LIGHTING_NORMS_ROUTE_KEYWORDS):
+        route_id = "corp_kb.lighting_norms"
+        topic_facets = _lighting_norms_topic_facets(message)
+    elif (
+        bool(_company_fact_intent_type(message))
+        or _text_has_any(normalized, ("о самой компании", "о компании", "компания", "ладзавод", "ladzavod"))
+    ) and not _is_document_lookup_intent(normalized) and not _is_portfolio_lookup_intent(normalized) and not _is_application_recommendation_intent(normalized):
+        route_id = "corp_kb.company_common"
+        topic_facets = _company_common_topic_facets(message)
+    if not route_id:
+        return None
+    spec = KB_ROUTE_SPECS[route_id]
+    tool_args: dict[str, Any] = {
+        "kind": "hybrid_search",
+        "profile": "kb_route_lookup",
+        "knowledge_route_id": route_id,
+        "source_files": list(spec["source_files"]),
+    }
+    if topic_facets:
+        tool_args["topic_facets"] = topic_facets
+    return {
+        "route_id": route_id,
+        "source": "corp_db",
+        "title": spec["title"],
+        "tool_name": "corp_db_search",
+        "tool_args": tool_args,
+        "score": 100,
+    }
 
 
 def _parse_json_object(raw_text: str) -> dict[str, Any]:
@@ -159,6 +360,29 @@ def _parse_json_object(raw_text: str) -> dict[str, Any]:
         return parsed if isinstance(parsed, dict) else {}
     except Exception:
         return {}
+
+
+def _document_identifier(args: dict[str, Any] | None, tool_output: str = "") -> str:
+    preferred_document_ids = (args or {}).get("preferred_document_ids")
+    if isinstance(preferred_document_ids, list):
+        for item in preferred_document_ids:
+            value = str(item or "").strip()
+            if value:
+                return value
+    elif isinstance(preferred_document_ids, str) and preferred_document_ids.strip():
+        return preferred_document_ids.strip()
+
+    payload = _parse_json_object(tool_output)
+    results = payload.get("results")
+    if isinstance(results, list):
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            for key in ("document_id", "relative_path", "path", "document_title"):
+                value = str(row.get(key) or "").strip()
+                if value:
+                    return value
+    return ""
 
 
 def _company_fact_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -265,18 +489,48 @@ def _company_fact_payload_is_relevant(payload: dict[str, Any], message: str) -> 
 def _is_successful_company_fact_kb_search(args: dict, tool_output: str, message: str) -> bool:
     if str(args.get("kind") or "") != "hybrid_search":
         return False
-    if str(args.get("profile") or "") != "kb_search":
+    if str(args.get("profile") or "") not in {"kb_search", "kb_route_lookup"}:
         return False
 
     payload = _parse_json_object(tool_output)
     entity_types = args.get("entity_types") or []
     if not (
         (isinstance(entity_types, list) and any(str(item).lower() == "company" for item in entity_types))
+        or str(args.get("knowledge_route_id") or "") == "corp_kb.company_common"
         or _is_company_fact_intent(message)
         or _text_has_any(_normalize_routing_text(args.get("query")), COMPANY_FACT_KEYWORDS)
     ):
         return False
     return _company_fact_payload_is_relevant(payload, message)
+
+
+def _payload_matches_kb_route_scope(payload: dict[str, Any], source_files: list[str]) -> bool:
+    if payload.get("status") != "success":
+        return False
+    expected = {str(item) for item in source_files if str(item).strip()}
+    if not expected:
+        return False
+    for row in _company_fact_rows(payload):
+        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        source_file = str(metadata.get("source_file") or row.get("source_file") or "").strip()
+        if source_file in expected:
+            return True
+    return False
+
+
+def _authoritative_kb_evidence_status(args: dict[str, Any], tool_result: ToolResult, message: str, routing_state: dict[str, Any]) -> str:
+    if not tool_result.success:
+        return "error"
+    payload = _parse_json_object(tool_result.output or "")
+    if payload.get("status") == "empty":
+        return "empty"
+    knowledge_route_id = str(args.get("knowledge_route_id") or routing_state.get("knowledge_route_id") or "")
+    if knowledge_route_id == "corp_kb.company_common":
+        return "sufficient" if _company_fact_payload_is_relevant(payload, message) else "weak"
+    source_files = routing_state.get("source_file_scope")
+    if isinstance(source_files, list) and _payload_matches_kb_route_scope(payload, source_files):
+        return "sufficient"
+    return "weak"
 
 
 def _is_successful_application_recommendation(args: dict, tool_output: str, message: str) -> bool:
@@ -370,6 +624,92 @@ def _is_retrieval_tool_attempt(name: str, args: dict) -> bool:
     return _is_wiki_tool_attempt(name, args)
 
 
+def _is_doc_domain_route(state: dict[str, Any]) -> bool:
+    if str(state.get("selected_route_kind") or "") == "doc_domain":
+        return True
+    if str(state.get("route_source") or "") == "doc_search":
+        return True
+    return str(state.get("intent") or "") == "document_lookup"
+
+
+def _has_authoritative_kb_route(state: dict[str, Any]) -> bool:
+    return bool(state.get("knowledge_route_id"))
+
+
+def _doc_domain_evidence_status(tool_result: ToolResult) -> str:
+    if not tool_result.success:
+        return "error"
+    payload = _parse_json_object(tool_result.output or "")
+    if payload.get("status") == "empty":
+        return "empty"
+    results = payload.get("results")
+    if payload.get("status") == "success" and isinstance(results, list) and len(results) > 0:
+        return "sufficient"
+    return "weak"
+
+
+def _is_authoritative_kb_tool_attempt(name: str, args: dict, state: dict[str, Any]) -> bool:
+    if name != "corp_db_search" or not _has_authoritative_kb_route(state):
+        return False
+    kind = str(args.get("kind") or "hybrid_search")
+    if kind and kind != "hybrid_search":
+        return False
+    requested_route_id = str(args.get("knowledge_route_id") or "")
+    if requested_route_id and requested_route_id != str(state.get("knowledge_route_id") or ""):
+        return False
+    requested_source_files = args.get("source_files")
+    expected_source_files = state.get("source_file_scope")
+    if isinstance(requested_source_files, list) and isinstance(expected_source_files, list) and requested_source_files:
+        return requested_source_files == expected_source_files
+    return True
+
+
+def _needs_authoritative_kb_retry(state: dict[str, Any]) -> bool:
+    if not _has_authoritative_kb_route(state):
+        return False
+    if bool(state.get("explicit_wiki_request")):
+        return False
+    if str(state.get("retrieval_phase") or "") == "closed":
+        return False
+    evidence_status = str(state.get("retrieval_evidence_status") or "")
+    attempt_count = int(state.get("authoritative_kb_attempt_count") or 0)
+    if attempt_count <= 0:
+        return True
+    return attempt_count < 2 and evidence_status in {"weak", "empty", "error"}
+
+
+def _closed_retrieval_blocks_tool_attempt(name: str, args: dict, state: dict[str, Any]) -> bool:
+    if str(state.get("retrieval_phase") or "") != "closed":
+        return False
+    if not _is_retrieval_tool_attempt(name, args):
+        return False
+    if (
+        bool(state.get("explicit_wiki_request"))
+        and not _is_doc_domain_route(state)
+        and _is_wiki_tool_attempt(name, args)
+    ):
+        return False
+    return True
+
+
+def _authoritative_kb_retry_error(state: dict[str, Any], attempted_tool: str) -> str:
+    route_id = str(state.get("knowledge_route_id") or "")
+    route_family = str(state.get("retrieval_route_family") or route_id)
+    return (
+        f"Routing guardrail: authoritative route family `{route_family}` must finish its primary attempt and one local retry "
+        f"before opening `{attempted_tool}`. Сначала вызови `corp_db_search` с `kind=hybrid_search` и "
+        f"`knowledge_route_id={route_id}`."
+    )
+
+
+def _closed_retrieval_error(state: dict[str, Any], attempted_tool: str) -> str:
+    route_family = str(state.get("retrieval_route_family") or state.get("knowledge_route_id") or "")
+    return (
+        f"Routing guardrail: authoritative route family `{route_family}` is already closed. "
+        f"Do not call `{attempted_tool}`; answer from the collected evidence."
+    )
+
+
 def _preferred_source_error(route_hint: dict[str, Any], attempted_tool: str) -> str:
     source = str(route_hint.get("source") or "")
     tool_name = str(route_hint.get("tool_name") or "")
@@ -410,6 +750,20 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["retrieval_route_id"] = str(state.get("route_id") or "")
         meta["retrieval_route_source"] = str(state.get("route_source") or "")
         meta["retrieval_route_score"] = int(state.get("route_score") or 0)
+        meta["retrieval_selected_route_kind"] = str(state.get("selected_route_kind") or "")
+        meta["retrieval_candidate_route_ids"] = list(state.get("candidate_route_ids") or [])
+        meta["retrieval_secondary_candidates"] = list(state.get("secondary_candidates") or [])
+        meta["retrieval_selection_reason"] = str(state.get("selection_reason") or "")
+        meta["retrieval_route_family"] = str(state.get("retrieval_route_family") or "")
+        meta["retrieval_phase"] = str(state.get("retrieval_phase") or "")
+        meta["retrieval_evidence_status"] = str(state.get("retrieval_evidence_status") or "")
+        meta["retrieval_retry_count"] = int(state.get("retrieval_retry_count") or 0)
+        meta["retrieval_close_reason"] = str(state.get("retrieval_close_reason") or "")
+        meta["knowledge_route_id"] = str(state.get("knowledge_route_id") or "")
+        meta["document_id"] = str(state.get("document_id") or "")
+        meta["source_file_scope"] = list(state.get("source_file_scope") or [])
+        meta["topic_facets"] = list(state.get("topic_facets") or [])
+        meta["finalizer_mode"] = str(state.get("finalizer_mode") or "")
         meta["retrieval_explicit_wiki_request"] = bool(state.get("explicit_wiki_request"))
         meta["retrieval_wiki_after_corp_db_success"] = bool(state.get("wiki_after_corp_db_success"))
         meta["routing_guardrail_hits"] = int(state.get("guardrail_activations", 0))
@@ -430,6 +784,21 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         if blocked_tool:
             meta["routing_guardrail_last_blocked_tool"] = blocked_tool
 
+    update_correlation_context(
+        selected_route_id=str(state.get("route_id") or ""),
+        selected_route_family=str(state.get("retrieval_route_family") or ""),
+        selected_route_kind=str(state.get("selected_route_kind") or ""),
+        selected_source=str(state.get("selected_source") or "unknown"),
+        knowledge_route_id=str(state.get("knowledge_route_id") or ""),
+        document_id=str(state.get("document_id") or ""),
+        retrieval_phase=str(state.get("retrieval_phase") or ""),
+        retrieval_evidence_status=str(state.get("retrieval_evidence_status") or ""),
+        retrieval_close_reason=str(state.get("retrieval_close_reason") or ""),
+        routing_guardrail_hits=int(state.get("guardrail_activations", 0)),
+        guardrail_blocked_tool=blocked_tool,
+        finalizer_mode=str(state.get("finalizer_mode") or ""),
+    )
+
     span = trace.get_current_span()
     try:
         span.set_attribute("retrieval.intent", str(state.get("intent") or ""))
@@ -437,6 +806,25 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         span.set_attribute("retrieval.route_id", str(state.get("route_id") or ""))
         span.set_attribute("retrieval.route_source", str(state.get("route_source") or ""))
         span.set_attribute("retrieval.route_score", int(state.get("route_score") or 0))
+        span.set_attribute("retrieval.selected_route_kind", str(state.get("selected_route_kind") or ""))
+        candidate_route_ids = state.get("candidate_route_ids")
+        if isinstance(candidate_route_ids, list):
+            span.set_attribute("retrieval.candidate_route_ids", ",".join(str(item) for item in candidate_route_ids))
+        span.set_attribute("retrieval.selection_reason", str(state.get("selection_reason") or ""))
+        span.set_attribute("retrieval.route_family", str(state.get("retrieval_route_family") or ""))
+        span.set_attribute("retrieval.phase", str(state.get("retrieval_phase") or ""))
+        span.set_attribute("retrieval.evidence_status", str(state.get("retrieval_evidence_status") or ""))
+        span.set_attribute("retrieval.retry_count", int(state.get("retrieval_retry_count") or 0))
+        span.set_attribute("retrieval.close_reason", str(state.get("retrieval_close_reason") or ""))
+        span.set_attribute("knowledge_route_id", str(state.get("knowledge_route_id") or ""))
+        span.set_attribute("document_id", str(state.get("document_id") or ""))
+        source_file_scope = state.get("source_file_scope")
+        if isinstance(source_file_scope, list):
+            span.set_attribute("source_file_scope", ",".join(str(item) for item in source_file_scope))
+        topic_facets = state.get("topic_facets")
+        if isinstance(topic_facets, list):
+            span.set_attribute("topic_facets", ",".join(str(item) for item in topic_facets))
+        span.set_attribute("finalizer_mode", str(state.get("finalizer_mode") or ""))
         span.set_attribute("retrieval.explicit_wiki_request", bool(state.get("explicit_wiki_request")))
         span.set_attribute("retrieval.wiki_after_corp_db_success", bool(state.get("wiki_after_corp_db_success")))
         span.set_attribute("retrieval.guardrail_hits", int(state.get("guardrail_activations", 0)))
@@ -450,6 +838,76 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         span.set_attribute("company_fact.bench_payload_format", str(state.get("company_fact_bench_payload_format") or ""))
         if blocked_tool:
             span.set_attribute("retrieval.guardrail_last_blocked_tool", blocked_tool)
+            event_signature = f"guardrail:{blocked_tool}:{state.get('guardrail_activations', 0)}"
+            if state.get("_last_observability_event") != event_signature:
+                state["_last_observability_event"] = event_signature
+                record_span_event(
+                    "retrieval.guardrail_blocked",
+                    selected_route_id=str(state.get("route_id") or ""),
+                    selected_route_family=str(state.get("retrieval_route_family") or ""),
+                    selected_route_kind=str(state.get("selected_route_kind") or ""),
+                    selected_source=str(state.get("selected_source") or "unknown"),
+                    knowledge_route_id=str(state.get("knowledge_route_id") or ""),
+                    document_id=str(state.get("document_id") or ""),
+                    guardrail_blocked_tool=blocked_tool,
+                    routing_guardrail_hits=int(state.get("guardrail_activations", 0)),
+                    retrieval_phase=str(state.get("retrieval_phase") or ""),
+                )
+                agent_logger.warning(
+                    "Routing event=guardrail_blocked blocked_tool=%s route_id=%s route_family=%s route_kind=%s",
+                    blocked_tool,
+                    state.get("route_id") or "",
+                    state.get("retrieval_route_family") or "",
+                    state.get("selected_route_kind") or "",
+                )
+        elif str(state.get("retrieval_close_reason") or ""):
+            event_signature = (
+                f"closed:{state.get('retrieval_close_reason') or ''}:{state.get('retrieval_phase') or ''}"
+            )
+            if state.get("_last_observability_event") != event_signature:
+                state["_last_observability_event"] = event_signature
+                record_span_event(
+                    "retrieval.closed",
+                    selected_route_id=str(state.get("route_id") or ""),
+                    selected_route_family=str(state.get("retrieval_route_family") or ""),
+                    selected_route_kind=str(state.get("selected_route_kind") or ""),
+                    selected_source=str(state.get("selected_source") or "unknown"),
+                    knowledge_route_id=str(state.get("knowledge_route_id") or ""),
+                    document_id=str(state.get("document_id") or ""),
+                    retrieval_phase=str(state.get("retrieval_phase") or ""),
+                    retrieval_evidence_status=str(state.get("retrieval_evidence_status") or ""),
+                    retrieval_close_reason=str(state.get("retrieval_close_reason") or ""),
+                    finalizer_mode=str(state.get("finalizer_mode") or ""),
+                )
+                agent_logger.info(
+                    "Routing event=retrieval_closed reason=%s route_id=%s route_family=%s route_kind=%s",
+                    state.get("retrieval_close_reason") or "",
+                    state.get("route_id") or "",
+                    state.get("retrieval_route_family") or "",
+                    state.get("selected_route_kind") or "",
+                )
+        elif str(state.get("finalizer_mode") or "") == "deterministic_fallback":
+            event_signature = f"fallback:{state.get('finalizer_mode') or ''}:{state.get('retrieval_phase') or ''}"
+            if state.get("_last_observability_event") != event_signature:
+                state["_last_observability_event"] = event_signature
+                record_span_event(
+                    "retrieval.fallback_finalizer",
+                    selected_route_id=str(state.get("route_id") or ""),
+                    selected_route_family=str(state.get("retrieval_route_family") or ""),
+                    selected_route_kind=str(state.get("selected_route_kind") or ""),
+                    selected_source=str(state.get("selected_source") or "unknown"),
+                    knowledge_route_id=str(state.get("knowledge_route_id") or ""),
+                    document_id=str(state.get("document_id") or ""),
+                    finalizer_mode=str(state.get("finalizer_mode") or ""),
+                    retrieval_phase=str(state.get("retrieval_phase") or ""),
+                )
+                agent_logger.warning(
+                    "Routing event=fallback_finalizer mode=%s route_id=%s route_family=%s route_kind=%s",
+                    state.get("finalizer_mode") or "",
+                    state.get("route_id") or "",
+                    state.get("retrieval_route_family") or "",
+                    state.get("selected_route_kind") or "",
+                )
     except Exception:
         return None
 
@@ -497,7 +955,7 @@ def _expand_company_fact_query(message: str) -> str:
         return "реквизиты компании ладзавод инн кпп огрн"
     if subtype == "socials":
         return "telegram youtube vk соцсети ladzavod"
-    normalized = _normalize_routing_text(message)
+    normalized = _routing_message_text(message)
     if _text_has_any(normalized, ("консультац", "расчет", "расчёт", "освещен", "освещён")):
         return "lad@ladled.ru 239-18-11 консультация расчет освещенности"
     if subtype == "contacts":
@@ -508,7 +966,7 @@ def _expand_company_fact_query(message: str) -> str:
 
 
 def _contact_doc_search_query(message: str) -> str:
-    normalized = _normalize_routing_text(message)
+    normalized = _routing_message_text(message)
     if _text_has_any(normalized, ("email", "e-mail", "почт")):
         return "lad@ladled.ru"
     if _text_has_any(normalized, ("телефон", "позвон", "связат")):
@@ -622,19 +1080,57 @@ def _render_company_fact_payload(payload: dict[str, Any], message: str) -> str:
     return "\n".join(lines)
 
 
-def _rewrite_company_fact_search_args(args: dict[str, Any], message: str) -> dict[str, Any]:
-    rewritten: dict[str, Any] = {}
+def _render_generic_kb_payload(payload: dict[str, Any]) -> str:
+    texts = _collect_result_texts(payload)
+    if not texts:
+        return ""
+    lines: list[str] = []
+    for text in texts[:2]:
+        snippet = str(text).strip()
+        if snippet and snippet not in lines:
+            lines.append(snippet)
+    return "\n".join(lines)
+
+
+def _strip_kb_route_lamp_filters(args: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in (args or {}).items() if key not in KB_ROUTE_LAMP_FILTER_KEYS}
+
+
+def _rewrite_authoritative_kb_search_args(args: dict[str, Any], message: str, routing_state: dict[str, Any]) -> dict[str, Any]:
+    route_id = str(routing_state.get("knowledge_route_id") or "")
+    if not route_id:
+        return dict(args or {})
+    rewritten = _strip_kb_route_lamp_filters(args)
+    preserved: dict[str, Any] = {}
     for key in ("limit", "offset"):
-        value = args.get(key)
+        value = rewritten.get(key)
         if isinstance(value, int) and value > 0:
-            rewritten[key] = value
-    if bool(args.get("include_debug")):
-        rewritten["include_debug"] = True
-    rewritten["kind"] = "hybrid_search"
-    rewritten["profile"] = "kb_search"
-    rewritten["entity_types"] = ["company"]
-    rewritten["query"] = _expand_company_fact_query(message)
-    return rewritten
+            preserved[key] = value
+    if bool(rewritten.get("include_debug")):
+        preserved["include_debug"] = True
+    preserved["kind"] = "hybrid_search"
+    preserved["profile"] = "kb_route_lookup"
+    preserved["knowledge_route_id"] = route_id
+    source_files = routing_state.get("source_file_scope")
+    if isinstance(source_files, list) and source_files:
+        preserved["source_files"] = list(source_files)
+    topic_facets = routing_state.get("topic_facets")
+    if isinstance(topic_facets, list) and topic_facets:
+        preserved["topic_facets"] = list(topic_facets)
+    if route_id == "corp_kb.company_common":
+        preserved["query"] = _expand_company_fact_query(message)
+    else:
+        preserved["query"] = _routing_query_text(message) or str(message or "")
+    return preserved
+
+
+def _rewrite_company_fact_search_args(args: dict[str, Any], message: str) -> dict[str, Any]:
+    routing_state = {
+        "knowledge_route_id": "corp_kb.company_common",
+        "source_file_scope": list(KB_ROUTE_SPECS["corp_kb.company_common"]["source_files"]),
+        "topic_facets": _company_common_topic_facets(message),
+    }
+    return _rewrite_authoritative_kb_search_args(args, message, routing_state)
 
 
 def _render_document_payload(payload: dict[str, Any]) -> str:
@@ -709,6 +1205,9 @@ def _render_deterministic_tool_output(name: str, args: dict[str, Any], output: s
         return ""
     kind = str(args.get("kind") or payload.get("kind") or "")
     if kind == "hybrid_search":
+        knowledge_route_id = str(args.get("knowledge_route_id") or "")
+        if knowledge_route_id in {"corp_kb.luxnet", "corp_kb.lighting_norms"}:
+            return _render_generic_kb_payload(payload)
         return _render_company_fact_payload(payload, message)
     if kind == "application_recommendation":
         return _render_application_payload(payload)
@@ -732,7 +1231,10 @@ def _build_deterministic_fallback_call(
             elif tool_name == "corp_db_search":
                 kind = str(args.get("kind") or "")
                 if kind == "hybrid_search":
-                    args = _rewrite_company_fact_search_args(args, message)
+                    if str(routing_state.get("knowledge_route_id") or ""):
+                        args = _rewrite_authoritative_kb_search_args(args, message, routing_state)
+                    else:
+                        args = _rewrite_company_fact_search_args(args, message)
                 elif kind in {"application_recommendation", "portfolio_by_sphere", "lamp_exact"}:
                     args["query"] = message
                     if kind == "portfolio_by_sphere":
@@ -740,6 +1242,11 @@ def _build_deterministic_fallback_call(
             return tool_name, args
 
     intent = str(routing_state.get("intent") or "other")
+    if str(routing_state.get("knowledge_route_id") or ""):
+        return (
+            "corp_db_search",
+            _rewrite_authoritative_kb_search_args({}, message, routing_state),
+        )
     if intent == "company_fact":
         return (
             "corp_db_search",
@@ -775,7 +1282,13 @@ async def _deterministic_empty_response_fallback(
     )
     if routing_state.get("intent") == "company_fact":
         routing_state["company_fact_fallback_reason"] = "empty_llm_completion"
-    tool_result = await execute_tool(name, args, tool_ctx)
+    tool_result = await execute_tool(
+        name,
+        args,
+        tool_ctx,
+        tool_call_id=f"fallback-{iteration}-{name}",
+        tool_call_seq=0,
+    )
     if not tool_result.success:
         agent_logger.warning(
             "[iter %s] Deterministic fallback tool failed: %s",
@@ -788,6 +1301,11 @@ async def _deterministic_empty_response_fallback(
     if isinstance(bench_artifact, dict):
         run_meta_append_artifact(bench_artifact)
     _record_tool_output_contract(name, tool_result, routing_state)
+    if name == "doc_search":
+        document_id = _document_identifier(args, tool_result.output or "")
+        if document_id and not routing_state.get("document_id"):
+            routing_state["document_id"] = document_id
+            _update_routing_observability(routing_state)
 
     rendered = _render_deterministic_tool_output(name, args, tool_result.output or "", message)
     if not rendered and name == "corp_db_search" and _looks_like_contact_intent(message):
@@ -798,12 +1316,22 @@ async def _deterministic_empty_response_fallback(
             iteration,
             json.dumps(doc_args, ensure_ascii=False),
         )
-        doc_result = await execute_tool("doc_search", doc_args, tool_ctx)
+        doc_result = await execute_tool(
+            "doc_search",
+            doc_args,
+            tool_ctx,
+            tool_call_id=f"fallback-{iteration}-doc_search",
+            tool_call_seq=0,
+        )
         if doc_result.success:
             bench_artifact = doc_result.metadata.get("bench_artifact") if isinstance(doc_result.metadata, dict) else None
             if isinstance(bench_artifact, dict):
                 run_meta_append_artifact(bench_artifact)
             _record_tool_output_contract("doc_search", doc_result, routing_state)
+            document_id = _document_identifier(doc_args, doc_result.output or "")
+            if document_id and not routing_state.get("document_id"):
+                routing_state["document_id"] = document_id
+                _update_routing_observability(routing_state)
             rendered = _render_deterministic_tool_output("doc_search", doc_args, doc_result.output or "", message)
             if rendered:
                 routing_state["selected_source"] = "doc_search"
@@ -811,6 +1339,7 @@ async def _deterministic_empty_response_fallback(
                 routing_state["company_fact_fast_path"] = True
                 routing_state["company_fact_rendered"] = True
                 routing_state["company_fact_finalizer_mode"] = "deterministic_fallback"
+                routing_state["finalizer_mode"] = "deterministic_fallback"
                 _update_routing_observability(routing_state)
                 return rendered
     if not rendered:
@@ -828,6 +1357,7 @@ async def _deterministic_empty_response_fallback(
             routing_state["company_fact_fast_path"] = True
             routing_state["company_fact_rendered"] = True
             routing_state["company_fact_finalizer_mode"] = "deterministic_fallback"
+            routing_state["finalizer_mode"] = "deterministic_fallback"
         elif kind == "application_recommendation":
             routing_state["corp_db_application_success"] = True
         elif kind == "portfolio_by_sphere":
@@ -1240,7 +1770,7 @@ async def call_llm(messages: list, tools: list, model_override: str = "") -> dic
     agent_logger.debug("=" * 60)
     
     request_id = OBS_REQUEST_ID.get("-")
-    headers = {"X-Request-Id": request_id} if request_id and request_id != "-" else {}
+    headers = inject_trace_context(request_id=request_id)
     llm_started = perf_counter()
     max_attempts = _llm_max_attempts()
 
@@ -1554,12 +2084,18 @@ async def run_agent(
     if google_email:
         workspace_info += f"\nGoogle: {google_email} (authorized, use as user_google_email for Google Workspace tools)"
     
-    route_hint = select_route_card(message)
+    routing_message = _routing_query_text(message) or str(message or "")
+    explicit_document_request = _is_document_lookup_intent(routing_message)
+    route_selection = select_route(routing_message, explicit_document_request=explicit_document_request)
+    route_hint = route_selection.get("selected") or _authoritative_kb_route_hint(routing_message)
     if route_hint:
         workspace_info += (
             "\nRouting hint: "
             f"route_id={route_hint.get('route_id')} "
+            f"route_kind={route_hint.get('selected_route_kind') or route_hint.get('route_kind') or ''} "
             f"preferred_source={route_hint.get('source')} "
+            f"score={route_hint.get('score') or route_selection.get('selection_score') or 0} "
+            f"reason={route_hint.get('selection_reason') or route_selection.get('selection_reason') or ''} "
             f"tool={route_hint.get('tool_name')} "
             f"tool_args={json.dumps(route_hint.get('tool_args') or {}, ensure_ascii=False)}"
         )
@@ -1583,16 +2119,45 @@ async def run_agent(
     
     final_response = ""
     iteration = 0
+    tool_call_seq = 0
     has_search_tool = False  # Track if search_web was called
-    company_fact_intent_type = _company_fact_intent_type(message)
+    route_hint_args = dict(route_hint.get("tool_args") or {}) if route_hint else {}
+    company_fact_intent_type = _company_fact_intent_type(routing_message)
+    authoritative_route_id = str(route_hint_args.get("knowledge_route_id") or "")
+    source_file_scope = list(route_hint_args.get("source_files") or []) if route_hint_args else []
+    topic_facets = list(route_hint_args.get("topic_facets") or []) if route_hint_args else []
+    preferred_document_ids = list(route_hint_args.get("preferred_document_ids") or []) if route_hint_args else []
+    selected_document_id = str(route_hint.get("document_id") or "") if route_hint else ""
+    if not selected_document_id:
+        for item in preferred_document_ids:
+            value = str(item or "").strip()
+            if value:
+                selected_document_id = value
+                break
+    if not topic_facets and authoritative_route_id == "corp_kb.company_common":
+        topic_facets = _company_common_topic_facets(routing_message)
+    elif not topic_facets and authoritative_route_id == "corp_kb.lighting_norms":
+        topic_facets = _lighting_norms_topic_facets(routing_message)
+    selected_route_kind = str(
+        route_hint.get("selected_route_kind") or route_hint.get("route_kind") or ""
+    ) if route_hint else ""
+    if not selected_route_kind and route_hint:
+        selected_route_kind = "doc_domain" if str(route_hint.get("source") or "") == "doc_search" else "corp_table"
+    selection_reason = str(route_hint.get("selection_reason") or route_selection.get("selection_reason") or "") if route_hint else ""
+    if not selection_reason and route_hint:
+        selection_reason = "authoritative_kb_fallback"
+    candidate_route_ids = list(route_hint.get("candidate_route_ids") or route_selection.get("candidate_route_ids") or []) if route_hint else []
+    if not candidate_route_ids and route_hint and route_hint.get("route_id"):
+        candidate_route_ids = [str(route_hint.get("route_id"))]
+    secondary_candidates = list(route_hint.get("secondary_candidates") or route_selection.get("secondary_candidates") or []) if route_hint else []
     routing_state = {
         "intent": (
             "document_lookup"
-            if _is_document_lookup_intent(message)
+            if _is_document_lookup_intent(routing_message)
             else "portfolio_lookup"
-            if _is_portfolio_lookup_intent(message)
+            if _is_portfolio_lookup_intent(routing_message)
             else "application_recommendation"
-            if _is_application_recommendation_intent(message)
+            if _is_application_recommendation_intent(routing_message)
             else "company_fact"
             if bool(company_fact_intent_type)
             else "other"
@@ -1601,7 +2166,22 @@ async def run_agent(
         "route_id": str(route_hint.get("route_id") or "") if route_hint else "",
         "route_source": str(route_hint.get("source") or "") if route_hint else "",
         "route_score": int(route_hint.get("score") or 0) if route_hint else 0,
-        "explicit_wiki_request": _is_explicit_wiki_request(message),
+        "selected_route_kind": selected_route_kind,
+        "candidate_route_ids": candidate_route_ids,
+        "secondary_candidates": secondary_candidates,
+        "selection_reason": selection_reason,
+        "retrieval_route_family": authoritative_route_id or str(route_hint.get("route_id") or "") if route_hint else "",
+        "retrieval_phase": "open",
+        "retrieval_evidence_status": "",
+        "retrieval_retry_count": 0,
+        "retrieval_close_reason": "",
+        "authoritative_kb_attempt_count": 0,
+        "knowledge_route_id": authoritative_route_id,
+        "document_id": selected_document_id,
+        "source_file_scope": source_file_scope,
+        "topic_facets": topic_facets,
+        "finalizer_mode": "",
+        "explicit_wiki_request": _is_explicit_wiki_request(routing_message),
         "company_fact_intent_type": company_fact_intent_type,
         "corp_db_company_fact_success": False,
         "corp_db_application_success": False,
@@ -1619,6 +2199,7 @@ async def run_agent(
         "company_fact_bench_payload_format": "",
         "tool_runtime_output_formats": {},
         "tool_bench_output_formats": {},
+        "_last_observability_event": "",
     }
     _update_routing_observability(routing_state)
     
@@ -1690,6 +2271,8 @@ async def run_agent(
             for tc in tool_calls:
                 fn = tc.get("function", {})
                 name = fn.get("name", "")
+                current_tool_call_id = str(tc.get("id") or "")
+                tool_call_seq += 1
                 raw_args = fn.get("arguments", "{}")
                 
                 # Track if search_web was called
@@ -1709,12 +2292,39 @@ async def run_agent(
                         agent_logger.error(f"[iter {iteration}] Could not fix JSON args for {name}")
                     args = {}
 
+                if name == "doc_search":
+                    document_id = _document_identifier(args)
+                    if document_id and not routing_state.get("document_id"):
+                        routing_state["document_id"] = document_id
+                        _update_routing_observability(routing_state)
+
+                update_correlation_context(
+                    tool_name=name,
+                    tool_call_id=current_tool_call_id,
+                    tool_call_seq=tool_call_seq,
+                    tool_status="planned",
+                )
+
                 if (
+                    name == "corp_db_search"
+                    and _has_authoritative_kb_route(routing_state)
+                    and int(routing_state.get("authoritative_kb_attempt_count") or 0) < 2
+                    and str(args.get("kind") or "hybrid_search") in {"", "hybrid_search"}
+                ):
+                    args = _rewrite_authoritative_kb_search_args(args, routing_message, routing_state)
+                    agent_logger.info(
+                        "[iter %s] Rewrote authoritative KB corp_db args route=%s facets=%s query=%s",
+                        iteration,
+                        routing_state.get("knowledge_route_id") or "",
+                        json.dumps(routing_state.get("topic_facets") or [], ensure_ascii=False),
+                        args.get("query") or "",
+                    )
+                elif (
                     name == "corp_db_search"
                     and routing_state["intent"] == "company_fact"
                     and not routing_state["retrieval_tool_used"]
                 ):
-                    args = _rewrite_company_fact_search_args(args, message)
+                    args = _rewrite_company_fact_search_args(args, routing_message)
                     agent_logger.info(
                         "[iter %s] Rewrote company-fact corp_db args subtype=%s query=%s",
                         iteration,
@@ -1722,10 +2332,23 @@ async def run_agent(
                         args.get("query") or "",
                     )
                 
-                if routing_state["corp_db_application_success"] and not routing_state["explicit_wiki_request"] and _is_application_fallback_attempt(name, args):
+                if _closed_retrieval_blocks_tool_attempt(name, args, routing_state):
+                    if _is_wiki_tool_attempt(name, args):
+                        routing_state["wiki_after_corp_db_success"] = True
+                    routing_state["guardrail_activations"] += 1
+                    _update_routing_observability(routing_state, blocked_tool=name)
+                    update_correlation_context(tool_status="blocked")
+                    tool_result = ToolResult(False, error=_closed_retrieval_error(routing_state, name))
+                elif _needs_authoritative_kb_retry(routing_state) and _is_retrieval_tool_attempt(name, args) and not _is_authoritative_kb_tool_attempt(name, args, routing_state):
+                    routing_state["guardrail_activations"] += 1
+                    _update_routing_observability(routing_state, blocked_tool=name)
+                    update_correlation_context(tool_status="blocked")
+                    tool_result = ToolResult(False, error=_authoritative_kb_retry_error(routing_state, name))
+                elif routing_state["corp_db_application_success"] and not routing_state["explicit_wiki_request"] and _is_application_fallback_attempt(name, args):
                     routing_state["wiki_after_corp_db_success"] = _is_wiki_tool_attempt(name, args)
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
+                    update_correlation_context(tool_status="blocked")
                     agent_logger.warning(
                         "[iter %s] ROUTING GUARDRAIL blocked %s after successful corp_db application recommendation",
                         iteration,
@@ -1741,6 +2364,7 @@ async def run_agent(
                 elif routing_state["doc_search_document_success"] and _is_document_fallback_attempt(name, args):
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
+                    update_correlation_context(tool_status="blocked")
                     agent_logger.warning(
                         "[iter %s] ROUTING GUARDRAIL blocked %s after successful doc_search document lookup",
                         iteration,
@@ -1757,6 +2381,7 @@ async def run_agent(
                     routing_state["wiki_after_corp_db_success"] = _is_wiki_tool_attempt(name, args)
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
+                    update_correlation_context(tool_status="blocked")
                     agent_logger.warning(
                         "[iter %s] ROUTING GUARDRAIL blocked %s after successful corp_db portfolio lookup",
                         iteration,
@@ -1772,12 +2397,13 @@ async def run_agent(
                 elif (
                     not routing_state["retrieval_tool_used"]
                     and route_hint
-                    and str(route_hint.get("route_id") or "") == "corp_db.company_profile"
+                    and str(route_hint.get("source") or "") == "corp_db"
                     and not routing_state["explicit_wiki_request"]
                     and _is_skill_or_doc_browse_attempt(name, args)
                 ):
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
+                    update_correlation_context(tool_status="blocked")
                     tool_result = ToolResult(False, error=_preferred_source_error(route_hint or {}, name))
                 elif (
                     not routing_state["retrieval_tool_used"]
@@ -1786,12 +2412,14 @@ async def run_agent(
                 ):
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
+                    update_correlation_context(tool_status="blocked")
                     tool_result = ToolResult(False, error=_preferred_source_error(route_hint or {}, name))
                 elif _is_wiki_tool_attempt(name, args):
                     if routing_state["corp_db_company_fact_success"] and not routing_state["explicit_wiki_request"]:
                         routing_state["wiki_after_corp_db_success"] = True
                         routing_state["guardrail_activations"] += 1
                         _update_routing_observability(routing_state, blocked_tool=name)
+                        update_correlation_context(tool_status="blocked")
                         agent_logger.warning(
                             "[iter %s] ROUTING GUARDRAIL blocked %s after successful corp_db company-fact answer",
                             iteration,
@@ -1807,10 +2435,26 @@ async def run_agent(
                     else:
                         routing_state["selected_source"] = "doc_search"
                         _update_routing_observability(routing_state)
-                        tool_result = await execute_tool(name, args, tool_ctx)
+                        tool_result = await execute_tool(
+                            name,
+                            args,
+                            tool_ctx,
+                            tool_call_id=current_tool_call_id,
+                            tool_call_seq=tool_call_seq,
+                        )
                 else:
                     # Execute tool
-                    tool_result = await execute_tool(name, args, tool_ctx)
+                    if _is_authoritative_kb_tool_attempt(name, args, routing_state):
+                        routing_state["authoritative_kb_attempt_count"] = int(routing_state.get("authoritative_kb_attempt_count") or 0) + 1
+                        routing_state["retrieval_retry_count"] = max(0, int(routing_state["authoritative_kb_attempt_count"]) - 1)
+                        _update_routing_observability(routing_state)
+                    tool_result = await execute_tool(
+                        name,
+                        args,
+                        tool_ctx,
+                        tool_call_id=current_tool_call_id,
+                        tool_call_seq=tool_call_seq,
+                    )
 
                 if _is_retrieval_tool_attempt(name, args):
                     routing_state["retrieval_tool_used"] = True
@@ -1822,6 +2466,38 @@ async def run_agent(
                     run_meta_append_artifact(bench_artifact)
                 if tool_result.success:
                     _record_tool_output_contract(name, tool_result, routing_state)
+                    if name == "doc_search":
+                        document_id = _document_identifier(args, tool_result.output or "")
+                        if document_id and not routing_state.get("document_id"):
+                            routing_state["document_id"] = document_id
+                            _update_routing_observability(routing_state)
+
+                if name == "doc_search" and _is_doc_domain_route(routing_state):
+                    evidence_status = _doc_domain_evidence_status(tool_result)
+                    routing_state["retrieval_evidence_status"] = evidence_status
+                    routing_state["retrieval_close_reason"] = ""
+                    if tool_result.success:
+                        routing_state["selected_source"] = "doc_search"
+                    if evidence_status == "sufficient":
+                        routing_state["retrieval_phase"] = "closed"
+                        routing_state["retrieval_close_reason"] = "doc_search_payload_sufficient"
+                        routing_state["finalizer_mode"] = "llm"
+                    else:
+                        routing_state["retrieval_phase"] = "open"
+                    _update_routing_observability(routing_state)
+
+                if name == "corp_db_search" and _is_authoritative_kb_tool_attempt(name, args, routing_state):
+                    evidence_status = _authoritative_kb_evidence_status(args, tool_result, routing_message, routing_state)
+                    routing_state["retrieval_evidence_status"] = evidence_status
+                    routing_state["selected_source"] = "corp_db" if tool_result.success else routing_state["selected_source"]
+                    routing_state["retrieval_close_reason"] = ""
+                    if evidence_status == "sufficient":
+                        routing_state["retrieval_phase"] = "closed"
+                        routing_state["retrieval_close_reason"] = "authoritative_payload_sufficient"
+                        routing_state["finalizer_mode"] = "llm"
+                    else:
+                        routing_state["retrieval_phase"] = "open"
+                    _update_routing_observability(routing_state)
 
                 company_fact_success = name == "corp_db_search" and _is_successful_company_fact_kb_search(args, tool_result.output or "", message)
                 if name == "corp_db_search" and routing_state["intent"] == "company_fact":
@@ -1844,6 +2520,7 @@ async def run_agent(
                         routing_state["company_fact_rendered"] = False
                         routing_state["company_fact_fallback_reason"] = ""
                         routing_state["company_fact_finalizer_mode"] = "llm"
+                        routing_state["finalizer_mode"] = "llm"
                         _update_routing_observability(routing_state)
                 if name == "corp_db_search" and _is_successful_application_recommendation(args, tool_result.output or "", message):
                     routing_state["corp_db_application_success"] = True
@@ -1935,12 +2612,17 @@ async def run_agent(
         else:
             # No tool calls - this is the final response
             agent_logger.info(f"[iter {iteration}] FINAL RESPONSE (no tool calls)")
+            if str(routing_state.get("retrieval_phase") or "") == "closed":
+                routing_state["finalizer_mode"] = routing_state.get("finalizer_mode") or "llm"
             if (
                 routing_state["intent"] == "company_fact"
                 and routing_state["corp_db_company_fact_success"]
                 and not routing_state["explicit_wiki_request"]
             ):
                 routing_state["company_fact_finalizer_mode"] = routing_state.get("company_fact_finalizer_mode") or "llm"
+                routing_state["finalizer_mode"] = routing_state.get("finalizer_mode") or "llm"
+                _update_routing_observability(routing_state)
+            else:
                 _update_routing_observability(routing_state)
             final_response = content
             

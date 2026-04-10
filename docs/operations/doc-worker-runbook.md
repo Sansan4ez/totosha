@@ -7,14 +7,22 @@ Purpose
 `doc-worker` owns document intake and normalization. The chat path in `core` reads only
 manifests and normalized sidecars from `/data/corp_docs`.
 
+`doc_search` is the canonical chat-time route for `doc_domain` retrieval. Explicit
+document-domain questions should route directly to `doc_search`; `doc-worker` only
+publishes the searchable substrate and route manifests used by that route.
+
 Main commands
 -------------
 
 ```bash
-docker compose run --rm --profile operator doc-worker doctor --strict
-docker compose run --rm --profile operator doc-worker sync-repo
-docker compose run --rm --profile operator doc-worker rebuild-parsed --force
-docker compose run --rm --profile operator doc-worker rebuild-routes
+docker compose --profile operator run --rm doc-worker doctor --strict
+docker compose --profile operator run --rm doc-worker sync-repo
+docker compose --profile operator run --rm doc-worker rebuild-parsed --force
+docker compose --profile operator run --rm doc-worker rebuild-routes
+docker compose --profile operator run --rm doc-worker verify-domain --strict \
+  --expected-route-id doc_search.sports_lighting_norms \
+  --expected-route-family doc_search.sports_lighting_norms \
+  --expected-relative-path part_440.1325800.2023.doc
 ```
 
 Repo workflow
@@ -24,6 +32,21 @@ Repo workflow
 2. Optionally add `<filename>.meta.json` рядом с файлом.
 3. Run `doc-worker sync-repo`.
 4. Check the JSON report and `doc-worker doctor`.
+
+Representative document-domain verification
+-------------------------------------------
+
+For RFC-019 and the current sports-lighting inbox document:
+
+1. Add `doc-corpus/inbox/part_440.1325800.2023.doc.meta.json`.
+2. Run `doc-worker sync-repo`.
+3. Run `doc-worker rebuild-parsed --force`.
+4. Run `doc-worker rebuild-routes`.
+5. Run `doc-worker verify-domain --strict --expected-route-id doc_search.sports_lighting_norms --expected-route-family doc_search.sports_lighting_norms --expected-relative-path part_440.1325800.2023.doc`.
+
+The verification output must show `selected_route_kind=doc_domain`, the expected
+route id/family, and the published `part_440.1325800.2023.doc` as the top hit for
+the representative sports-lighting queries.
 
 Migration from legacy corp-wiki
 -------------------------------

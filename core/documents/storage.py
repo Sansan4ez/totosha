@@ -194,6 +194,7 @@ def _thin_live_record(manifest: dict[str, Any]) -> dict[str, Any]:
         "relative_path": primary_alias.get("relative_path") or primary_alias.get("name") or manifest.get("original_filename"),
         "original_filename": manifest.get("original_filename"),
         "aliases": aliases,
+        "routing": manifest.get("routing") if isinstance(manifest.get("routing"), dict) else {},
         "normalization": manifest.get("normalization") or {},
         "promotion": manifest.get("promotion") or {},
         "updated_at": manifest.get("updated_at"),
@@ -207,7 +208,9 @@ def _write_json_atomic(target: Path, payload: dict[str, Any]) -> None:
     tmp_path = Path(tmp_name)
     try:
         tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        tmp_path.chmod(0o644)
         os.replace(tmp_path, target)
+        target.chmod(0o644)
     finally:
         if tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
@@ -225,6 +228,47 @@ def _append_unique_entry(items: list[dict[str, Any]], candidate: dict[str, Any],
             return items
     items.append(candidate)
     return items
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        lowered = text.lower()
+        if not text or lowered in seen:
+            continue
+        seen.add(lowered)
+        result.append(text)
+    return result
+
+
+def _routing_metadata_payload(
+    metadata: dict[str, Any] | None,
+    *,
+    document_id: str,
+    relative_path: str,
+    filename: str,
+) -> dict[str, Any] | None:
+    if not isinstance(metadata, dict):
+        return None
+    payload: dict[str, Any] = {}
+    for key in ("title", "summary", "route_id", "route_family"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            payload[key] = value
+    for key in ("tags", "topics", "keywords", "patterns"):
+        values = _string_list(metadata.get(key))
+        if values:
+            payload[key] = values
+    if not payload:
+        return None
+    payload["document_id"] = document_id
+    payload["relative_path"] = relative_path
+    payload["original_filename"] = filename
+    return payload
 
 
 def _detect_macro_or_unsafe_zip(path: Path) -> str | None:
@@ -379,6 +423,14 @@ def _ingest_document_impl(
     if metadata:
         alias_entry["metadata"] = metadata
         source_entry["metadata"] = metadata
+        routing_payload = _routing_metadata_payload(
+            metadata,
+            document_id=document_id,
+            relative_path=alias_relative_path,
+            filename=filename,
+        )
+        if routing_payload:
+            manifest["routing"] = routing_payload
 
     manifest["aliases"] = _append_unique_entry(list(manifest.get("aliases") or []), alias_entry, ("relative_path", "source"))
     manifest["sources"] = _append_unique_entry(list(manifest.get("sources") or []), source_entry, ("source", "relative_path"))

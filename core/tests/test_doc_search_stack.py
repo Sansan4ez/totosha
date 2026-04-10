@@ -302,6 +302,56 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertIsNotNone(cached)
             self.assertIn("Legacy office contract", cached["text"])
 
+    def test_binary_office_liteparse_uses_original_suffix_for_extensionless_cas_blob(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {**_env(tmpdir), "DOC_SEARCH_ENABLE_LEGACY_OFFICE": "1"},
+            clear=False,
+        ):
+            source = Path(tmpdir) / "legacy.doc"
+            source.write_bytes(b"legacy office binary")
+
+            from documents import normalize as normalize_module
+            from documents import storage as storage_module
+
+            seen: dict[str, str] = {}
+
+            def _fake_parse(path: Path, *, limits):  # type: ignore[no-untyped-def]
+                seen["path"] = str(path)
+                return ("Legacy office contract", {"pages": [{"page": 1, "text": "Legacy office contract"}]})
+
+            with patch.object(storage_module.shutil, "which", side_effect=lambda name: f"/usr/bin/{name}"), patch.object(
+                normalize_module,
+                "_parse_with_liteparse",
+                side_effect=_fake_parse,
+            ):
+                manifest = ingest_document(source, source="upload")
+
+            self.assertEqual(manifest["file_type"], "doc")
+            self.assertTrue(seen["path"].endswith(".doc"))
+            self.assertNotEqual(Path(seen["path"]).name, manifest["sha256"])
+
+    def test_published_manifests_and_sidecars_are_world_readable(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
+            source = Path(tmpdir) / "policy.md"
+            source.write_text("Политика обработки данных вступает в силу немедленно.", encoding="utf-8")
+
+            manifest = ingest_document(source, source="upload")
+            paths = ensure_document_layout(get_document_paths())
+            sidecar_dir = current_sidecar_dir(manifest["sha256"])
+
+            assert sidecar_dir is not None
+            artifact_paths = [
+                paths.live / f"{manifest['document_id']}.json",
+                paths.manifests / "documents" / f"{manifest['document_id']}.json",
+                sidecar_dir / "meta.json",
+                sidecar_dir / "pages.jsonl",
+                sidecar_dir / "text.txt",
+            ]
+
+            for artifact_path in artifact_paths:
+                self.assertEqual(artifact_path.stat().st_mode & 0o777, 0o644)
+
     def test_usage_stats_persistence_is_best_effort(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
             os.environ,
@@ -348,6 +398,46 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertTrue(Path(report["report_path"]).exists())
             self.assertEqual(manifest["aliases"][0]["relative_path"], "certs/fire.md")
             self.assertEqual(manifest["aliases"][0]["metadata"]["tags"], ["certificate"])
+
+    def test_sync_repo_publishes_route_metadata_into_live_and_parsed_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
+            os.environ,
+            {"DOC_REPO_ROOT": str(Path(tmpdir) / "repo"), **_env(tmpdir)},
+            clear=False,
+        ):
+            repo_paths = get_repo_paths()
+            repo_paths.inbox.mkdir(parents=True, exist_ok=True)
+            path = repo_paths.inbox / "sports" / "lighting.md"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                "Комфортное освещение спортивных сооружений должно обеспечивать видимость площадки и спортивных залов.",
+                encoding="utf-8",
+            )
+            Path(f"{path}.meta.json").write_text(
+                json.dumps(
+                    {
+                        "title": "Нормы освещения спортивных сооружений",
+                        "summary": "Требования к освещению спортивных объектов и спортивных залов.",
+                        "route_id": "doc_search.sports_lighting_norms",
+                        "route_family": "doc_search.sports_lighting_norms",
+                        "topics": ["sports_lighting", "sports_halls"],
+                        "tags": ["спорт", "нормы освещенности"],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            report = sync_repo_inbox()
+            ingested = next(item for item in report["results"] if item["status"] == "ingested")
+            manifest = find_document_by_sha256(ingested["sha256"])
+            paths = ensure_document_layout(get_document_paths())
+            live_payload = json.loads((paths.live / f"{manifest['document_id']}.json").read_text(encoding="utf-8"))
+            cached = load_parse_cache(manifest["sha256"])
+
+            self.assertEqual(manifest["routing"]["route_id"], "doc_search.sports_lighting_norms")
+            self.assertEqual(live_payload["routing"]["route_family"], "doc_search.sports_lighting_norms")
+            self.assertEqual(cached["meta"]["routing"]["topics"], ["sports_lighting", "sports_halls"])
 
     def test_sync_repo_rejects_invalid_metadata_sidecar(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(
@@ -415,6 +505,25 @@ class DocSearchStackTests(unittest.TestCase):
             self.assertEqual(payload["status"], "normalization_missing")
             self.assertEqual(payload["result_count"], 0)
             self.assertEqual(payload["backend_counts"]["normalization_missing"], 1)
+
+    def test_search_respects_preferred_document_ids(self):
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, _env(tmpdir), clear=False):
+            sports = Path(tmpdir) / "sports.md"
+            other = Path(tmpdir) / "other.md"
+            sports.write_text("Нормы освещенности спортивных объектов и спортивных залов.", encoding="utf-8")
+            other.write_text("Нормы освещенности спортивных объектов и спортивных залов, но это другой документ.", encoding="utf-8")
+
+            sports_manifest = ingest_document(sports, source="upload")
+            ingest_document(other, source="upload")
+
+            payload = search_documents(
+                query="нормы освещенности спортивных объектов",
+                top=3,
+                preferred_document_ids=[sports_manifest["document_id"]],
+            )
+
+            self.assertEqual(payload["status"], "success")
+            self.assertEqual(payload["results"][0]["document_id"], sports_manifest["document_id"])
 
 
 if __name__ == "__main__":

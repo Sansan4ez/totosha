@@ -21,7 +21,8 @@ for candidate in (_HERE, _REPO_CORE):
         sys.path.insert(0, candidate_str)
 
 from documents.normalize import rebuild_parsed_sidecars
-from documents.routing import build_routing_index
+from documents.routing import build_routing_index, select_route
+from documents.search import search_documents
 from documents.storage import ensure_document_layout, get_document_paths, ingest_document, iter_live_documents, sync_repo_inbox
 from documents.cache import load_parse_cache
 
@@ -31,6 +32,11 @@ logger = logging.getLogger("doc_worker")
 
 
 REQUIRED_BINARIES = ("lit", "soffice", "magick", "rg", "fd", "jq")
+DEFAULT_VERIFY_QUERIES = (
+    "Какие нормы освещенности для спортивных объектов?",
+    "Найди в документе нормы освещенности для спортивного зала",
+    "Какие требования к освещению спортивных сооружений указаны в документе?",
+)
 
 
 @dataclass(frozen=True)
@@ -146,6 +152,59 @@ def _cmd_rebuild_routes(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_verify_domain(args: argparse.Namespace) -> int:
+    queries = tuple(args.query or []) or DEFAULT_VERIFY_QUERIES
+    checks: list[dict[str, Any]] = []
+    all_passed = True
+
+    for query in queries:
+        selection = select_route(query)
+        selected = dict(selection.get("selected") or {})
+        tool_args = dict(selected.get("tool_args") or {})
+        payload = search_documents(
+            query=query,
+            top=args.top,
+            preferred_document_ids=tool_args.get("preferred_document_ids"),
+        )
+        top_result = payload["results"][0] if payload.get("results") else {}
+        route_kind_ok = str(selection.get("selected_route_kind") or "") == "doc_domain"
+        route_id_ok = not args.expected_route_id or str(selected.get("route_id") or "") == args.expected_route_id
+        route_family_ok = (
+            not args.expected_route_family or str(selection.get("selected_route_family") or "") == args.expected_route_family
+        )
+        relative_path_ok = (
+            not args.expected_relative_path or str(top_result.get("relative_path") or "") == args.expected_relative_path
+        )
+        passed = route_kind_ok and route_id_ok and route_family_ok and relative_path_ok and payload.get("status") == "success"
+        all_passed = all_passed and passed
+        checks.append(
+            {
+                "query": query,
+                "passed": passed,
+                "selected_route_id": str(selected.get("route_id") or ""),
+                "selected_route_kind": str(selection.get("selected_route_kind") or ""),
+                "selected_route_family": str(selection.get("selected_route_family") or ""),
+                "preferred_document_ids": list(tool_args.get("preferred_document_ids") or []),
+                "search_status": str(payload.get("status") or ""),
+                "top_relative_path": str(top_result.get("relative_path") or ""),
+                "top_snippet": str(top_result.get("snippet") or "")[:320],
+            }
+        )
+
+    _json_dump(
+        {
+            "status": "ok" if all_passed else "fail",
+            "command": "verify-domain",
+            "query_count": len(queries),
+            "expected_route_id": args.expected_route_id,
+            "expected_route_family": args.expected_route_family,
+            "expected_relative_path": args.expected_relative_path,
+            "checks": checks,
+        }
+    )
+    return 0 if all_passed or not args.strict else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Operator-side document worker")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -171,6 +230,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     routes_parser = subparsers.add_parser("rebuild-routes", help="Rebuild document routing cards")
     routes_parser.set_defaults(func=_cmd_rebuild_routes)
+
+    verify_parser = subparsers.add_parser("verify-domain", help="Verify representative document-domain routing and retrieval")
+    verify_parser.add_argument("--query", action="append", help="Representative query to verify; can be provided multiple times")
+    verify_parser.add_argument("--top", type=int, default=3)
+    verify_parser.add_argument("--expected-route-id", default="")
+    verify_parser.add_argument("--expected-route-family", default="")
+    verify_parser.add_argument("--expected-relative-path", default="")
+    verify_parser.add_argument("--strict", action="store_true", help="Exit non-zero if any verification check fails")
+    verify_parser.set_defaults(func=_cmd_verify_domain)
 
     return parser
 

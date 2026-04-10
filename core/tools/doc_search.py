@@ -55,6 +55,7 @@ except Exception:  # pragma: no cover - local fallback
 from documents.search import search_documents
 from documents.usage import append_usage_stat
 from models import ToolContext, ToolResult
+from observability import get_correlation_context, update_correlation_context
 from tool_output_policy import (
     RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
     build_output_contract_metadata,
@@ -163,6 +164,22 @@ def _build_bench_artifact(payload: dict, *, tool_name: str, alias_for: str | Non
     }
 
 
+def _document_identifier(preferred_document_ids: list[str] | None, payload: dict) -> str:
+    for item in preferred_document_ids or []:
+        value = str(item or "").strip()
+        if value:
+            return value
+    results = payload.get("results") if isinstance(payload.get("results"), list) else []
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        for key in ("document_id", "relative_path", "path", "document_title"):
+            value = str(row.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
 async def _run_doc_search_tool(
     args: dict,
     ctx: ToolContext,
@@ -172,22 +189,50 @@ async def _run_doc_search_tool(
 ) -> ToolResult:
     query = str(args.get("query") or "").strip()
     top = int(args.get("top", 5) or 5)
+    preferred_document_ids = args.get("preferred_document_ids")
+    if isinstance(preferred_document_ids, str):
+        preferred_document_ids = [preferred_document_ids]
+    elif not isinstance(preferred_document_ids, list):
+        preferred_document_ids = None
 
     if not query:
         return ToolResult(False, error="Query is required")
 
     started_at = perf_counter()
     with _get_tracer().start_as_current_span(f"tool.{tool_name}") as span:
+        correlation_context = get_correlation_context()
         span.set_attribute("doc_search.tool_name", tool_name)
+        span.set_attribute("tool_name", tool_name)
         if alias_for:
             span.set_attribute("doc_search.alias_for", alias_for)
         span.set_attribute("doc_search.top", top)
+        for field in (
+            "selected_route_id",
+            "selected_route_family",
+            "selected_route_kind",
+            "selected_source",
+            "knowledge_route_id",
+            "document_id",
+            "tool_call_id",
+            "tool_call_seq",
+            "retrieval_phase",
+            "retrieval_evidence_status",
+            "retrieval_close_reason",
+            "finalizer_mode",
+        ):
+            value = str(correlation_context.get(field) or "").strip()
+            if value and value not in {"-", "unknown"}:
+                span.set_attribute(field, value)
         try:
-            payload = search_documents(query=query, top=top)
+            payload = search_documents(query=query, top=top, preferred_document_ids=preferred_document_ids)
             payload["requested_top"] = top
             payload["tool_name"] = tool_name
             if alias_for:
                 payload["alias_for"] = alias_for
+            document_id = _document_identifier(preferred_document_ids, payload)
+            if document_id:
+                update_correlation_context(document_id=document_id)
+                span.set_attribute("document_id", document_id)
             append_usage_stat(
                 query=query,
                 payload=payload,
@@ -204,6 +249,13 @@ async def _run_doc_search_tool(
                 span.set_attribute("doc_search.top_match_mode", str(results[0].get("match_mode") or ""))
                 span.set_attribute("doc_search.top_file_type", str(results[0].get("file_type") or ""))
                 span.set_attribute("doc_search.cache_hit", bool(results[0].get("cache_hit")))
+                logger.info(
+                    "doc_search status=%s result_count=%s top_document_id=%s top_match_mode=%s",
+                    payload.get("status") or "unknown",
+                    len(results),
+                    document_id or str(results[0].get("document_id") or results[0].get("relative_path") or ""),
+                    str(results[0].get("match_mode") or ""),
+                )
             metadata = build_output_contract_metadata(
                 bench_artifact=_build_bench_artifact(payload, tool_name=tool_name, alias_for=alias_for),
                 runtime_payload_format=RUNTIME_PAYLOAD_FORMAT_FULL_JSON,

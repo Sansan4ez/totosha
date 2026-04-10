@@ -19,7 +19,13 @@ from pgvector.asyncpg import register_vector
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram
 
-from src.observability import REGISTRY, REQUEST_ID
+from src.observability import (
+    REGISTRY,
+    REQUEST_ID,
+    get_correlation_context,
+    record_span_event,
+    update_correlation_context,
+)
 
 router = APIRouter(prefix="/corp-db", tags=["corp-db"])
 logger = logging.getLogger(__name__)
@@ -50,6 +56,10 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "entity_types": ["kb_chunk"],
         "weights": (1.0, 1.2, 0.15),
     },
+    "kb_route_lookup": {
+        "entity_types": ["kb_chunk"],
+        "weights": (1.0, 1.2, 0.15),
+    },
     "entity_resolver": {
         "entity_types": ["lamp", "sku", "category", "portfolio", "sphere", "mounting_type", "category_mounting"],
         "weights": (0.9, 0.55, 1.2),
@@ -67,6 +77,17 @@ PROFILE_PRESETS: dict[str, dict[str, Any]] = {
 ENTITY_TYPE_ALIASES: dict[str, str] = {
     "kb": "kb_chunk",
     "company": "kb_chunk",
+}
+KB_ROUTE_SPECS: dict[str, dict[str, Any]] = {
+    "corp_kb.company_common": {
+        "source_files": ("common_information_about_company.md",),
+    },
+    "corp_kb.luxnet": {
+        "source_files": ("about_Luxnet.md",),
+    },
+    "corp_kb.lighting_norms": {
+        "source_files": ("normy_osveschennosty.md",),
+    },
 }
 QUERY_TOKEN_RE = re.compile(r"[0-9A-Za-zА-Яа-я/+.-]+")
 IP_RE = re.compile(r"\bip[\s-]?(\d{2,3})\b", re.IGNORECASE)
@@ -339,6 +360,13 @@ LAMP_RANGE_FILTER_SPECS = (
     ("height_mm_min", "height_mm_max", "height_mm"),
     ("warranty_years_min", "warranty_years_max", "warranty_years"),
 )
+KB_ROUTE_FORBIDDEN_FILTER_FIELDS = (
+    [field_name for field_name, _ in LAMP_TEXT_FILTER_SPECS]
+    + [field_name for field_name, _ in LAMP_EXACT_FILTER_SPECS]
+    + [field_name for field_name, _ in LAMP_BOOLEAN_FILTER_SPECS]
+    + [field_name for min_field, max_field, _ in LAMP_RANGE_FILTER_SPECS for field_name in (min_field, max_field)]
+    + ["temp_c_min", "temp_c_max"]
+)
 HYBRID_ZERO_AS_UNSET_FIELDS = {
     "power_w_min",
     "power_w_max",
@@ -431,7 +459,10 @@ class CorpDbSearchRequest(BaseModel):
     offset: int = Field(default=0, ge=0, le=10000)
 
     query: Optional[str] = None
-    profile: Optional[Literal["kb_search", "entity_resolver", "candidate_generation", "related_evidence"]] = None
+    profile: Optional[Literal["kb_search", "kb_route_lookup", "entity_resolver", "candidate_generation", "related_evidence"]] = None
+    knowledge_route_id: Optional[str] = None
+    source_files: Optional[list[str]] = None
+    topic_facets: Optional[list[str]] = None
     entity_types: Optional[list[str]] = None
     include_debug: bool = False
 
@@ -709,13 +740,23 @@ def _hybrid_response_filters(
     entity_types: list[str] | None,
     explicit_lamp_filters: bool,
     search_strategy: str,
+    knowledge_route_id: str = "",
+    source_file_scope: list[str] | None = None,
+    topic_facets: list[str] | None = None,
 ) -> dict[str, Any]:
-    return {
+    response = {
         "profile": profile_name,
         "entity_types": entity_types,
         "search_strategy": search_strategy,
         "lamp_filters_applied": explicit_lamp_filters,
     }
+    if knowledge_route_id:
+        response["knowledge_route_id"] = knowledge_route_id
+    if source_file_scope:
+        response["source_file_scope"] = list(source_file_scope)
+    if topic_facets:
+        response["topic_facets"] = list(topic_facets)
+    return response
 
 
 def _get_tracer():
@@ -735,11 +776,31 @@ async def _observe_search_phase(
     status = "success"
     request_id = REQUEST_ID.get("-")
     with _get_tracer().start_as_current_span(span_name or f"corp_db.{phase}") as span:
+        correlation_context = get_correlation_context()
         span.set_attribute("corp_db.kind", kind)
         span.set_attribute("corp_db.profile", profile)
         span.set_attribute("corp_db.phase", phase)
+        span.set_attribute("tool_name", "corp_db_search")
         if request_id and request_id != "-":
             span.set_attribute("request_id", request_id)
+        for field in (
+            "selected_route_id",
+            "selected_route_family",
+            "selected_route_kind",
+            "selected_source",
+            "knowledge_route_id",
+            "document_id",
+            "tool_call_id",
+            "tool_call_seq",
+            "tool_status",
+            "retrieval_phase",
+            "retrieval_evidence_status",
+            "retrieval_close_reason",
+            "finalizer_mode",
+        ):
+            value = str(correlation_context.get(field) or "").strip()
+            if value and value not in {"-", "unknown"}:
+                span.set_attribute(field, value)
         for key, value in (attributes or {}).items():
             if value is None:
                 continue
@@ -884,6 +945,37 @@ def _request_like(req: CorpDbSearchRequest, **updates: Any) -> CorpDbSearchReque
     return req.copy(update=updates)
 
 
+def _dedupe_nonempty_strings(values: list[Any] | None) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values or []:
+        text = _normalize_ws(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _resolve_kb_route_scope(req: CorpDbSearchRequest) -> tuple[str, list[str], list[str]]:
+    knowledge_route_id = _normalize_ws(req.knowledge_route_id)
+    source_files = _dedupe_nonempty_strings(req.source_files)
+    topic_facets = _dedupe_nonempty_strings(req.topic_facets)
+    if knowledge_route_id:
+        spec = KB_ROUTE_SPECS.get(knowledge_route_id)
+        if spec is None:
+            raise HTTPException(400, f"Unknown knowledge_route_id: {knowledge_route_id}")
+        source_files = list(spec["source_files"])
+    return knowledge_route_id, source_files, topic_facets
+
+
+def _is_kb_route_lookup(req: CorpDbSearchRequest) -> bool:
+    if req.kind != "hybrid_search":
+        return False
+    _, source_files, _ = _resolve_kb_route_scope(req)
+    return bool(source_files)
+
+
 async def _fetch_lamp_exact_rows(
     conn: asyncpg.Connection,
     *,
@@ -1014,6 +1106,18 @@ def _log_application_recommendation_result(
 
 def _sanitize_filter_defaults(req: CorpDbSearchRequest) -> CorpDbSearchRequest:
     updates: dict[str, Any] = {}
+    knowledge_route_id, source_files, topic_facets = _resolve_kb_route_scope(req)
+    if knowledge_route_id:
+        updates["knowledge_route_id"] = knowledge_route_id
+    if source_files:
+        updates["source_files"] = source_files
+    if req.topic_facets is not None:
+        updates["topic_facets"] = topic_facets or None
+    if source_files:
+        for field_name in KB_ROUTE_FORBIDDEN_FILTER_FIELDS:
+            value = getattr(req, field_name)
+            if value not in (None, "", [], {}, False):
+                updates[field_name] = None
     for field_name, value in req.__dict__.items():
         if field_name == "kind":
             continue
@@ -2055,12 +2159,13 @@ async def _run_hybrid_query(
     semantic_weight: float,
     fuzzy_weight: float,
     entity_types: list[str] | None,
+    source_files: list[str] | None,
     include_debug: bool,
 ) -> list[asyncpg.Record]:
     return await conn.fetch(
         """
         SELECT doc_id, entity_type, entity_id, title, content, metadata, score, debug_info
-        FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         """,
         query,
         embedding,
@@ -2070,6 +2175,7 @@ async def _run_hybrid_query(
         fuzzy_weight,
         60,
         entity_types,
+        source_files,
         include_debug,
     )
 
@@ -2080,6 +2186,7 @@ async def _run_alias_fallback_query(
     token: str,
     limit: int,
     entity_types: list[str] | None,
+    source_files: list[str] | None,
 ) -> list[asyncpg.Record]:
     return await conn.fetch(
         """
@@ -2104,6 +2211,7 @@ async def _run_alias_fallback_query(
             ) AS debug_info
         FROM corp.corp_search_docs d
         WHERE ($3::text[] IS NULL OR d.entity_type = ANY($3))
+          AND ($4::text[] IS NULL OR coalesce(d.metadata->>'source_file', '') = ANY($4))
           AND (
               lower(d.title) LIKE ('%' || lower($1) || '%')
               OR lower(d.aliases) LIKE ('%' || lower($1) || '%')
@@ -2114,6 +2222,7 @@ async def _run_alias_fallback_query(
         token,
         limit,
         entity_types,
+        source_files,
     )
 
 def _merge_hybrid_results(groups: list[tuple[str, list[dict[str, Any]]]], limit: int) -> list[dict[str, Any]]:
@@ -2196,10 +2305,11 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
     # 3) token/alias fallback is skipped once structured filters already produced usable lamp results.
     req = _sanitize_filter_defaults(req)
     query = _req_str(req.query, "query", max_len=400)
-    profile_name = req.profile or "entity_resolver"
+    knowledge_route_id, source_file_scope, topic_facets = _resolve_kb_route_scope(req)
+    profile_name = req.profile or ("kb_route_lookup" if source_file_scope else "entity_resolver")
     preset = PROFILE_PRESETS[profile_name]
-    explicit_lamp_filters = _has_explicit_lamp_filters(req)
-    requested_entity_types = req.entity_types or preset["entity_types"]
+    explicit_lamp_filters = _has_explicit_lamp_filters(req) and not source_file_scope
+    requested_entity_types = ["kb_chunk"] if source_file_scope else (req.entity_types or preset["entity_types"])
     if explicit_lamp_filters and not req.entity_types:
         requested_entity_types = ["lamp"]
     entity_types = _normalize_entity_types(requested_entity_types)
@@ -2208,6 +2318,9 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
         entity_types=entity_types,
         explicit_lamp_filters=explicit_lamp_filters,
         search_strategy="primary",
+        knowledge_route_id=knowledge_route_id,
+        source_file_scope=source_file_scope,
+        topic_facets=topic_facets,
     )
     full_text_weight, semantic_weight, fuzzy_weight = preset["weights"]
     fuzzy_enabled = _should_enable_fuzzy(req, query, profile_name)
@@ -2272,6 +2385,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
             semantic_weight=0.0,
             fuzzy_weight=lexical_fuzzy_weight,
             entity_types=entity_types,
+            source_files=source_file_scope or None,
             include_debug=req.include_debug,
         )
     primary_rows = [_hybrid_row(row) for row in rows]
@@ -2287,7 +2401,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
             primary_rows = _merge_hybrid_results(groups, limit)
 
     primary_has_lexical_signal = _rows_have_lexical_signal(rows)
-    filter_retry = _extract_filter_retry(query) if profile_name == "candidate_generation" else {}
+    filter_retry = _extract_filter_retry(query) if profile_name == "candidate_generation" and not source_file_scope else {}
     should_run_filter_fallback = bool(filter_retry) and not direct_filter_rows
     should_run_semantic = _should_run_semantic_fallback(
         explicit_lamp_filters=explicit_lamp_filters,
@@ -2314,6 +2428,9 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                 entity_types=entity_types,
                 explicit_lamp_filters=explicit_lamp_filters,
                 search_strategy=primary_strategy,
+                knowledge_route_id=knowledge_route_id,
+                source_file_scope=source_file_scope,
+                topic_facets=topic_facets,
             ),
             results=primary_rows,
             debug={
@@ -2356,6 +2473,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                     semantic_weight=semantic_weight,
                     fuzzy_weight=lexical_fuzzy_weight,
                     entity_types=entity_types,
+                    source_files=source_file_scope or None,
                     include_debug=req.include_debug,
                 )
             formatted_semantic = [_hybrid_row(row) for row in semantic_rows]
@@ -2432,6 +2550,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                         token=token_query,
                         limit=max(limit, 3),
                         entity_types=entity_types,
+                        source_files=source_file_scope or None,
                     )
                 formatted = [_hybrid_row(row) for row in alias_rows]
                 if explicit_lamp_filters and formatted:
@@ -2457,6 +2576,9 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
             entity_types=entity_types,
             explicit_lamp_filters=explicit_lamp_filters,
             search_strategy="fallback" if fallback_groups else primary_strategy,
+            knowledge_route_id=knowledge_route_id,
+            source_file_scope=source_file_scope,
+            topic_facets=topic_facets,
         ),
         results=merged_rows,
         debug={
@@ -3083,9 +3205,24 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
     user_id = request.headers.get("X-User-Id", "")
     limit, offset = _clamp(req.limit, req.offset)
     started_at = perf_counter()
-    profile_name = req.profile or "none"
     status = "error"
     req = _sanitize_filter_defaults(req)
+    profile_name = req.profile or ("kb_route_lookup" if _is_kb_route_lookup(req) else "none")
+    selected_route_id = str(req.knowledge_route_id or "").strip() or f"corp_db.{req.kind}"
+    selected_route_kind = "corp_table" if str(req.knowledge_route_id or "").strip() else (
+        "corp_script" if req.kind in {"application_recommendation", "portfolio_by_sphere", "portfolio_examples_by_lamp"} else "corp_table"
+    )
+    update_correlation_context(
+        selected_route_id=selected_route_id,
+        selected_route_family=selected_route_id,
+        selected_route_kind=selected_route_kind,
+        selected_source="corp_db",
+        knowledge_route_id=str(req.knowledge_route_id or "").strip(),
+        tool_name="corp_db_search",
+        tool_call_id=request.headers.get("X-Tool-Call-Id", ""),
+        tool_call_seq=request.headers.get("X-Tool-Call-Seq", ""),
+        tool_status="started",
+    )
 
     try:
         pool = await _get_pool()
@@ -3120,12 +3257,29 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
 
             result["user_id"] = user_id
             status = str(result.get("status", "success"))
+            update_correlation_context(
+                knowledge_route_id=str(result.get("filters", {}).get("knowledge_route_id") if isinstance(result.get("filters"), dict) else req.knowledge_route_id or ""),
+                tool_status=status,
+            )
+            if status in {"success", "empty"}:
+                record_span_event(
+                    "corp_db.response",
+                    selected_route_id=selected_route_id,
+                    selected_route_family=selected_route_id,
+                    selected_route_kind=selected_route_kind,
+                    selected_source="corp_db",
+                    knowledge_route_id=str(result.get("filters", {}).get("knowledge_route_id") if isinstance(result.get("filters"), dict) else req.knowledge_route_id or ""),
+                    tool_name="corp_db_search",
+                    tool_status=status,
+                )
             return result
     except HTTPException:
         status = "http_error"
+        update_correlation_context(tool_status=status)
         raise
     except Exception:
         status = "error"
+        update_correlation_context(tool_status=status)
         return _error(req.kind, "Корпоративная база временно недоступна", query=req.query)
     finally:
         CORP_DB_SEARCH_REQUESTS_TOTAL.labels(req.kind, status, profile_name).inc()

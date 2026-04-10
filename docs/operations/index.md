@@ -17,3 +17,4 @@ Read by Intent
 - Run observability smoke -> `docs/operations/observability-runbook.md`
 - Review observability baseline -> `docs/operations/observability-baseline.md`
 - Review observability policy -> `docs/operations/observability-policy.md`
+- Orchestrate `br` tasks in `tmux` with Codex -> `docs/operations/tmux-br-orchestrator.md`

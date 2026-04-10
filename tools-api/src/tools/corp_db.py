@@ -39,7 +39,21 @@ TOOLS = {
                 "profile": {
                     "type": "string",
                     "description": "Hybrid-search preset profile",
-                    "enum": ["kb_search", "entity_resolver", "candidate_generation", "related_evidence"],
+                    "enum": ["kb_search", "kb_route_lookup", "entity_resolver", "candidate_generation", "related_evidence"],
+                },
+                "knowledge_route_id": {
+                    "type": "string",
+                    "description": "Optional authoritative KB route id for source-scoped company knowledge lookups.",
+                },
+                "source_files": {
+                    "type": "array",
+                    "description": "Explicit KB source-file scope. `knowledge_route_id` takes precedence when both are present.",
+                    "items": {"type": "string"},
+                },
+                "topic_facets": {
+                    "type": "array",
+                    "description": "Optional route-local topic facets for source-scoped KB ranking and sufficiency.",
+                    "items": {"type": "string"},
                 },
                 "entity_types": {
                     "type": "array",

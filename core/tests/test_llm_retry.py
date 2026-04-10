@@ -51,7 +51,12 @@ _stub_modules = {
         agent_logger=_DummyLogger(),
         log_agent_step=lambda *args, **kwargs: None,
     ),
-    "observability": types.SimpleNamespace(REQUEST_ID=ContextVar("request_id", default="-")),
+    "observability": types.SimpleNamespace(
+        REQUEST_ID=ContextVar("request_id", default="-"),
+        inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
+        record_span_event=lambda *args, **kwargs: None,
+        update_correlation_context=lambda *args, **kwargs: {},
+    ),
     "run_meta": types.SimpleNamespace(
         run_meta_get=lambda: None,
         run_meta_update_llm=lambda **kwargs: None,
@@ -106,6 +111,7 @@ class _FakeSession:
     def __init__(self, timeout, outcome):
         self.timeout = timeout
         self.outcome = outcome
+        self.last_post_kwargs = None
 
     async def __aenter__(self):
         return self
@@ -114,6 +120,7 @@ class _FakeSession:
         return False
 
     def post(self, *args, **kwargs):
+        self.last_post_kwargs = kwargs
         if isinstance(self.outcome, Exception):
             raise self.outcome
         return self.outcome
@@ -123,11 +130,13 @@ class _SessionFactory:
     def __init__(self, outcomes):
         self.outcomes = list(outcomes)
         self.calls = 0
+        self.last_session = None
 
     def __call__(self, timeout=None):
         outcome = self.outcomes[self.calls]
         self.calls += 1
-        return _FakeSession(timeout, outcome)
+        self.last_session = _FakeSession(timeout, outcome)
+        return self.last_session
 
 
 class CallLlmRetryTests(unittest.TestCase):
@@ -189,6 +198,45 @@ class CallLlmRetryTests(unittest.TestCase):
 
         self.assertEqual(factory.calls, 3)
         self.assertIn("LLM error 408", result["error"])
+
+    def test_call_llm_propagates_trace_headers_to_proxy(self):
+        factory = _SessionFactory(
+            [
+                _FakeResponse(
+                    status=200,
+                    payload={
+                        "id": "chatcmpl-test",
+                        "model": "gpt-5.4",
+                        "choices": [{"message": {"content": "PONG"}, "finish_reason": "stop"}],
+                        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                    },
+                ),
+            ]
+        )
+        aiohttp_stub = types.SimpleNamespace(
+            ClientTimeout=_FakeTimeout,
+            ClientSession=factory,
+            ClientError=RuntimeError,
+        )
+        injected_headers = {
+            "X-Request-Id": "req-123",
+            "traceparent": "00-11111111111111111111111111111111-2222222222222222-01",
+            "tracestate": "vendor=test",
+        }
+        token = _MODULE.OBS_REQUEST_ID.set("req-123")
+        try:
+            with patch.object(_MODULE, "aiohttp", aiohttp_stub), patch.object(
+                _MODULE,
+                "inject_trace_context",
+                return_value=injected_headers,
+            ) as inject_mock:
+                result = asyncio.run(_MODULE.call_llm([{"role": "user", "content": "ping"}], [], ""))
+        finally:
+            _MODULE.OBS_REQUEST_ID.reset(token)
+
+        self.assertEqual(result["choices"][0]["message"]["content"], "PONG")
+        self.assertEqual(factory.last_session.last_post_kwargs["headers"], injected_headers)
+        inject_mock.assert_called_once_with(request_id="req-123")
 
 
 if __name__ == "__main__":

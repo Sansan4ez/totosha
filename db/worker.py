@@ -16,7 +16,7 @@ from catalog_loader import seed_json_sources
 from common import DEFAULT_KB_MANIFEST, DEFAULT_SOURCES_DIR, DEFAULT_WIKI_DIR, get_rw_dsn
 from kb_loader import seed_knowledge_chunks
 from observability import setup_observability
-from search_docs import build_search_docs
+from search_docs import build_search_docs, validate_search_docs
 
 setup_observability("corp-db-worker")
 logger = logging.getLogger("corp-db-worker")
@@ -49,8 +49,9 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("seed-json", help="Load canonical JSON sources into normalized tables")
     subparsers.add_parser("seed-kb", help="Load promoted wiki subset into knowledge_chunks")
-    subparsers.add_parser("build-search-docs", help="Rebuild corp_search_docs from normalized tables")
-    subparsers.add_parser("rebuild", help="Run seed-json, seed-kb and build-search-docs in order")
+    subparsers.add_parser("build-search-docs", help="Rebuild corp_search_docs from normalized tables and validate KB routes")
+    subparsers.add_parser("validate-search-docs", help="Validate source-scoped KB aliases, scopes and ranking in corp_search_docs")
+    subparsers.add_parser("rebuild", help="Run seed-json, seed-kb, build-search-docs and validation in order")
     return parser.parse_args()
 
 
@@ -86,9 +87,16 @@ async def main() -> None:
                         ),
                     }
                 elif args.command == "build-search-docs":
+                    counts = await build_search_docs(conn, embeddings_enabled=embeddings_enabled)
                     result = {
                         "command": "build-search-docs",
-                        "counts": await build_search_docs(conn, embeddings_enabled=embeddings_enabled),
+                        "counts": counts,
+                        "validation": await validate_search_docs(conn),
+                    }
+                elif args.command == "validate-search-docs":
+                    result = {
+                        "command": "validate-search-docs",
+                        "validation": await validate_search_docs(conn),
                     }
                 else:
                     json_counts = await seed_json_sources(conn, args.sources_dir)
@@ -107,6 +115,9 @@ async def main() -> None:
                             "json": json_counts,
                             "knowledge_chunks": kb_counts,
                             "search_docs": doc_counts,
+                        },
+                        "validation": {
+                            "search_docs": await validate_search_docs(conn),
                         },
                     }
                 logger.info("Worker command completed command=%s", args.command)

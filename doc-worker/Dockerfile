@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ripgrep \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/fdfind /usr/bin/fd \
+    && ln -sf /usr/bin/convert /usr/local/bin/magick \
     && npm install -g @llamaindex/liteparse
 
 COPY core/documents/ /app/documents/

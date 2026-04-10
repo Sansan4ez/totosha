@@ -87,6 +87,42 @@ class DocSearchToolTests(unittest.TestCase):
         self.assertEqual(usage[0]["tool_name"], "doc_search")
         self.assertIsNone(usage[0]["alias_for"])
 
+    def test_tool_passes_preferred_document_ids(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            docs_root = root / "corp_docs"
+            first = root / "sports.md"
+            second = root / "other.md"
+            first.write_text("Нормы освещенности спортивных объектов.", encoding="utf-8")
+            second.write_text("Нормы освещенности спортивных объектов.", encoding="utf-8")
+            ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+
+            old_env = dict(os.environ)
+            os.environ.update({"CORP_DOCS_ROOT": str(docs_root)})
+            try:
+                sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+                from documents.storage import ingest_document
+
+                manifest = ingest_document(first, source="upload")
+                ingest_document(second, source="upload")
+                result = asyncio.run(
+                    tool_doc_search(
+                        {
+                            "query": "нормы освещенности спортивных объектов",
+                            "top": 3,
+                            "preferred_document_ids": [manifest["document_id"]],
+                        },
+                        ctx,
+                    )
+                )
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+        self.assertTrue(result.success)
+        payload = json.loads(result.output)
+        self.assertEqual(payload["results"][0]["document_id"], manifest["document_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

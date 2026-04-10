@@ -12,7 +12,13 @@ from logger import log_tool_call, log_tool_result
 from config import CONFIG
 from models import ToolResult, ToolContext
 from run_meta import run_meta_update_tool
-from observability import REQUEST_ID as OBS_REQUEST_ID
+from observability import (
+    REQUEST_ID as OBS_REQUEST_ID,
+    correlation_scope,
+    inject_trace_context,
+    observe_tool_execution,
+    update_correlation_context,
+)
 
 TOOLS_API_URL = os.getenv("TOOLS_API_URL", "http://tools-api:8100")
 
@@ -556,7 +562,7 @@ async def call_mcp_tool(server_name: str, tool_name: str, args: dict) -> ToolRes
     """Call MCP tool via tools-api"""
     try:
         request_id = OBS_REQUEST_ID.get("-")
-        headers = {"X-Request-Id": request_id} if request_id and request_id != "-" else {}
+        headers = inject_trace_context(request_id=request_id)
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{TOOLS_API_URL}/mcp/call/{server_name}/{tool_name}",
@@ -588,134 +594,173 @@ async def call_mcp_tool(server_name: str, tool_name: str, args: dict) -> ToolRes
         return ToolResult(False, error=f"MCP call failed: {e}")
 
 
-async def execute_tool(name: str, args: dict, ctx: ToolContext) -> ToolResult:
+async def execute_tool(
+    name: str,
+    args: dict,
+    ctx: ToolContext,
+    *,
+    tool_call_id: str = "",
+    tool_call_seq: int = 0,
+) -> ToolResult:
     """Execute a tool by name with permission check"""
     started = perf_counter()
-    
-    # Check tool permission based on session type
-    perm = check_tool_permission(
+
+    with correlation_scope(
         tool_name=name,
-        session_type=ctx.chat_type,
-        source=ctx.source
-    )
-    
-    if not perm.allowed:
+        tool_call_id=tool_call_id,
+        tool_call_seq=tool_call_seq,
+        tool_status="started",
+    ):
+        # Check tool permission based on session type
+        perm = check_tool_permission(
+            tool_name=name,
+            session_type=ctx.chat_type,
+            source=ctx.source
+        )
+
+        if not perm.allowed:
+            log_tool_call(name, args)
+            log_tool_result(False, None, f"PERMISSION DENIED: {perm.reason}")
+            result = ToolResult(
+                False,
+                error=f"🔒 Tool '{name}' not available in {perm.session_type} sessions. {perm.reason}"
+            )
+            duration_ms = (perf_counter() - started) * 1000
+            update_correlation_context(tool_status="permission_denied")
+            observe_tool_execution(name, "permission_denied", duration_ms)
+            run_meta_update_tool(
+                name=name,
+                duration_ms=duration_ms,
+                success=False,
+                error=result.error,
+            )
+            return result
+
         log_tool_call(name, args)
-        log_tool_result(False, None, f"PERMISSION DENIED: {perm.reason}")
-        result = ToolResult(
-            False, 
-            error=f"🔒 Tool '{name}' not available in {perm.session_type} sessions. {perm.reason}"
-        )
-        run_meta_update_tool(
-            name=name,
-            duration_ms=(perf_counter() - started) * 1000,
-            success=False,
-            error=result.error,
-        )
-        return result
-    
-    log_tool_call(name, args)
-    
-    # Check for MCP tools (format: mcp_{server}_{tool})
-    # Example: mcp_google_workspace_search_gmail_messages
-    # Need to extract server name from tool source (mcp:google_workspace)
-    if name.startswith("mcp_"):
-        # Remove "mcp_" prefix
-        name_without_prefix = name[4:]
-        
-        # Try to find the server by checking which MCP server has this tool
-        # For now, use a simple heuristic: check common server names
-        server_name = None
-        tool_name = None
-        
-        # Try common patterns: google_workspace, docker, test
-        for possible_server in ["google_workspace", "docker", "test"]:
-            if name_without_prefix.startswith(possible_server + "_"):
-                server_name = possible_server
-                tool_name = name_without_prefix[len(possible_server) + 1:]
-                break
-        
-        # Fallback: assume single-word server name (first part before underscore)
-        if not server_name:
-            parts = name_without_prefix.split("_", 1)
-            if len(parts) >= 2:
-                server_name = parts[0]
-                tool_name = parts[1]
-        
-        if server_name and tool_name:
-            try:
-                result = await asyncio.wait_for(
-                    call_mcp_tool(server_name, tool_name, args),
-                    timeout=CONFIG.tool_timeout
-                )
-                log_tool_result(result.success, result.output, result.error)
-                run_meta_update_tool(
-                    name=name,
-                    duration_ms=(perf_counter() - started) * 1000,
-                    success=bool(result.success),
-                    error=result.error,
-                )
-                return result
-            except asyncio.TimeoutError:
-                result = ToolResult(False, error=f"MCP tool {name} timed out")
-                run_meta_update_tool(
-                    name=name,
-                    duration_ms=(perf_counter() - started) * 1000,
-                    success=False,
-                    error=result.error,
-                )
-                return result
-            except Exception as e:
-                result = ToolResult(False, error=f"MCP tool error: {e}")
-                run_meta_update_tool(
-                    name=name,
-                    duration_ms=(perf_counter() - started) * 1000,
-                    success=False,
-                    error=result.error,
-                )
-                return result
-    
-    executor = TOOL_EXECUTORS.get(name)
-    if not executor:
-        result = ToolResult(False, error=f"Unknown tool: {name}")
-        run_meta_update_tool(
-            name=name,
-            duration_ms=(perf_counter() - started) * 1000,
-            success=False,
-            error=result.error,
-        )
-        return result
-    
-    try:
-        result = await asyncio.wait_for(
-            executor(args, ctx),
-            timeout=CONFIG.tool_timeout
-        )
-        
-        log_tool_result(result.success, result.output, result.error)
-        run_meta_update_tool(
-            name=name,
-            duration_ms=(perf_counter() - started) * 1000,
-            success=bool(result.success),
-            error=result.error,
-        )
-        return result
-        
-    except asyncio.TimeoutError:
-        result = ToolResult(False, error=f"Tool {name} timed out")
-        run_meta_update_tool(
-            name=name,
-            duration_ms=(perf_counter() - started) * 1000,
-            success=False,
-            error=result.error,
-        )
-        return result
-    except Exception as e:
-        result = ToolResult(False, error=str(e))
-        run_meta_update_tool(
-            name=name,
-            duration_ms=(perf_counter() - started) * 1000,
-            success=False,
-            error=result.error,
-        )
-        return result
+
+        # Check for MCP tools (format: mcp_{server}_{tool})
+        # Example: mcp_google_workspace_search_gmail_messages
+        # Need to extract server name from tool source (mcp:google_workspace)
+        if name.startswith("mcp_"):
+            # Remove "mcp_" prefix
+            name_without_prefix = name[4:]
+
+            # Try to find the server by checking which MCP server has this tool
+            # For now, use a simple heuristic: check common server names
+            server_name = None
+            tool_name = None
+
+            # Try common patterns: google_workspace, docker, test
+            for possible_server in ["google_workspace", "docker", "test"]:
+                if name_without_prefix.startswith(possible_server + "_"):
+                    server_name = possible_server
+                    tool_name = name_without_prefix[len(possible_server) + 1:]
+                    break
+
+            # Fallback: assume single-word server name (first part before underscore)
+            if not server_name:
+                parts = name_without_prefix.split("_", 1)
+                if len(parts) >= 2:
+                    server_name = parts[0]
+                    tool_name = parts[1]
+
+            if server_name and tool_name:
+                try:
+                    result = await asyncio.wait_for(
+                        call_mcp_tool(server_name, tool_name, args),
+                        timeout=CONFIG.tool_timeout
+                    )
+                    duration_ms = (perf_counter() - started) * 1000
+                    tool_status = "success" if result.success else "error"
+                    update_correlation_context(tool_status=tool_status)
+                    log_tool_result(result.success, result.output, result.error)
+                    observe_tool_execution(name, tool_status, duration_ms)
+                    run_meta_update_tool(
+                        name=name,
+                        duration_ms=duration_ms,
+                        success=bool(result.success),
+                        error=result.error,
+                    )
+                    return result
+                except asyncio.TimeoutError:
+                    result = ToolResult(False, error=f"MCP tool {name} timed out")
+                    duration_ms = (perf_counter() - started) * 1000
+                    update_correlation_context(tool_status="timeout")
+                    observe_tool_execution(name, "timeout", duration_ms)
+                    run_meta_update_tool(
+                        name=name,
+                        duration_ms=duration_ms,
+                        success=False,
+                        error=result.error,
+                    )
+                    return result
+                except Exception as e:
+                    result = ToolResult(False, error=f"MCP tool error: {e}")
+                    duration_ms = (perf_counter() - started) * 1000
+                    update_correlation_context(tool_status="error")
+                    observe_tool_execution(name, "error", duration_ms)
+                    run_meta_update_tool(
+                        name=name,
+                        duration_ms=duration_ms,
+                        success=False,
+                        error=result.error,
+                    )
+                    return result
+
+        executor = TOOL_EXECUTORS.get(name)
+        if not executor:
+            result = ToolResult(False, error=f"Unknown tool: {name}")
+            duration_ms = (perf_counter() - started) * 1000
+            update_correlation_context(tool_status="unknown")
+            observe_tool_execution(name, "unknown", duration_ms)
+            run_meta_update_tool(
+                name=name,
+                duration_ms=duration_ms,
+                success=False,
+                error=result.error,
+            )
+            return result
+
+        try:
+            result = await asyncio.wait_for(
+                executor(args, ctx),
+                timeout=CONFIG.tool_timeout
+            )
+
+            duration_ms = (perf_counter() - started) * 1000
+            tool_status = "success" if result.success else "error"
+            update_correlation_context(tool_status=tool_status)
+            log_tool_result(result.success, result.output, result.error)
+            observe_tool_execution(name, tool_status, duration_ms)
+            run_meta_update_tool(
+                name=name,
+                duration_ms=duration_ms,
+                success=bool(result.success),
+                error=result.error,
+            )
+            return result
+
+        except asyncio.TimeoutError:
+            result = ToolResult(False, error=f"Tool {name} timed out")
+            duration_ms = (perf_counter() - started) * 1000
+            update_correlation_context(tool_status="timeout")
+            observe_tool_execution(name, "timeout", duration_ms)
+            run_meta_update_tool(
+                name=name,
+                duration_ms=duration_ms,
+                success=False,
+                error=result.error,
+            )
+            return result
+        except Exception as e:
+            result = ToolResult(False, error=str(e))
+            duration_ms = (perf_counter() - started) * 1000
+            update_correlation_context(tool_status="error")
+            observe_tool_execution(name, "error", duration_ms)
+            run_meta_update_tool(
+                name=name,
+                duration_ms=duration_ms,
+                success=False,
+                error=result.error,
+            )
+            return result

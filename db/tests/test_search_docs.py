@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from search_docs import _category_doc, _kb_chunk_doc, _lamp_doc, _portfolio_doc
+from search_docs import _category_doc, _kb_chunk_doc, _lamp_doc, _portfolio_doc, _validate_kb_route_rows, validate_search_docs
 
 
 class SearchDocsTests(unittest.TestCase):
@@ -89,6 +89,42 @@ class SearchDocsTests(unittest.TestCase):
         self.assertIn("контакты компании", doc["aliases"].lower())
         self.assertIn("телефон", doc["aliases"].lower())
         self.assertIn("ladzavod", doc["aliases"].lower())
+        self.assertEqual(doc["metadata"]["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(doc["metadata"]["retrieval_route_family"], "corp_kb.company_common")
+        self.assertEqual(doc["metadata"]["source_file_scope"], ["common_information_about_company.md"])
+        self.assertIn("contacts", doc["metadata"]["topic_facets"])
+        self.assertIn("контакты компании", " ".join(doc["metadata"]["heading_aliases"]).lower())
+
+    def test_kb_chunk_doc_adds_luxnet_route_aliases_and_facets(self):
+        chunk = {
+            "source_file": "about_Luxnet.md",
+            "document_title": "Беспроводное управление по стандарту Luxnet",
+            "chunk_index": 0,
+            "heading": "Стандарт управления Luxnet",
+            "content": "Luxnet это комплекс программного обеспечения и оборудования.",
+            "metadata": {"source_file": "about_Luxnet.md"},
+        }
+        doc = _kb_chunk_doc(chunk)
+        self.assertIn("что такое luxnet", doc["aliases"].lower())
+        self.assertIn("беспроводное управление luxnet", doc["aliases"].lower())
+        self.assertEqual(doc["metadata"]["knowledge_route_id"], "corp_kb.luxnet")
+        self.assertIn("definition", doc["metadata"]["topic_facets"])
+
+    def test_kb_chunk_doc_adds_lighting_norms_source_scope_and_normalized_heading(self):
+        chunk = {
+            "source_file": "normy_osveschennosty.md",
+            "document_title": "Основные понятия и определения",
+            "chunk_index": 48,
+            "heading": "3.48 освещенность Е, лк",
+            "content": "Освещенность E, лк: отношение светового потока к площади.",
+            "metadata": {"source_file": "normy_osveschennosty.md"},
+        }
+        doc = _kb_chunk_doc(chunk)
+        self.assertEqual(doc["metadata"]["normalized_heading"], "освещенность Е, лк")
+        self.assertIn("нормы освещенности", doc["aliases"].lower())
+        self.assertIn("освещенность в люксах", doc["aliases"].lower())
+        self.assertEqual(doc["metadata"]["source_file_scope"], ["normy_osveschennosty.md"])
+        self.assertIn("definitions", doc["metadata"]["topic_facets"])
 
     def test_category_doc_keeps_sphere_names_in_metadata(self):
         doc = _category_doc(
@@ -152,6 +188,140 @@ class SearchDocsTests(unittest.TestCase):
         self.assertIn("ALTER TABLE corp.corp_search_docs RENAME TO corp_search_docs_old", joined_sql)
         self.assertIn("ALTER TABLE corp.corp_search_docs_stage RENAME TO corp_search_docs", joined_sql)
         self.assertNotIn("TRUNCATE TABLE corp.corp_search_docs", joined_sql)
+
+    def test_validate_kb_route_rows_accepts_expected_route_metadata(self):
+        rows = [
+            _kb_chunk_doc(
+                {
+                    "source_file": "common_information_about_company.md",
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                    "chunk_index": 0,
+                    "heading": "О компании",
+                    "content": "Компания ЛАДзавод светотехники.",
+                    "metadata": {"source_file": "common_information_about_company.md"},
+                }
+            ),
+            _kb_chunk_doc(
+                {
+                    "source_file": "about_Luxnet.md",
+                    "document_title": "Беспроводное управление по стандарту Luxnet",
+                    "chunk_index": 0,
+                    "heading": "Стандарт управления Luxnet",
+                    "content": "Luxnet это комплекс программного обеспечения.",
+                    "metadata": {"source_file": "about_Luxnet.md"},
+                }
+            ),
+            _kb_chunk_doc(
+                {
+                    "source_file": "normy_osveschennosty.md",
+                    "document_title": "Основные понятия и определения",
+                    "chunk_index": 0,
+                    "heading": "3.48 освещенность Е, лк",
+                    "content": "Освещенность E, лк.",
+                    "metadata": {"source_file": "normy_osveschennosty.md"},
+                }
+            ),
+        ]
+        report = _validate_kb_route_rows(rows)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["sources"]["common_information_about_company.md"]["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(report["sources"]["about_Luxnet.md"]["route_rows"], 1)
+        self.assertEqual(report["sources"]["normy_osveschennosty.md"]["faceted_rows"], 1)
+
+    def test_validate_search_docs_runs_metadata_and_query_checks(self):
+        class FakeConn:
+            async def fetch(self, query, *args):
+                sql = str(query)
+                if "FROM corp.corp_search_docs" in sql:
+                    return [
+                        {
+                            "entity_id": "common_information_about_company.md:0",
+                            "title": "О компании",
+                            "aliases": _kb_chunk_doc(
+                                {
+                                    "source_file": "common_information_about_company.md",
+                                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                                    "chunk_index": 0,
+                                    "heading": "О компании",
+                                    "content": "Компания ЛАДзавод светотехники.",
+                                    "metadata": {"source_file": "common_information_about_company.md"},
+                                }
+                            )["aliases"],
+                            "metadata": _kb_chunk_doc(
+                                {
+                                    "source_file": "common_information_about_company.md",
+                                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                                    "chunk_index": 0,
+                                    "heading": "О компании",
+                                    "content": "Компания ЛАДзавод светотехники.",
+                                    "metadata": {"source_file": "common_information_about_company.md"},
+                                }
+                            )["metadata"],
+                        },
+                        {
+                            "entity_id": "about_Luxnet.md:0",
+                            "title": "Стандарт управления Luxnet",
+                            "aliases": _kb_chunk_doc(
+                                {
+                                    "source_file": "about_Luxnet.md",
+                                    "document_title": "Беспроводное управление по стандарту Luxnet",
+                                    "chunk_index": 0,
+                                    "heading": "Стандарт управления Luxnet",
+                                    "content": "Luxnet это комплекс программного обеспечения.",
+                                    "metadata": {"source_file": "about_Luxnet.md"},
+                                }
+                            )["aliases"],
+                            "metadata": _kb_chunk_doc(
+                                {
+                                    "source_file": "about_Luxnet.md",
+                                    "document_title": "Беспроводное управление по стандарту Luxnet",
+                                    "chunk_index": 0,
+                                    "heading": "Стандарт управления Luxnet",
+                                    "content": "Luxnet это комплекс программного обеспечения.",
+                                    "metadata": {"source_file": "about_Luxnet.md"},
+                                }
+                            )["metadata"],
+                        },
+                        {
+                            "entity_id": "normy_osveschennosty.md:0",
+                            "title": "3.48 освещенность Е, лк",
+                            "aliases": _kb_chunk_doc(
+                                {
+                                    "source_file": "normy_osveschennosty.md",
+                                    "document_title": "Основные понятия и определения",
+                                    "chunk_index": 0,
+                                    "heading": "3.48 освещенность Е, лк",
+                                    "content": "Освещенность E, лк.",
+                                    "metadata": {"source_file": "normy_osveschennosty.md"},
+                                }
+                            )["aliases"],
+                            "metadata": _kb_chunk_doc(
+                                {
+                                    "source_file": "normy_osveschennosty.md",
+                                    "document_title": "Основные понятия и определения",
+                                    "chunk_index": 0,
+                                    "heading": "3.48 освещенность Е, лк",
+                                    "content": "Освещенность E, лк.",
+                                    "metadata": {"source_file": "normy_osveschennosty.md"},
+                                }
+                            )["metadata"],
+                        },
+                    ]
+                if "FROM corp.corp_hybrid_search" in sql:
+                    query_text = args[0]
+                    if query_text == "общая информация о компании ladzavod":
+                        return [{"entity_id": "common_information_about_company.md:0", "title": "О компании", "metadata": {"source_file": "common_information_about_company.md"}, "score": 0.99}]
+                    if query_text == "что такое luxnet":
+                        return [{"entity_id": "about_Luxnet.md:0", "title": "Стандарт управления Luxnet", "metadata": {"source_file": "about_Luxnet.md"}, "score": 0.98}]
+                    if query_text == "нормы освещенности":
+                        return [{"entity_id": "normy_osveschennosty.md:0", "title": "3.48 освещенность Е, лк", "metadata": {"source_file": "normy_osveschennosty.md"}, "score": 0.97}]
+                return []
+
+        report = asyncio.run(validate_search_docs(FakeConn()))
+        self.assertEqual(report["errors"], [])
+        self.assertTrue(report["queries"]["company_common"]["passed"])
+        self.assertTrue(report["queries"]["luxnet"]["passed"])
+        self.assertTrue(report["queries"]["lighting_norms"]["passed"])
 
 
 if __name__ == "__main__":

@@ -822,6 +822,28 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertIsNone(sanitized.temp_c_max)
         self.assertIsNone(sanitized.explosion_protected)
 
+    def test_sanitize_filter_defaults_strips_lamp_filters_for_kb_route(self):
+        from src.routes.corp_db import CorpDbSearchRequest, _sanitize_filter_defaults
+
+        req = CorpDbSearchRequest(
+            kind="hybrid_search",
+            profile="kb_route_lookup",
+            knowledge_route_id="corp_kb.company_common",
+            source_files=["ignored.md"],
+            topic_facets=["contacts"],
+            beam_pattern="Ш",
+            power_w_min=100,
+            voltage_kind="AC",
+        )
+        sanitized = _sanitize_filter_defaults(req)
+
+        self.assertEqual(sanitized.knowledge_route_id, "corp_kb.company_common")
+        self.assertEqual(sanitized.source_files, ["common_information_about_company.md"])
+        self.assertEqual(sanitized.topic_facets, ["contacts"])
+        self.assertIsNone(sanitized.beam_pattern)
+        self.assertIsNone(sanitized.power_w_min)
+        self.assertIsNone(sanitized.voltage_kind)
+
     def test_build_lamp_conditions_normalizes_dimensions_and_voltage_kind(self):
         from src.routes.corp_db import CorpDbSearchRequest, _build_lamp_conditions
 
@@ -928,6 +950,35 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["filters"]["search_strategy"], "fallback")
         self.assertEqual(payload["results"][0]["entity_type"], "portfolio")
+
+    def test_hybrid_search_exposes_route_scope_and_uses_authoritative_source_files(self):
+        conn = QueryCaptureConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "hybrid_search",
+                    "query": "что такое luxnet",
+                    "profile": "kb_route_lookup",
+                    "knowledge_route_id": "corp_kb.luxnet",
+                    "source_files": ["ignored.md"],
+                    "topic_facets": ["definition"],
+                    "beam_pattern": "Ш",
+                    "power_w_min": 100,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["filters"]["knowledge_route_id"], "corp_kb.luxnet")
+        self.assertEqual(payload["filters"]["source_file_scope"], ["about_Luxnet.md"])
+        self.assertEqual(payload["filters"]["topic_facets"], ["definition"])
+        self.assertEqual(len(conn.queries), 1)
+        _, args = conn.queries[0]
+        self.assertEqual(args[8], ["about_Luxnet.md"])
 
     def test_candidate_generation_uses_filter_fallback_after_empty(self):
         with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(RoutingConn()))), patch(
@@ -1151,3 +1202,24 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertIn('phase="lamp_ranking"', text)
         self.assertIn('phase="portfolio_lookup"', text)
         self.assertIn('phase="response_build"', text)
+
+    def test_route_ingests_tool_call_headers_into_correlation_context(self):
+        conn = QueryCaptureConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))), patch(
+            "src.routes.corp_db.update_correlation_context"
+        ) as update_mock:
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "lamp_filters"},
+                headers={"X-Tool-Call-Id": "call-9", "X-Tool-Call-Seq": "2"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(update_mock.call_count, 1)
+        first_call = update_mock.call_args_list[0]
+        self.assertEqual(first_call.kwargs["tool_call_id"], "call-9")
+        self.assertEqual(first_call.kwargs["tool_call_seq"], "2")
+        self.assertEqual(first_call.kwargs["tool_name"], "corp_db_search")

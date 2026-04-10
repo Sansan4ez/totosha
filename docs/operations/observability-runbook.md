@@ -15,25 +15,48 @@ Startup
 docker compose -f victoriametrics/docker-compose.yml up -d
 ```
 
-2. Start the application stack with observability overlay:
+2. Start the application stack on the default supported path:
+
+```bash
+docker compose up -d
+```
+
+This starts `core`, `bot`, `proxy`, `tools-api`, `scheduler`, and `corp-db-worker` with OTEL exporter wiring by default.
+
+3. If you need localhost app ports for direct smoke or curl-based triage, apply the port-binding overlay:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 ```
 
-When rebuilding services, keep the same compose pair:
+When rebuilding services, keep the base app command as the default:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d --build core tools-api proxy
+docker compose up -d --build core tools-api proxy bot scheduler
 ```
 
-If you rebuild only `docker-compose.yml`, OTEL env vars disappear from recreated containers and logs fall back to `trace_id=-`.
+If you also need host-local app ports after a rebuild, re-apply the overlay once:
 
-3. Run harness smoke orchestration:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d core tools-api proxy bot scheduler
+```
+
+4. Run harness smoke orchestration:
 
 ```bash
 Use the installed `observability-harness` skill to run smoke against `--repo-root .`.
 ```
+
+For RFC-020 correlation smoke on the local stack, the `core` service smoke now sends two fresh requests:
+
+1. KB route query for `corp_kb.company_common`
+2. Document-domain query for `doc_search.sports_lighting_norms`
+
+The smoke fails unless each request is visible in:
+
+- VictoriaMetrics via `retrieval_route_requests_total` and `tool_executions_total`
+- VictoriaLogs via one fresh `request_id` carrying `trace_id`, `selected_route_id`, and `tool_name`
+- VictoriaTraces via the exact `trace_id` returned by `core /api/chat`
 
 Quick Checks
 ------------
@@ -52,7 +75,7 @@ Fixed Triage Order
 
 1. Service `health_url`
 2. Service `/metrics`
-3. Application logs for `HTTP request completed` with `request_id`, `trace_id`, `span_id`
+3. Application logs for `HTTP request completed` with `request_id`, `trace_id`, `span_id`, `selected_route_id`, and `tool_name`
 4. OTEL collector health
 5. VictoriaMetrics `up` status and metric presence
 6. VictoriaTraces service list / trace search
@@ -67,6 +90,15 @@ curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20(service_name)(ht
 ```
 
 Expected result: `up{service_name="core|tools-api|proxy|scheduler|bot"}` converges to `1`, and request counters are present for the services that already served traffic.
+
+For retrieval correlation, use these checks after a fresh routed request:
+
+```bash
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28selected_route_id%2Cselected_route_kind%2Cselected_source%29%20%28increase%28retrieval_route_requests_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28tool_name%2Cselected_route_id%29%20%28increase%28tool_executions_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
+```
+
+Expected result: the fresh request increments the expected `selected_route_id` and `tool_name`.
 
 Corp DB Latency Triage
 ----------------------
@@ -90,22 +122,32 @@ curl -fsS -X POST 'http://127.0.0.1:9428/select/logsql/query' \
   -d 'limit=20'
 ```
 
-Expected result: one `request_id` across `core`, `tools-api`, and `proxy` with the same `trace_id`.
+Expected result: one `request_id` across `core`, `tools-api`, and `proxy` with the same `trace_id`. For routed requests, the same log record set should expose `selected_route_id`, `selected_route_kind`, `selected_source`, and `tool_name`.
 
 3. Open the corresponding trace in VictoriaTraces or Jaeger API.
 
 ```bash
 curl -fsS 'http://127.0.0.1:10428/select/jaeger/api/services'
+curl -fsS 'http://127.0.0.1:10428/select/jaeger/api/traces/<trace_id>'
 ```
 
 Look for spans:
 
 - `tool.corp_db_search`
+- `tool.doc_search`
 - `corp_db.lamp_filters`
 - `corp_db.hybrid_primary`
 - `corp_db.embedding`
 - `corp_db.token_fallback`
 - `corp_db.alias_fallback`
+
+For RFC-020 correlation, confirm span tags include:
+
+- `selected_route_id`
+- `selected_route_family`
+- `selected_route_kind`
+- `tool_name`
+- `knowledge_route_id` or `document_id`
 
 Interpretation:
 
@@ -146,3 +188,4 @@ Notes
 -----
 
 - Keep the triage order fixed so agents and humans debug the same way.
+- `docker-compose.observability.yml` is now a port-binding overlay only. Losing the overlay no longer drops OTEL env, but it does remove the localhost service bindings used by several manual smoke commands.

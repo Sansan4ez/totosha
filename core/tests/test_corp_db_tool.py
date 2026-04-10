@@ -12,7 +12,15 @@ from contextvars import ContextVar
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 sys.modules.setdefault("aiohttp", types.ModuleType("aiohttp"))
-sys.modules.setdefault("observability", types.SimpleNamespace(REQUEST_ID=ContextVar("request_id", default="-")))
+sys.modules.setdefault(
+    "observability",
+    types.SimpleNamespace(
+        REQUEST_ID=ContextVar("request_id", default="-"),
+        get_correlation_context=lambda: {},
+        inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
+        update_correlation_context=lambda *args, **kwargs: {},
+    ),
+)
 
 
 class _DummySpan:
@@ -74,6 +82,7 @@ class _FakeSession:
     def __init__(self, timeout, response: _FakeResponse):
         self.timeout = timeout
         self._response = response
+        self.last_post_kwargs = None
 
     async def __aenter__(self):
         return self
@@ -82,14 +91,23 @@ class _FakeSession:
         return False
 
     def post(self, *args, **kwargs):
+        self.last_post_kwargs = kwargs
         return self._response
 
 
 def _aiohttp_stub_for_payload(payload: object, *, status: int = 200):
     body = json.dumps(payload, ensure_ascii=False)
+    state = types.SimpleNamespace(last_session=None)
+
+    def _client_session(timeout):
+        session = _FakeSession(timeout, _FakeResponse(status, body))
+        state.last_session = session
+        return session
+
     return types.SimpleNamespace(
         ClientTimeout=_FakeTimeout,
-        ClientSession=lambda timeout: _FakeSession(timeout, _FakeResponse(status, body)),
+        ClientSession=_client_session,
+        _state=state,
     )
 
 
@@ -230,6 +248,50 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(artifact["payload"]["result_format"], "compact_company_fact_v1")
         self.assertTrue(artifact["payload"]["results"][0]["preview"].endswith("…"))
 
+    def test_tool_preserves_route_aware_kb_args(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {
+            "status": "success",
+            "kind": "hybrid_search",
+            "filters": {
+                "knowledge_route_id": "corp_kb.luxnet",
+                "source_file_scope": ["about_Luxnet.md"],
+                "topic_facets": ["definition"],
+            },
+            "results": [
+                {
+                    "entity_type": "kb_chunk",
+                    "title": "Что такое Luxnet",
+                    "document_title": "О Luxnet",
+                    "heading": "Что такое Luxnet",
+                    "metadata": {"source_file": "about_Luxnet.md"},
+                    "preview": "Luxnet — это система управления освещением.",
+                }
+            ],
+        }
+
+        aiohttp_stub = _aiohttp_stub_for_payload(payload)
+        with patch.object(_MODULE, "aiohttp", aiohttp_stub):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {
+                        "kind": "hybrid_search",
+                        "profile": "kb_route_lookup",
+                        "knowledge_route_id": "corp_kb.luxnet",
+                        "source_files": ["about_Luxnet.md"],
+                        "topic_facets": ["definition"],
+                        "query": "что такое luxnet",
+                    },
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        sent = aiohttp_stub._state.last_session.last_post_kwargs["json"]
+        self.assertEqual(sent["knowledge_route_id"], "corp_kb.luxnet")
+        self.assertEqual(sent["source_files"], ["about_Luxnet.md"])
+        self.assertEqual(sent["topic_facets"], ["definition"])
+
     def test_tool_preserves_structured_fields_for_sku_by_code(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
         payload = {
@@ -253,6 +315,62 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         decoded = json.loads(result.output)
         self.assertEqual(decoded["results"][0]["etm_code"], "1234567")
         self.assertEqual(decoded["results"][0]["oracl_code"], "OR-9988")
+
+    def test_tool_propagates_trace_headers_to_tools_api(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {"status": "success", "kind": "hybrid_search", "results": []}
+        aiohttp_stub = _aiohttp_stub_for_payload(payload)
+        injected_headers = {
+            "X-User-Id": "42",
+            "X-Chat-Type": "private",
+            "X-Request-Id": "req-456",
+            "traceparent": "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01",
+            "tracestate": "vendor=test",
+        }
+        token = _MODULE.OBS_REQUEST_ID.set("req-456")
+        try:
+            with patch.object(_MODULE, "aiohttp", aiohttp_stub), patch.object(
+                _MODULE,
+                "inject_trace_context",
+                return_value=injected_headers,
+            ) as inject_mock:
+                result = asyncio.run(tool_corp_db_search({"kind": "hybrid_search", "query": "ip67"}, ctx))
+        finally:
+            _MODULE.OBS_REQUEST_ID.reset(token)
+
+        self.assertTrue(result.success)
+        self.assertEqual(aiohttp_stub._state.last_session.last_post_kwargs["headers"], injected_headers)
+        inject_mock.assert_called_once_with(
+            {"X-User-Id": "42", "X-Chat-Type": "private"},
+            request_id="req-456",
+        )
+
+    def test_tool_propagates_tool_call_headers_to_tools_api(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {"status": "success", "kind": "hybrid_search", "results": []}
+        aiohttp_stub = _aiohttp_stub_for_payload(payload)
+
+        with patch.object(_MODULE, "aiohttp", aiohttp_stub), patch.object(
+            _MODULE,
+            "get_correlation_context",
+            return_value={"tool_call_id": "call-7", "tool_call_seq": "3"},
+        ), patch.object(
+            _MODULE,
+            "inject_trace_context",
+            side_effect=lambda headers=None, request_id=None: dict(headers or {}),
+        ):
+            result = asyncio.run(tool_corp_db_search({"kind": "hybrid_search", "query": "ip67"}, ctx))
+
+        self.assertTrue(result.success)
+        self.assertEqual(
+            aiohttp_stub._state.last_session.last_post_kwargs["headers"],
+            {
+                "X-User-Id": "42",
+                "X-Chat-Type": "private",
+                "X-Tool-Call-Id": "call-7",
+                "X-Tool-Call-Seq": "3",
+            },
+        )
 
     def test_tool_attaches_bench_artifact_for_application_recommendation(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")

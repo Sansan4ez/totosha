@@ -24,3 +24,8 @@ RFCs
 - `docs/rfc/RFC-013-observability-runtime-wiring-and-trace-propagation.md`
 - `docs/rfc/RFC-014-simple-company-fact-fast-path-and-kb-ranking.md`
 - `docs/rfc/RFC-015-runtime-vs-benchmark-pipeline-separation.md`
+- `docs/rfc/RFC-016-authoritative-route-completion-and-llm-finalization.md`
+- `docs/rfc/RFC-017-source-scoped-corp-knowledge-routing.md`
+- `docs/rfc/RFC-018-unified-routing-catalog-for-tables-scripts-and-docs.md`
+- `docs/rfc/RFC-019-doc-search-domain-and-inbox-verification.md`
+- `docs/rfc/RFC-020-unified-victoria-observability-correlation.md`

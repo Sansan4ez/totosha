@@ -14,6 +14,7 @@ It is generated from `harness/env-vars.yaml` plus repo scanning and fails genera
 | `API_PORT` | `8080` | `core/config.py` | bootstrap compose port |
 | `LOG_LEVEL` | `INFO` | `core/logger.py`, `docker-compose.yml` | bootstrap runtime logging |
 | `APP_HEALTH_URL` | `http://localhost:8080/healthz` | `victoriametrics/smoke_test.sh` | observability smoke target |
+| `CORE_PORT` | `4000` | `docker-compose.observability.yml`, `victoriametrics/smoke_test.sh` | core HTTP port and smoke target derivation |
 | `SERVICE_NAME` | `service` | `victoriametrics/smoke_test.sh` | observability smoke service.name probe |
 | `VMALERT_PORT` | `8880` | `victoriametrics/docker-compose.yml`, `victoriametrics/smoke_test.sh` | observability smoke vmalert endpoint |
 | `GRAFANA_PORT` | `3000` | `victoriametrics/docker-compose.yml`, `victoriametrics/smoke_test.sh` | observability smoke grafana endpoint |
@@ -26,7 +27,25 @@ It is generated from `harness/env-vars.yaml` plus repo scanning and fails genera
 | `OTEL_COLLECTOR_PORT_HTTP` | `4318` | `victoriametrics/docker-compose.yml` | observability collector OTLP HTTP port |
 | `ALERTMANAGER_PORT` | `9093` | `victoriametrics/docker-compose.yml` | observability alertmanager endpoint |
 | `SMOKE_REPORT_FILE` | required / no default | `victoriametrics/smoke_test.sh` | observability smoke artifact override |
+| `SMOKE_CHAT_URL` | `http://127.0.0.1:${CORE_PORT}/api/chat` | `victoriametrics/smoke_test.sh` | routed observability smoke chat endpoint |
+| `SMOKE_USER_ID` | `5202705269` | `victoriametrics/smoke_test.sh` | routed observability smoke user id |
+| `SMOKE_CHAT_ID` | `5202705269` | `victoriametrics/smoke_test.sh` | routed observability smoke chat id |
+| `SMOKE_REQUEST_TIMEOUT_SECONDS` | `180` | `victoriametrics/smoke_test.sh` | routed observability smoke request and backend wait budget |
 | `SMOKE_HEALTH_TIMEOUT_SECONDS` | `60` | `victoriametrics/smoke_test.sh` | observability smoke wait budget |
 | `SMOKE_METRIC_SIGNAL` | `http_server_duration_milliseconds` | `victoriametrics/smoke_test.sh` | observability smoke metric probe |
 | `SMOKE_LOG_SIGNAL` | `HTTP request completed` | `victoriametrics/smoke_test.sh` | observability smoke log probe |
 | `SMOKE_TRACE_SIGNAL` | `request` | `victoriametrics/smoke_test.sh` | observability smoke trace probe |
+| `KB_REQUEST_ID` | `obs-rfc020-kb-route` | `victoriametrics/smoke_test.sh` | KB-route smoke request id |
+| `KB_QUERY` | `Подскажи официальный сайт компании ЛАДзавод светотехники.` | `victoriametrics/smoke_test.sh` | KB-route smoke query |
+| `KB_EXPECTED_ROUTE_ID` | `corp_kb.company_common` | `victoriametrics/smoke_test.sh` | KB-route expected route id |
+| `KB_EXPECTED_ROUTE_KIND` | `corp_table` | `victoriametrics/smoke_test.sh` | KB-route expected route kind |
+| `KB_EXPECTED_SOURCE` | `corp_db` | `victoriametrics/smoke_test.sh` | KB-route expected selected source |
+| `KB_EXPECTED_TOOL` | `corp_db_search` | `victoriametrics/smoke_test.sh` | KB-route expected tool name |
+| `KB_EXPECTED_DOCUMENT_ID` | empty | `victoriametrics/smoke_test.sh` | optional KB-route expected document id override |
+| `DOC_REQUEST_ID` | `obs-rfc020-doc-route` | `victoriametrics/smoke_test.sh` | document-route smoke request id |
+| `DOC_QUERY` | `Какие нормы освещенности для спортивных объектов указаны в документе?` | `victoriametrics/smoke_test.sh` | document-route smoke query |
+| `DOC_EXPECTED_ROUTE_ID` | `doc_search.sports_lighting_norms` | `victoriametrics/smoke_test.sh` | document-route expected route id |
+| `DOC_EXPECTED_ROUTE_KIND` | `doc_domain` | `victoriametrics/smoke_test.sh` | document-route expected route kind |
+| `DOC_EXPECTED_SOURCE` | `doc_search` | `victoriametrics/smoke_test.sh` | document-route expected selected source |
+| `DOC_EXPECTED_TOOL` | `doc_search` | `victoriametrics/smoke_test.sh` | document-route expected tool name |
+| `DOC_EXPECTED_DOCUMENT_ID` | `part_440.1325800.2023.doc` | `victoriametrics/smoke_test.sh` | document-route expected document identifier |

@@ -82,7 +82,12 @@ _stub_modules = {
         agent_logger=_DummyLogger(),
         log_agent_step=lambda *args, **kwargs: None,
     ),
-    "observability": types.SimpleNamespace(REQUEST_ID=ContextVar("request_id", default="-")),
+    "observability": types.SimpleNamespace(
+        REQUEST_ID=ContextVar("request_id", default="-"),
+        inject_trace_context=lambda *args, **kwargs: {},
+        record_span_event=lambda *args, **kwargs: None,
+        update_correlation_context=lambda *args, **kwargs: {},
+    ),
     "run_meta": types.SimpleNamespace(
         run_meta_get=lambda: None,
         run_meta_update_llm=lambda **kwargs: None,
@@ -118,10 +123,16 @@ class RoutingGuardrailTests(unittest.TestCase):
             {"power_w_min": 0, "voltage_kind": "AC", "explosion_protected": False, "limit": 5},
             "Подскажи контакты компании.",
         )
-        self.assertEqual(rewritten["entity_types"], ["company"])
+        self.assertEqual(rewritten["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(rewritten["source_files"], ["common_information_about_company.md"])
+        self.assertEqual(rewritten["topic_facets"], ["contacts"])
         self.assertNotIn("power_w_min", rewritten)
         self.assertNotIn("voltage_kind", rewritten)
         self.assertNotIn("explosion_protected", rewritten)
+        voice_route = _MODULE._authoritative_kb_route_hint(
+            "[От: @bench (42)]\n[Голосовое сообщение, распознанный текст:]\nЧто такое Luxnet?"
+        )
+        self.assertEqual(voice_route["route_id"], "corp_kb.luxnet")
         weak_about_payload = {
             "status": "success",
             "results": [
@@ -192,10 +203,12 @@ class RoutingGuardrailTests(unittest.TestCase):
         wiki_tool_args: dict | None = None,
         wiki_payload: dict | None = None,
         route_index: dict | None = None,
+        corp_db_payloads: list[dict] | None = None,
         tool_call_sequence: list[tuple[str, dict]] | None = None,
         llm_responses_override: list[dict] | None = None,
     ) -> tuple[str, AsyncMock, dict]:
         meta: dict = {}
+        remaining_corp_db_payloads = list(corp_db_payloads or [])
         tool_defs = [
             {
                 "type": "function",
@@ -237,8 +250,9 @@ class RoutingGuardrailTests(unittest.TestCase):
         if llm_responses_override is None:
             llm_responses.append(self._final_response("Официальный сайт: https://ladzavod.ru"))
 
-        async def fake_execute_tool(name, args, ctx):
+        async def fake_execute_tool(name, args, ctx, **kwargs):
             if name == "corp_db_search":
+                payload_value = remaining_corp_db_payloads.pop(0) if remaining_corp_db_payloads else corp_db_payload
                 metadata = {
                     "runtime_payload_format": "full_json",
                     "bench_payload_format": "compact_company_fact_v1"
@@ -246,11 +260,11 @@ class RoutingGuardrailTests(unittest.TestCase):
                     else "compact_bench_value_v1",
                     "bench_artifact": {
                         "tool": "corp_db_search",
-                        "kind": str(args.get("kind") or corp_db_payload.get("kind") or ""),
-                        "payload": {"status": corp_db_payload.get("status"), "results": corp_db_payload.get("results", [])},
+                        "kind": str(args.get("kind") or payload_value.get("kind") or ""),
+                        "payload": {"status": payload_value.get("status"), "results": payload_value.get("results", [])},
                     },
                 }
-                return _ToolResult(True, output=json.dumps(corp_db_payload, ensure_ascii=False), metadata=metadata)
+                return _ToolResult(True, output=json.dumps(payload_value, ensure_ascii=False), metadata=metadata)
             if name == wiki_tool_name:
                 if wiki_tool_name == "doc_search":
                     payload = wiki_payload or {
@@ -349,11 +363,13 @@ class RoutingGuardrailTests(unittest.TestCase):
         )
 
         self.assertIn("ladzavod.ru", response)
-        self.assertEqual(exec_mock.await_count, 2)
-        self.assertEqual(exec_mock.await_args_list[1].args[0], "read_file")
-        self.assertEqual(meta["retrieval_selected_source"], "doc_search")
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
         self.assertFalse(meta["retrieval_wiki_after_corp_db_success"])
-        self.assertEqual(meta["routing_guardrail_hits"], 0)
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["retrieval_phase"], "open")
+        self.assertEqual(meta["retrieval_evidence_status"], "empty")
 
     def test_explicit_wiki_request_keeps_wiki_available_after_corp_db_success(self):
         response, exec_mock, meta = self._run_flow(
@@ -428,6 +444,9 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_args_list[0].args[0], "doc_search")
         self.assertEqual(meta["retrieval_selected_source"], "doc_search")
         self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["retrieval_phase"], "closed")
+        self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
+        self.assertEqual(meta["retrieval_close_reason"], "doc_search_payload_sufficient")
 
     def test_route_index_blocks_doc_tool_before_corp_db_for_company_fact(self):
         response, exec_mock, meta = self._run_flow(
@@ -463,7 +482,10 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(meta["retrieval_route_source"], "corp_db")
-        self.assertEqual(meta["retrieval_route_id"], "corp_db.company_profile")
+        self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
+        self.assertEqual(meta["retrieval_selected_route_kind"], "corp_table")
+        self.assertIn("corp_kb.company_common", meta["retrieval_candidate_route_ids"])
+        self.assertTrue(meta["retrieval_selection_reason"])
         self.assertEqual(meta["routing_guardrail_hits"], 1)
 
     def test_route_index_blocks_skill_directory_browse_before_corp_db_for_company_fact(self):
@@ -511,7 +533,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("промышленное освещение", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(meta["retrieval_route_id"], "corp_db.company_profile")
+        self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
         self.assertEqual(meta["routing_guardrail_hits"], 1)
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
 
@@ -544,7 +566,105 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_args_list[0].args[0], "doc_search")
         self.assertEqual(meta["retrieval_route_source"], "doc_search")
         self.assertEqual(meta["retrieval_route_id"], "doc_search.doc_fire_line")
+        self.assertEqual(meta["retrieval_selected_route_kind"], "doc_domain")
+        self.assertEqual(meta["document_id"], "doc_fire_line")
+        self.assertIn("doc_search.doc_fire_line", meta["retrieval_candidate_route_ids"])
+        self.assertTrue(meta["retrieval_selection_reason"])
         self.assertEqual(meta["routing_guardrail_hits"], 1)
+
+    def test_route_index_prefers_doc_search_for_sports_norms_document_domain_query(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Какие нормы освещенности для спортивных объектов указаны в документе?",
+            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+            corp_db_args={"kind": "hybrid_search", "profile": "kb_search", "query": "нормы освещенности спортивных объектов"},
+            wiki_tool_name="doc_search",
+            wiki_tool_args={"query": "нормы освещенности спортивных объектов"},
+            wiki_payload={
+                "status": "success",
+                "results": [
+                    {
+                        "relative_path": "part_440.1325800.2023.doc",
+                        "snippet": "Нормы освещенности для спортивных объектов и спортивных залов приведены в документе.",
+                    }
+                ],
+            },
+            route_index={
+                "generated_at": "2026-04-08T00:00:00Z",
+                "route_count": 1,
+                "routes": [
+                    {
+                        "route_id": "doc_search.sports_lighting_norms",
+                        "route_kind": "doc_domain",
+                        "route_family": "sports_lighting_norms",
+                        "source": "doc_search",
+                        "title": "Нормы освещенности спортивных объектов",
+                        "keywords": ["спорт", "спортивных", "освещенности", "нормы"],
+                        "patterns": ["нормы освещенности для спортивных объектов"],
+                        "tool_name": "doc_search",
+                        "tool_args": {"preferred_document_ids": ["part_440.1325800.2023.doc"]},
+                    }
+                ],
+            },
+            llm_responses_override=[
+                self._tool_call_response("doc_search", {"query": "нормы освещенности спортивных объектов"}),
+                self._final_response("В документе есть нормы освещенности для спортивных объектов и спортивных залов."),
+            ],
+        )
+
+        self.assertIn("нормы освещенности", response.lower())
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "doc_search")
+        self.assertEqual(meta["retrieval_selected_source"], "doc_search")
+        self.assertEqual(meta["retrieval_selected_route_kind"], "doc_domain")
+        self.assertEqual(meta["retrieval_route_id"], "doc_search.sports_lighting_norms")
+        self.assertEqual(meta["retrieval_route_family"], "doc_search.sports_lighting_norms")
+        self.assertEqual(meta["document_id"], "part_440.1325800.2023.doc")
+
+    def test_guardrail_blocks_doc_browse_after_successful_doc_search_for_document_lookup(self):
+        cases = [
+            ("read_file", {"path": "/data/corp_docs/live/doc_123.json"}),
+            ("search_text", {"path": "/data/corp_docs/live/doc_123.json", "query": "LINE"}),
+            ("search_files", {"path": "/data/corp_docs/live", "pattern": "/data/corp_docs/live/**/*.json"}),
+            ("run_command", {"command": "grep -R LINE /data/corp_docs/live"}),
+        ]
+
+        for tool_name, tool_args in cases:
+            with self.subTest(tool_name=tool_name):
+                response, exec_mock, meta = self._run_flow(
+                    user_message="Найди в wiki пожарный сертификат LINE и дай ссылку.",
+                    corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+                    wiki_tool_name=tool_name,
+                    wiki_tool_args=tool_args,
+                    wiki_payload={
+                        "status": "success",
+                        "results": [
+                            {
+                                "relative_path": "certs/line-fire.pdf",
+                                "document_title": "Пожарный сертификат LINE",
+                                "preview": "Пожарный сертификат LINE: https://ladzavod.ru/certs/line-fire.pdf",
+                            }
+                        ],
+                    },
+                    tool_call_sequence=[
+                        ("doc_search", {"query": "пожарный сертификат line"}),
+                        (tool_name, tool_args),
+                    ],
+                    llm_responses_override=[
+                        self._tool_call_response("doc_search", {"query": "пожарный сертификат line"}),
+                        self._tool_call_response(tool_name, tool_args),
+                        self._final_response("Нашёл пожарный сертификат LINE. Прямая ссылка: https://ladzavod.ru/certs/line-fire.pdf"),
+                    ],
+                )
+
+                self.assertIn("line-fire.pdf", response)
+                self.assertEqual(exec_mock.await_count, 1)
+                self.assertEqual(exec_mock.await_args_list[0].args[0], "doc_search")
+                self.assertEqual(meta["retrieval_selected_source"], "doc_search")
+                self.assertEqual(meta["retrieval_phase"], "closed")
+                self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
+                self.assertEqual(meta["retrieval_close_reason"], "doc_search_payload_sufficient")
+                self.assertEqual(meta["routing_guardrail_hits"], 1)
+                self.assertEqual(meta["routing_guardrail_last_blocked_tool"], tool_name)
 
     def test_empty_llm_completion_uses_deterministic_company_fact_fallback(self):
         response, exec_mock, meta = self._run_flow(
@@ -641,12 +761,61 @@ class RoutingGuardrailTests(unittest.TestCase):
         )
 
         self.assertIn("ladzavod.ru", response)
-        self.assertEqual(exec_mock.await_count, 2)
-        self.assertEqual(exec_mock.await_args_list[1].args[0], "doc_search")
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertFalse(meta["company_fact_payload_relevant"])
         self.assertEqual(meta["company_fact_fallback_reason"], "weak_company_fact_payload")
-        self.assertEqual(meta["routing_guardrail_hits"], 0)
-        self.assertEqual(meta["retrieval_selected_source"], "doc_search")
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["retrieval_phase"], "open")
+        self.assertEqual(meta["retrieval_evidence_status"], "weak")
+
+    def test_authoritative_kb_retry_blocks_secondary_route_until_local_retry(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="[От: @bench (42)]\n[Голосовое сообщение, распознанный текст:]\nЧто такое Luxnet?",
+            corp_db_payload={"status": "empty", "kind": "hybrid_search", "results": []},
+            corp_db_payloads=[
+                {"status": "empty", "kind": "hybrid_search", "results": []},
+                {
+                    "status": "success",
+                    "kind": "hybrid_search",
+                    "results": [
+                        {
+                            "document_title": "О Luxnet",
+                            "heading": "Что такое Luxnet",
+                            "preview": "Luxnet — это система управления освещением.",
+                            "metadata": {"source_file": "about_Luxnet.md"},
+                        }
+                    ],
+                },
+            ],
+            wiki_tool_name="doc_search",
+            wiki_tool_args={"query": "luxnet"},
+            tool_call_sequence=[
+                ("corp_db_search", {"kind": "hybrid_search", "query": "luxnet"}),
+                ("doc_search", {"query": "luxnet"}),
+                ("corp_db_search", {"kind": "hybrid_search", "query": "что такое luxnet"}),
+            ],
+            llm_responses_override=[
+                self._tool_call_response("corp_db_search", {"kind": "hybrid_search", "query": "luxnet"}),
+                self._tool_call_response("doc_search", {"query": "luxnet"}),
+                self._tool_call_response("corp_db_search", {"kind": "hybrid_search", "query": "что такое luxnet"}),
+                self._final_response("Luxnet — это система управления освещением."),
+            ],
+        )
+
+        self.assertIn("Luxnet", response)
+        self.assertEqual(exec_mock.await_count, 2)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
+        self.assertEqual(exec_mock.await_args_list[1].args[0], "corp_db_search")
+        self.assertEqual(exec_mock.await_args_list[0].args[1]["knowledge_route_id"], "corp_kb.luxnet")
+        self.assertEqual(exec_mock.await_args_list[1].args[1]["knowledge_route_id"], "corp_kb.luxnet")
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["retrieval_route_family"], "corp_kb.luxnet")
+        self.assertEqual(meta["knowledge_route_id"], "corp_kb.luxnet")
+        self.assertEqual(meta["retrieval_retry_count"], 1)
+        self.assertEqual(meta["retrieval_phase"], "closed")
+        self.assertEqual(meta["retrieval_close_reason"], "authoritative_payload_sufficient")
 
     def test_about_company_uses_llm_finalization_with_full_runtime_payload(self):
         response, exec_mock, meta = self._run_flow(

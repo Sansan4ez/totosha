@@ -1,0 +1,25 @@
+service=core
+[OK] otel collector: http://localhost:13133/
+[OK] grafana: http://localhost:3003/api/health
+[OK] vmalert rules: http://localhost:8880/api/v1/rules
+[OK] application health: http://127.0.0.1:4000/health
+[OK] trace service observed: core
+trace_signal_hint=request
+[OK] log signal observed: HTTP request completed
+[OK] metric signal observed: http_server_duration_milliseconds
+[OK] core health: http://127.0.0.1:4000/health
+[RUN] kb_route: request_id=obs-rfc020-kb-route-v4
+[OK] kb_route: route_id=corp_kb.company_common trace_id=09d2a2f14b0a281515bfe33304fa9c94 selected_source=doc_search document_id=doc_d535db29801e363a tool=corp_db_search
+[OK] metric correlation observed: kb_route retrieval_route_requests_total
+[OK] metric correlation observed: kb_route tool_executions_total
+[OK] log correlation observed: kb_route request_id/trace_id/route/tool
+[OK] log correlation observed: kb_route document_id
+[OK] trace correlation observed: kb_route trace_id/route/tool
+[RUN] document_route: request_id=obs-rfc020-doc-route-v4
+[OK] document_route: route_id=doc_search.sports_lighting_norms trace_id=ed7f8180cbf12de6502830a8770bc1b9 selected_source=doc_search document_id=doc_d535db29801e363a tool=doc_search
+[OK] metric correlation observed: document_route retrieval_route_requests_total
+[OK] metric correlation observed: document_route tool_executions_total
+[OK] log correlation observed: document_route request_id/trace_id/route/tool
+[OK] log correlation observed: document_route document_id
+[OK] trace correlation observed: document_route trace_id/route/tool
+smoke_ok=true
