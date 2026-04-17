@@ -18,6 +18,7 @@ from observability import (
 )
 from agent import run_agent, sessions
 from run_meta import run_meta_reset, run_meta_set
+from tool_output_policy import EXECUTION_MODE_RUNTIME, normalize_execution_mode
 from tools.scheduler import scheduler
 from admin_api import router as admin_router, load_config as load_admin_config
 
@@ -42,6 +43,7 @@ class ChatRequest(BaseModel):
     chat_type: Optional[str] = "private"
     source: Optional[str] = "bot"
     return_meta: Optional[bool] = False
+    execution_mode: Optional[str] = EXECUTION_MODE_RUNTIME
 
 
 class ClearRequest(BaseModel):
@@ -54,8 +56,9 @@ class SchedulerCallbackRequest(BaseModel):
     text: str
 
 
-def _build_run_meta() -> dict:
+def _build_run_meta(*, execution_mode: str) -> dict:
     return {
+        "execution_mode": normalize_execution_mode(execution_mode),
         "request_id": REQUEST_ID.get("-"),
         "trace_id": "-",
         "span_id": "-",
@@ -75,11 +78,8 @@ def _build_run_meta() -> dict:
         "retrieval_selected_source": "unknown",
         "retrieval_route_id": "",
         "retrieval_route_source": "",
-        "retrieval_route_score": 0,
         "retrieval_selected_route_kind": "",
         "retrieval_candidate_route_ids": [],
-        "retrieval_secondary_candidates": [],
-        "retrieval_selection_reason": "",
         "retrieval_route_family": "",
         "retrieval_phase": "",
         "retrieval_evidence_status": "",
@@ -91,13 +91,9 @@ def _build_run_meta() -> dict:
         "topic_facets": [],
         "finalizer_mode": "",
         "retrieval_explicit_wiki_request": False,
-        "retrieval_wiki_after_corp_db_success": False,
         "routing_guardrail_hits": 0,
         "company_fact_intent_type": "",
-        "company_fact_fast_path": False,
         "company_fact_payload_relevant": False,
-        "company_fact_rendered": False,
-        "company_fact_fallback_reason": "",
         "company_fact_finalizer_mode": "",
         "company_fact_runtime_payload_format": "",
         "company_fact_bench_payload_format": "",
@@ -215,7 +211,8 @@ async def chat(req: ChatRequest):
     
     log_request(req.user_id, req.chat_id, req.username or "", source, req.message)
     
-    meta = _build_run_meta()
+    execution_mode = normalize_execution_mode(req.execution_mode)
+    meta = _build_run_meta(execution_mode=execution_mode)
     token = run_meta_set(meta)
     started = perf_counter()
 
@@ -226,7 +223,8 @@ async def chat(req: ChatRequest):
             message=req.message,
             username=req.username or "",
             chat_type=req.chat_type or "private",
-            source=source
+            source=source,
+            execution_mode=execution_mode,
         )
         
         log_response(response)

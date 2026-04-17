@@ -11,6 +11,8 @@ import json
 from contextvars import ContextVar
 from typing import Any, Optional
 
+from tool_output_policy import EXECUTION_MODE_RUNTIME, is_benchmark_execution_mode, normalize_execution_mode
+
 
 RUN_META: ContextVar[Optional[dict[str, Any]]] = ContextVar("run_meta", default=None)
 BENCH_ARTIFACTS_MAX_COUNT = 8
@@ -28,6 +30,13 @@ def run_meta_set(meta: dict[str, Any]) -> Any:
 
 def run_meta_reset(token: Any) -> None:
     RUN_META.reset(token)
+
+
+def run_meta_execution_mode(default: str = EXECUTION_MODE_RUNTIME) -> str:
+    meta = RUN_META.get()
+    if not isinstance(meta, dict):
+        return normalize_execution_mode(default)
+    return normalize_execution_mode(meta.get("execution_mode"), default=default)
 
 
 def _coerce_int(value: Any) -> int:
@@ -120,6 +129,8 @@ def run_meta_update_tool(name: str, duration_ms: float, success: bool, error: st
 def run_meta_append_artifact(artifact: dict[str, Any]) -> bool:
     meta = RUN_META.get()
     if not meta or not isinstance(artifact, dict) or not artifact:
+        return False
+    if not is_benchmark_execution_mode(meta.get("execution_mode")):
         return False
 
     artifacts = meta.get("bench_artifacts")

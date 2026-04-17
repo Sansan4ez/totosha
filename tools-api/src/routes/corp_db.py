@@ -902,6 +902,7 @@ def _hybrid_row(record: asyncpg.Record) -> dict[str, Any]:
     if record["entity_type"] == "kb_chunk":
         result["document_title"] = metadata.get("document_title")
         result["heading"] = record["title"]
+        result["content"] = record["content"]
         result["preview"] = _preview(record["content"])
     elif record["entity_type"] == "lamp":
         result["preview"] = metadata.get("preview") or _preview(record["content"])
@@ -927,6 +928,44 @@ def _debug_info_object(value: Any) -> dict[str, Any]:
         except json.JSONDecodeError:
             return {}
     return {}
+
+
+def _json_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    return []
+
+
+def _record_matches_hybrid_scope(
+    record: dict[str, Any] | asyncpg.Record,
+    *,
+    knowledge_route_id: str = "",
+    source_files: list[str] | None = None,
+    topic_facets: list[str] | None = None,
+) -> bool:
+    if not knowledge_route_id and not source_files and not topic_facets:
+        return True
+    metadata = _json_object(_row_get(record, "metadata"))
+    record_route_id = str(metadata.get("knowledge_route_id") or "").strip()
+    if knowledge_route_id and record_route_id and record_route_id != knowledge_route_id:
+        return False
+    record_source_file = str(metadata.get("source_file") or "").strip()
+    if source_files and record_source_file not in set(source_files):
+        return False
+    if topic_facets:
+        record_facets = set(_json_string_list(metadata.get("topic_facets")))
+        if not record_facets or not record_facets.intersection(topic_facets):
+            return False
+    return True
 
 
 def _rows_have_lexical_signal(rows: list[asyncpg.Record]) -> bool:
@@ -2159,13 +2198,15 @@ async def _run_hybrid_query(
     semantic_weight: float,
     fuzzy_weight: float,
     entity_types: list[str] | None,
+    knowledge_route_id: str = "",
     source_files: list[str] | None,
+    topic_facets: list[str] | None,
     include_debug: bool,
 ) -> list[asyncpg.Record]:
-    return await conn.fetch(
+    rows = await conn.fetch(
         """
         SELECT doc_id, entity_type, entity_id, title, content, metadata, score, debug_info
-        FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8)
         """,
         query,
         embedding,
@@ -2175,9 +2216,17 @@ async def _run_hybrid_query(
         fuzzy_weight,
         60,
         entity_types,
-        source_files,
-        include_debug,
     )
+    return [
+        row
+        for row in rows
+        if _record_matches_hybrid_scope(
+            row,
+            knowledge_route_id=knowledge_route_id,
+            source_files=source_files,
+            topic_facets=topic_facets,
+        )
+    ]
 
 
 async def _run_alias_fallback_query(
@@ -2329,6 +2378,8 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
     query_limit = limit
     if explicit_lamp_filters:
         query_limit = max(limit, 10)
+    if source_file_scope or topic_facets:
+        query_limit = max(query_limit, limit * 5)
 
     direct_filter_rows: list[dict[str, Any]] = []
     if explicit_lamp_filters:
@@ -2385,7 +2436,9 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
             semantic_weight=0.0,
             fuzzy_weight=lexical_fuzzy_weight,
             entity_types=entity_types,
+            knowledge_route_id=knowledge_route_id,
             source_files=source_file_scope or None,
+            topic_facets=topic_facets or None,
             include_debug=req.include_debug,
         )
     primary_rows = [_hybrid_row(row) for row in rows]
@@ -2473,7 +2526,9 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                     semantic_weight=semantic_weight,
                     fuzzy_weight=lexical_fuzzy_weight,
                     entity_types=entity_types,
+                    knowledge_route_id=knowledge_route_id,
                     source_files=source_file_scope or None,
+                    topic_facets=topic_facets or None,
                     include_debug=req.include_debug,
                 )
             formatted_semantic = [_hybrid_row(row) for row in semantic_rows]
@@ -2533,6 +2588,9 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                     semantic_weight=0.0,
                     fuzzy_weight=max(lexical_fuzzy_weight, 1.1 if fuzzy_enabled else 0.0),
                     entity_types=entity_types,
+                    knowledge_route_id=knowledge_route_id,
+                    source_files=source_file_scope or None,
+                    topic_facets=topic_facets or None,
                     include_debug=req.include_debug,
                 )
             formatted = [_hybrid_row(row) for row in retry_rows]

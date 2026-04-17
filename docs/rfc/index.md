@@ -29,3 +29,5 @@ RFCs
 - `docs/rfc/RFC-018-unified-routing-catalog-for-tables-scripts-and-docs.md`
 - `docs/rfc/RFC-019-doc-search-domain-and-inbox-verification.md`
 - `docs/rfc/RFC-020-unified-victoria-observability-correlation.md`
+- `docs/rfc/RFC-021-runtime-llm-led-orchestration-simplification.md`
+- `docs/rfc/RFC-022-agent-web-chat-frontend-integration.md`

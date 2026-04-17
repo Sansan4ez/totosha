@@ -198,7 +198,9 @@ class RoutingCatalogTests(unittest.TestCase):
                     explicit_document_request=True,
                 )
             self.assertEqual(selection["selected"]["route_id"], "doc_search.document_lookup")
+            self.assertEqual(selection["primary_candidate"]["route_id"], "doc_search.document_lookup")
             self.assertEqual(selection["selected_route_kind"], "doc_domain")
+            self.assertEqual(selection["intent_family"], "document_lookup")
             self.assertIn("explicit_document_request", selection["selection_reason"])
             self.assertTrue(selection["candidate_route_ids"])
 
@@ -228,7 +230,47 @@ class RoutingCatalogTests(unittest.TestCase):
 
             self.assertEqual(selection["selected"]["route_id"], "corp_db.application_recommendation")
             self.assertEqual(selection["selected_route_kind"], "corp_script")
+            self.assertEqual(selection["intent_family"], "application_recommendation")
             self.assertIn("corp_db.application_recommendation", selection["candidate_route_ids"])
+
+    def test_select_route_biases_broad_recommendation_queries_away_from_live_doc_routes(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            docs_root = Path(docs_tmp)
+            self._write_live_document(
+                docs_root,
+                document_id="doc_sports_norms",
+                title="СП 440.1325800.2023 Освещение спортивных сооружений",
+                summary="Нормы освещенности спортивных объектов, спортивных залов и спортивных сооружений.",
+                routing={
+                    "route_id": "doc_search.sports_lighting_norms",
+                    "route_family": "doc_search.sports_lighting_norms",
+                    "topics": ["sports_lighting", "sports_halls"],
+                    "keywords": [
+                        "нормы освещенности спортивных объектов",
+                        "нормы освещенности спортивного зала",
+                    ],
+                    "patterns": [
+                        "какие нормы освещенности для спортивных объектов",
+                    ],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(Path(repo_tmp)), "CORP_DOCS_ROOT": str(docs_root)},
+                clear=False,
+            ):
+                for query in (
+                    "Подбери освещение для спортивного стадиона",
+                    "Подбери освещение для склада",
+                    "Подбери освещение для аэропорта",
+                ):
+                    selection = select_route(query)
+                    self.assertEqual(selection["selected"]["route_id"], "corp_db.application_recommendation")
+                    self.assertEqual(selection["intent_family"], "application_recommendation")
+                    self.assertEqual(selection["primary_candidate"]["route_id"], "corp_db.application_recommendation")
+                    self.assertTrue(selection["secondary_candidates"])
+                    self.assertIn("corp_db.application_recommendation", selection["candidate_route_ids"])
+                    self.assertNotEqual(selection["primary_candidate"]["route_id"], "doc_search.sports_lighting_norms")
 
 
 if __name__ == "__main__":

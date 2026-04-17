@@ -150,7 +150,10 @@ def _load_api_module(*, run_agent_impl):
 
 class CoreApiCorrelationTests(unittest.TestCase):
     def test_chat_success_does_not_record_request_correlation_in_handler(self):
+        seen_kwargs: list[dict] = []
+
         async def _success(*args, **kwargs):
+            seen_kwargs.append(kwargs)
             return "PONG"
 
         module, observe_recorder, update_recorder, _ = _load_api_module(run_agent_impl=_success)
@@ -167,12 +170,17 @@ class CoreApiCorrelationTests(unittest.TestCase):
         response = asyncio.run(module.chat(request))
 
         self.assertEqual(response["response"], "PONG")
+        self.assertEqual(response["meta"]["execution_mode"], "runtime")
+        self.assertEqual(seen_kwargs[0]["execution_mode"], "runtime")
         self.assertEqual(len(observe_recorder.calls), 0)
         self.assertEqual(len(update_recorder.calls), 1)
         self.assertEqual(update_recorder.calls[0]["selected_source"], "unknown")
 
     def test_chat_error_does_not_record_request_correlation_in_handler(self):
+        seen_kwargs: list[dict] = []
+
         async def _failure(*args, **kwargs):
+            seen_kwargs.append(kwargs)
             raise RuntimeError("boom")
 
         module, observe_recorder, update_recorder, _ = _load_api_module(run_agent_impl=_failure)
@@ -189,6 +197,35 @@ class CoreApiCorrelationTests(unittest.TestCase):
         response = asyncio.run(module.chat(request))
 
         self.assertEqual(response["response"], "Error: boom")
+        self.assertEqual(response["meta"]["execution_mode"], "runtime")
+        self.assertEqual(seen_kwargs[0]["execution_mode"], "runtime")
         self.assertEqual(len(observe_recorder.calls), 0)
         self.assertEqual(len(update_recorder.calls), 1)
         self.assertEqual(update_recorder.calls[0]["selected_source"], "unknown")
+
+    def test_chat_passes_explicit_benchmark_execution_mode(self):
+        seen_kwargs: list[dict] = []
+
+        async def _success(*args, **kwargs):
+            seen_kwargs.append(kwargs)
+            return "PONG"
+
+        module, observe_recorder, update_recorder, _ = _load_api_module(run_agent_impl=_success)
+        request = module.ChatRequest(
+            user_id=1,
+            chat_id=2,
+            message="ping",
+            username="tester",
+            chat_type="private",
+            source="bot",
+            return_meta=True,
+            execution_mode="benchmark",
+        )
+
+        response = asyncio.run(module.chat(request))
+
+        self.assertEqual(response["response"], "PONG")
+        self.assertEqual(response["meta"]["execution_mode"], "benchmark")
+        self.assertEqual(seen_kwargs[0]["execution_mode"], "benchmark")
+        self.assertEqual(len(observe_recorder.calls), 0)
+        self.assertEqual(len(update_recorder.calls), 1)

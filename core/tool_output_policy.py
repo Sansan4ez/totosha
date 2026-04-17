@@ -10,7 +10,26 @@ import json
 from typing import Any, Mapping
 
 
+EXECUTION_MODE_RUNTIME = "runtime"
+EXECUTION_MODE_BENCHMARK = "benchmark"
 RUNTIME_PAYLOAD_FORMAT_FULL_JSON = "full_json"
+
+
+def normalize_execution_mode(value: Any, *, default: str = EXECUTION_MODE_RUNTIME) -> str:
+    candidate = str(value or "").strip().lower()
+    if candidate == EXECUTION_MODE_BENCHMARK:
+        return EXECUTION_MODE_BENCHMARK
+    if candidate == EXECUTION_MODE_RUNTIME:
+        return EXECUTION_MODE_RUNTIME
+    return default
+
+
+def is_benchmark_execution_mode(value: Any) -> bool:
+    return normalize_execution_mode(value) == EXECUTION_MODE_BENCHMARK
+
+
+def allows_deterministic_primary_finalization(value: Any) -> bool:
+    return is_benchmark_execution_mode(value)
 
 
 def serialize_runtime_json(data: Any) -> str:

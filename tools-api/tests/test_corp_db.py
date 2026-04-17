@@ -255,6 +255,60 @@ class QueryCaptureConn:
         return []
 
 
+class KbRouteScopeConn:
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "corp.corp_hybrid_search" not in sql:
+            return []
+        return [
+            {
+                "doc_id": 1,
+                "entity_type": "kb_chunk",
+                "entity_id": "common_information_about_company.md:17",
+                "title": "Контактная информация",
+                "content": "Телефон +7 (351) 239-18-11, email lad@ladled.ru.",
+                "metadata": {
+                    "source_file": "common_information_about_company.md",
+                    "knowledge_route_id": "corp_kb.company_common",
+                    "topic_facets": ["contacts"],
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                },
+                "score": 0.93,
+                "debug_info": {"fts": {"rank_ix": 1}, "fuzzy": {}},
+            },
+            {
+                "doc_id": 2,
+                "entity_type": "kb_chunk",
+                "entity_id": "common_information_about_company.md:5",
+                "title": "О компании",
+                "content": "Компания ЛАДзавод светотехники производит светильники.",
+                "metadata": {
+                    "source_file": "common_information_about_company.md",
+                    "knowledge_route_id": "corp_kb.company_common",
+                    "topic_facets": ["about_company"],
+                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                },
+                "score": 0.89,
+                "debug_info": {"fts": {"rank_ix": 2}, "fuzzy": {}},
+            },
+            {
+                "doc_id": 3,
+                "entity_type": "kb_chunk",
+                "entity_id": "about_Luxnet.md:0",
+                "title": "Что такое Luxnet",
+                "content": "Luxnet — система управления освещением.",
+                "metadata": {
+                    "source_file": "about_Luxnet.md",
+                    "knowledge_route_id": "corp_kb.luxnet",
+                    "topic_facets": ["definition"],
+                    "document_title": "Беспроводное управление по стандарту Luxnet",
+                },
+                "score": 0.95,
+                "debug_info": {"fts": {"rank_ix": 0}, "fuzzy": {}},
+            },
+        ]
+
+
 class PortfolioExamplesConn:
     def __init__(self, *, include_portfolio: bool = True, include_spheres: bool = True, include_category: bool = True):
         self.include_portfolio = include_portfolio
@@ -978,7 +1032,31 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["filters"]["topic_facets"], ["definition"])
         self.assertEqual(len(conn.queries), 1)
         _, args = conn.queries[0]
-        self.assertEqual(args[8], ["about_Luxnet.md"])
+        self.assertEqual(len(args), 8)
+        self.assertEqual(args[7], ["kb_chunk"])
+
+    def test_hybrid_search_filters_rows_by_kb_route_scope_after_query(self):
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(KbRouteScopeConn()))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "hybrid_search",
+                    "query": "контакты компании",
+                    "profile": "kb_route_lookup",
+                    "knowledge_route_id": "corp_kb.company_common",
+                    "topic_facets": ["contacts"],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["heading"], "Контактная информация")
+        self.assertEqual(payload["results"][0]["metadata"]["source_file"], "common_information_about_company.md")
 
     def test_candidate_generation_uses_filter_fallback_after_empty(self):
         with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(RoutingConn()))), patch(

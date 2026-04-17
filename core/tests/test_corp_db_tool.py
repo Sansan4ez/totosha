@@ -292,6 +292,29 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(sent["source_files"], ["about_Luxnet.md"])
         self.assertEqual(sent["topic_facets"], ["definition"])
 
+    def test_tool_returns_error_when_payload_status_is_error(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {
+            "status": "error",
+            "kind": "hybrid_search",
+            "query": "контакты компании",
+            "message": "Корпоративная база временно недоступна",
+            "results": [],
+        }
+
+        with patch.object(_MODULE, "aiohttp", _aiohttp_stub_for_payload(payload)):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {"kind": "hybrid_search", "profile": "kb_search", "query": "контакты компании"},
+                    ctx,
+                )
+            )
+
+        self.assertFalse(result.success)
+        self.assertIn("Корпоративная база временно недоступна", result.error)
+        self.assertIsInstance(result.metadata, dict)
+        self.assertEqual(result.metadata.get("runtime_payload_format"), "full_json")
+
     def test_tool_preserves_structured_fields_for_sku_by_code(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
         payload = {

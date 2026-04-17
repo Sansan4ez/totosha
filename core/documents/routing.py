@@ -55,11 +55,78 @@ ORCHESTRATION_KEYWORDS = (
     "подходят для",
     "подходит для",
 )
+COMPANY_FACT_KEYWORDS = (
+    "контакты",
+    "контакт",
+    "телефон",
+    "email",
+    "e-mail",
+    "почта",
+    "адрес",
+    "сайт",
+    "официальный сайт",
+    "реквизиты",
+    "инн",
+    "кпп",
+    "огрн",
+    "о компании",
+    "расскажи о компании",
+    "год основания",
+    "соцсети",
+    "сервис",
+    "гарантия",
+)
+CATALOG_LOOKUP_KEYWORDS = (
+    "модель",
+    "серия",
+    "артикул",
+    "код",
+    "карточка",
+    "характеристики",
+    "совместимость",
+    "крепление",
+)
+PORTFOLIO_LOOKUP_KEYWORDS = (
+    "портфолио",
+    "пример проекта",
+    "пример объекта",
+    "примеры проектов",
+    "примеры объектов",
+    "из портфолио",
+    "какие проекты",
+    "покажи проекты",
+    "реализация",
+)
+APPLICATION_RECOMMENDATION_KEYWORDS = (
+    "подбери",
+    "рекоменд",
+    "подходит",
+    "подходят",
+    "для стадиона",
+    "для склада",
+    "для аэропорта",
+    "для офиса",
+    "стадион",
+    "арена",
+    "спорткомплекс",
+    "карьер",
+    "рудник",
+    "аэропорт",
+    "склад",
+    "офис",
+    "кабинет",
+    "агрессивная среда",
+    "агрессивной среды",
+    "агрессивной среде",
+    "апрон",
+    "высокие пролеты",
+)
 ROUTING_SCHEMA_VERSION = 1
 ROUTING_CATALOG_ID = "totosha.unified-routing-catalog"
 ROUTING_CATALOG_FILENAME = "catalog.v1.json"
 LEGACY_ROUTING_INDEX_FILENAME = "index.json"
 MIN_SELECTION_SCORE = 4
+SHORTLIST_SIZE = 4
 
 
 def _utcnow() -> str:
@@ -172,6 +239,7 @@ def _normalize_route_card(route: dict[str, Any], *, origin: str) -> dict[str, An
         "topics": [str(item).strip() for item in route.get("topics", []) if str(item).strip()],
         "keywords": _dedupe([str(item) for item in route.get("keywords", []) if str(item).strip()]),
         "patterns": _dedupe([str(item) for item in route.get("patterns", []) if str(item).strip()]),
+        "generated_keywords": _dedupe([str(item) for item in route.get("generated_keywords", []) if str(item).strip()]),
         "preconditions": [str(item).strip() for item in route.get("preconditions", []) if str(item).strip()],
         "retry_policy": dict(route.get("retry_policy") or _default_retry_policy(route_kind, authority)),
         "executor": executor,
@@ -456,13 +524,10 @@ def build_document_route_cards() -> list[dict[str, Any]]:
                 "summary": summary,
                 "topics": topics,
                 "keywords": _dedupe(
-                    keywords
-                    + tags
-                    + topics
-                    + [title, relative_path, str(record.get("original_filename") or "")]
-                    + _terms(summary)[:24]
+                    keywords + [title, relative_path, str(record.get("original_filename") or "")]
                 ),
-                "patterns": _dedupe(patterns + [title, relative_path, *tags, *topics]),
+                "patterns": _dedupe(patterns + [title, relative_path]),
+                "generated_keywords": _dedupe(tags + topics + _terms(summary)[:24]),
                 "executor": "doc_search",
                 "executor_args_template": {"preferred_document_ids": preferred_document_ids},
                 "observability_labels": {"document_id": document_id},
@@ -615,6 +680,41 @@ def _authority_rank(authority: str) -> int:
     return 2 if authority == "primary" else 1
 
 
+def _route_intent_family(route: dict[str, Any]) -> str:
+    route_id = str(route.get("route_id") or "")
+    route_family = str(route.get("route_family") or "")
+    if route_id.startswith("corp_kb.company_"):
+        return "company_fact"
+    if route_id == "corp_db.catalog_lookup":
+        return "catalog_lookup"
+    if route_id == "corp_db.application_recommendation":
+        return "application_recommendation"
+    if route_id == "corp_db.portfolio_by_sphere":
+        return "portfolio_lookup"
+    if route_family.startswith("doc_domain.") or str(route.get("route_kind") or "") == "doc_domain":
+        return "document_lookup"
+    return "other"
+
+
+def _intent_contains(query_text: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in query_text for needle in needles)
+
+
+def _infer_intent_family(query: str, *, explicit_document_request: bool) -> str:
+    query_text = _normalize(query)
+    if explicit_document_request:
+        return "document_lookup"
+    if _intent_contains(query_text, PORTFOLIO_LOOKUP_KEYWORDS):
+        return "portfolio_lookup"
+    if _intent_contains(query_text, APPLICATION_RECOMMENDATION_KEYWORDS) or _intent_contains(query_text, ORCHESTRATION_KEYWORDS):
+        return "application_recommendation"
+    if _intent_contains(query_text, CATALOG_LOOKUP_KEYWORDS):
+        return "catalog_lookup"
+    if _intent_contains(query_text, COMPANY_FACT_KEYWORDS):
+        return "company_fact"
+    return "other"
+
+
 def _kind_rank(route_kind: str, *, explicit_document_request: bool) -> int:
     if explicit_document_request:
         ranks = {"doc_domain": 3, "corp_table": 2, "corp_script": 1}
@@ -623,7 +723,43 @@ def _kind_rank(route_kind: str, *, explicit_document_request: bool) -> int:
     return ranks.get(route_kind, 0)
 
 
-def _score_route_card(route: dict[str, Any], query: str, *, explicit_document_request: bool) -> dict[str, Any]:
+def _intent_bonus(route: dict[str, Any], *, intent_family: str, explicit_document_request: bool) -> tuple[int, str | None]:
+    route_intent = _route_intent_family(route)
+    route_kind = str(route.get("route_kind") or "")
+    if not intent_family or intent_family == "other":
+        return (0, None)
+    if route_intent == intent_family:
+        bonus_by_intent = {
+            "company_fact": 14,
+            "catalog_lookup": 12,
+            "application_recommendation": 16,
+            "portfolio_lookup": 14,
+            "document_lookup": 18,
+        }
+        return (bonus_by_intent.get(intent_family, 10), f"intent_match={intent_family}")
+    if intent_family == "application_recommendation":
+        if route_intent == "portfolio_lookup":
+            return (8, "neighbor_intent=portfolio_lookup")
+        if route_kind == "doc_domain" and not explicit_document_request:
+            return (-12, "application_vs_doc_penalty")
+    if intent_family == "portfolio_lookup" and route_intent == "application_recommendation":
+        return (6, "neighbor_intent=application_recommendation")
+    if intent_family == "company_fact" and route_kind == "doc_domain" and not explicit_document_request:
+        return (-8, "company_fact_vs_doc_penalty")
+    if intent_family == "catalog_lookup" and route_kind == "doc_domain" and not explicit_document_request:
+        return (-6, "catalog_vs_doc_penalty")
+    if intent_family == "document_lookup" and route_kind != "doc_domain":
+        return (-6, "document_lookup_prefers_doc_domain")
+    return (0, None)
+
+
+def _score_route_card(
+    route: dict[str, Any],
+    query: str,
+    *,
+    explicit_document_request: bool,
+    intent_family: str,
+) -> dict[str, Any]:
     query_text = _normalize(query)
     query_terms = set(_terms(query))
     score = 0
@@ -644,6 +780,14 @@ def _score_route_card(route: dict[str, Any], query: str, *, explicit_document_re
         if keyword_terms:
             score += 3 * len(keyword_terms)
             matched_keywords.extend(keyword_terms)
+    if str(route.get("route_kind") or "") == "doc_domain" and (
+        explicit_document_request or intent_family == "document_lookup"
+    ):
+        for keyword in route.get("generated_keywords", []) or []:
+            keyword_terms = [term for term in _terms(keyword) if term in query_terms]
+            if keyword_terms:
+                score += 2 * len(keyword_terms)
+                matched_keywords.extend(keyword_terms)
     matched_keywords = _dedupe(matched_keywords)
     if matched_keywords:
         reasons.append(f"keywords:{','.join(matched_keywords[:3])}")
@@ -663,6 +807,15 @@ def _score_route_card(route: dict[str, Any], query: str, *, explicit_document_re
         score += 6
         reasons.append("orchestration_signal")
 
+    intent_bonus, intent_reason = _intent_bonus(
+        route,
+        intent_family=intent_family,
+        explicit_document_request=explicit_document_request,
+    )
+    score += intent_bonus
+    if intent_reason:
+        reasons.append(intent_reason)
+
     if route.get("authority") == "primary":
         score += 2
         reasons.append("authority=primary")
@@ -681,18 +834,26 @@ def _score_route_card(route: dict[str, Any], query: str, *, explicit_document_re
         "selection_reason": selection_reason,
         "matched_keywords": matched_keywords[:6],
         "matched_patterns": matched_patterns[:4],
+        "intent_family": intent_family,
+        "route_intent_family": _route_intent_family(route),
         "route": dict(route),
     }
 
 
 def select_route(query: str, *, explicit_document_request: bool | None = None) -> dict[str, Any]:
     explicit_document_request = _is_explicit_document_request(query) if explicit_document_request is None else bool(explicit_document_request)
+    intent_family = _infer_intent_family(query, explicit_document_request=explicit_document_request)
     catalog = load_routing_index()
     scored: list[dict[str, Any]] = []
     for route in catalog.get("routes", []):
         if not isinstance(route, dict):
             continue
-        candidate = _score_route_card(route, query, explicit_document_request=explicit_document_request)
+        candidate = _score_route_card(
+            route,
+            query,
+            explicit_document_request=explicit_document_request,
+            intent_family=intent_family,
+        )
         if candidate["score"] > 0:
             scored.append(candidate)
 
@@ -706,43 +867,62 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
         reverse=True,
     )
 
-    selected = scored[0] if scored and scored[0]["score"] >= MIN_SELECTION_SCORE else None
+    shortlist = scored[:SHORTLIST_SIZE]
+    selected = shortlist[0] if shortlist and shortlist[0]["score"] >= MIN_SELECTION_SCORE else None
+
+    def _candidate_payload(item: dict[str, Any]) -> dict[str, Any]:
+        route = dict(item["route"])
+        route["score"] = int(item["score"])
+        route["selection_reason"] = str(item["selection_reason"])
+        route["route_kind"] = str(item["route_kind"])
+        route["route_family"] = str(item["route_family"])
+        route["selected_route_kind"] = str(item["route_kind"])
+        route["selected_route_family"] = str(item["route_family"])
+        route["intent_family"] = str(item.get("intent_family") or "")
+        route["route_intent_family"] = str(item.get("route_intent_family") or "")
+        return route
+
+    primary_candidate = _candidate_payload(selected) if selected is not None else None
+    secondary_candidates = [
+        _candidate_payload(item)
+        for item in shortlist[1:]
+    ] if selected is not None else []
     selected_route = None
-    if selected is not None:
-        selected_route = dict(selected["route"])
-        selected_route["score"] = int(selected["score"])
-        selected_route["selection_reason"] = str(selected["selection_reason"])
-        selected_route["selected_route_kind"] = str(selected["route_kind"])
-        selected_route["selected_route_family"] = str(selected["route_family"])
+    if primary_candidate is not None:
+        selected_route = dict(primary_candidate)
         selected_route["candidate_route_ids"] = [item["route_id"] for item in scored[:8]]
         selected_route["secondary_candidates"] = [
             {
-                "route_id": item["route_id"],
-                "score": int(item["score"]),
-                "route_kind": item["route_kind"],
-                "route_family": item["route_family"],
-                "selection_reason": item["selection_reason"],
+                "route_id": str(item.get("route_id") or ""),
+                "score": int(item.get("score") or 0),
+                "route_kind": str(item.get("route_kind") or ""),
+                "route_family": str(item.get("route_family") or ""),
+                "selection_reason": str(item.get("selection_reason") or ""),
+                "intent_family": str(item.get("intent_family") or ""),
+                "route_intent_family": str(item.get("route_intent_family") or ""),
             }
-            for item in scored[1:4]
+            for item in secondary_candidates
         ]
         selected_route["catalog_version"] = str(catalog.get("catalog_version") or "")
         selected_route["catalog_origin"] = str(catalog.get("manifest_origin") or "")
 
     return {
+        "intent_family": intent_family,
+        "primary_candidate": primary_candidate,
         "selected": selected_route,
         "candidate_route_ids": [item["route_id"] for item in scored[:8]],
         "secondary_candidates": [
             {
-                "route_id": item["route_id"],
-                "score": int(item["score"]),
-                "route_kind": item["route_kind"],
-                "route_family": item["route_family"],
-                "selection_reason": item["selection_reason"],
+                "route_id": str(item.get("route_id") or ""),
+                "score": int(item.get("score") or 0),
+                "route_kind": str(item.get("route_kind") or ""),
+                "route_family": str(item.get("route_family") or ""),
+                "selection_reason": str(item.get("selection_reason") or ""),
+                "intent_family": str(item.get("intent_family") or ""),
+                "route_intent_family": str(item.get("route_intent_family") or ""),
             }
-            for item in scored[1:4]
-        ]
-        if selected is not None
-        else [],
+            for item in secondary_candidates
+        ],
         "selection_reason": str(selected["selection_reason"]) if selected is not None else "",
         "selection_score": int(selected["score"]) if selected is not None else 0,
         "selected_route_kind": str(selected["route_kind"]) if selected is not None else "",

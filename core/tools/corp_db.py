@@ -176,6 +176,13 @@ def _build_bench_artifact(args: dict | None, data: object) -> dict | None:
     }
 
 
+def _payload_error_message(data: dict) -> str:
+    message = str(data.get("message") or data.get("error") or "").strip()
+    if message:
+        return message
+    return "Корпоративная база временно недоступна"
+
+
 async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
     tools_api_url = os.getenv("TOOLS_API_URL", "http://tools-api:8100")
     budget = _timeout_budget_seconds()
@@ -255,6 +262,8 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
                             runtime_payload_format=RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
                             bench_payload_format=bench_payload_format,
                         )
+                        if isinstance(data, dict) and str(data.get("status") or "").lower() == "error":
+                            return ToolResult(False, error=_payload_error_message(data), output=_serialize_runtime_payload(data), metadata=metadata)
                         return ToolResult(True, output=_serialize_runtime_payload(data), metadata=metadata)
                     except Exception:
                         span.set_attribute("corp_db.status", "success")
