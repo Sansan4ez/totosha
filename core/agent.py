@@ -6,7 +6,6 @@ import json
 import re
 import aiohttp
 from datetime import datetime
-from dataclasses import dataclass
 from time import perf_counter
 from typing import Optional, Any
 from pathlib import Path
@@ -31,6 +30,7 @@ from tool_output_policy import (
 from tools import execute_tool, filter_tools_for_session
 from models import ToolContext, ToolResult
 from opentelemetry import trace
+from session_manager import SessionManager
 
 # Cache for tool definitions
 _tools_cache = None
@@ -1455,55 +1455,6 @@ def try_fix_json_args(raw_args: str, tool_name: str) -> Optional[dict]:
     return None
 
 
-@dataclass
-class Session:
-    """User session"""
-    user_id: int
-    chat_id: int
-    cwd: str
-    history: list
-    blocked_count: int = 0
-    source: str = "bot"  # 'bot' or 'userbot'
-
-
-class SessionManager:
-    """Manage user sessions"""
-    def __init__(self):
-        self.sessions: dict[str, Session] = {}
-    
-    def get_key(self, user_id: int, chat_id: int) -> str:
-        return f"{user_id}_{chat_id}"
-    
-    def get(self, user_id: int, chat_id: int) -> Session:
-        key = self.get_key(user_id, chat_id)
-        
-        if key not in self.sessions:
-            cwd = os.path.join(CONFIG.workspace, str(user_id))
-            os.makedirs(cwd, exist_ok=True)
-            # Ensure directory is writable (for bind mounts)
-            try:
-                os.chmod(cwd, 0o777)
-            except:
-                pass
-            
-            self.sessions[key] = Session(
-                user_id=user_id,
-                chat_id=chat_id,
-                cwd=cwd,
-                history=[]
-            )
-            agent_logger.info(f"New session: {key}")
-        
-        return self.sessions[key]
-    
-    def clear(self, user_id: int, chat_id: int):
-        key = self.get_key(user_id, chat_id)
-        if key in self.sessions:
-            self.sessions[key].history = []
-            self.sessions[key].blocked_count = 0
-            agent_logger.info(f"Session cleared: {key}")
-
-
 sessions = SessionManager()
 
 
@@ -1588,6 +1539,8 @@ def trim_history(history: list, max_msgs: int, max_chars: int) -> list:
 
 def save_session_to_file(session: Session):
     """Save session history to SESSION.json file"""
+    if getattr(session, "source", "bot") == "web":
+        return
     try:
         session_file = os.path.join(session.cwd, "SESSION.json")
         
@@ -2045,8 +1998,7 @@ async def run_agent(
 ) -> str:
     """Run ReAct agent loop"""
     execution_mode = normalize_execution_mode(execution_mode)
-    session = sessions.get(user_id, chat_id)
-    session.source = source
+    session = sessions.get(user_id, chat_id, source=source)
     
     # Check if user is admin (bypasses some security patterns)
     is_admin = (user_id == _get_admin_id())
@@ -2089,6 +2041,12 @@ async def run_agent(
     # Add workspace info
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     workspace_info = f"\nUser: @{username} (id={user_id})\nWorkspace: {session.cwd}\nTime: {timestamp}\nSource: {source}"
+    if source == "web":
+        workspace_info += (
+            "\nWeb widget formatting hints:"
+            "\n- Prefer concise markdown tables for comparisons or ranked numeric results."
+            "\n- Prefer short field lists like 'Title:', 'Description:', 'Price:' when highlighting a single result."
+        )
     
     # Add Google email if authorized (admin-only)
     google_email = get_google_email()

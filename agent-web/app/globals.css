@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 205 34% 96%;
+  --foreground: 214 32% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 214 32% 15%;
+  --muted: 210 29% 92%;
+  --muted-foreground: 214 18% 42%;
+  --border: 208 24% 82%;
+  --accent: 170 38% 90%;
+  --accent-foreground: 175 68% 16%;
+  --brand: 188 76% 28%;
+  --brand-foreground: 0 0% 100%;
+  --radius: 1.2rem;
+}
+
+* {
+  @apply border-border;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  font-family: var(--font-geist-sans);
+}
+
+code,
+pre,
+.font-mono {
+  font-family: var(--font-geist-mono);
+}
+
+::selection {
+  background: rgba(16, 116, 128, 0.18);
+}

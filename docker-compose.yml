@@ -363,6 +363,7 @@ services:
       - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
       - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
       - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+      - AGENT_WEB_SESSION_TTL_S=${AGENT_WEB_SESSION_TTL_S:-900}
     secrets:
       - model_name
     volumes:
@@ -518,6 +519,45 @@ services:
         limits:
           cpus: '0.2'
           memory: 128M
+
+  # ============ AGENT-WEB - Embedded iframe widget ============
+  agent-web:
+    build: ./agent-web
+    container_name: agent-web
+    restart: unless-stopped
+    ports:
+      - "${AGENT_WEB_PORT:-3003}:3003"
+    depends_on:
+      core:
+        condition: service_healthy
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - CORE_API_URL=http://core:4000
+      - AGENT_WEB_SESSION_TTL_S=${AGENT_WEB_SESSION_TTL_S:-900}
+      - AGENT_WEB_MAX_ANON_SESSIONS=${AGENT_WEB_MAX_ANON_SESSIONS:-256}
+      - AGENT_WEB_MAX_ANON_SESSIONS_PER_IP=${AGENT_WEB_MAX_ANON_SESSIONS_PER_IP:-4}
+      - AGENT_WEB_ALLOWED_FRAME_ANCESTORS=${AGENT_WEB_ALLOWED_FRAME_ANCESTORS:-'self'}
+      - NEXT_PUBLIC_AGENT_WEB_SSE=${NEXT_PUBLIC_AGENT_WEB_SSE:-1}
+    networks:
+      - agent-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/api/web/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
 
 # ============ SECRETS ============
 secrets:

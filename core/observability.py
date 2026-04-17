@@ -62,6 +62,7 @@ LATENCY_BUCKETS_MS = (
     60000,
 )
 CORRELATION_FIELDS = (
+    "request_source",
     "selected_route_id",
     "selected_route_family",
     "selected_route_kind",
@@ -80,6 +81,7 @@ CORRELATION_FIELDS = (
     "finalizer_mode",
 )
 CORRELATION_FIELD_DEFAULTS = {
+    "request_source": "-",
     "selected_route_id": "-",
     "selected_route_family": "-",
     "selected_route_kind": "-",
@@ -98,6 +100,7 @@ CORRELATION_FIELD_DEFAULTS = {
     "finalizer_mode": "-",
 }
 SPAN_ATTRIBUTE_NAMES = {
+    "request_source": "request_source",
     "selected_route_id": "selected_route_id",
     "selected_route_family": "selected_route_family",
     "selected_route_kind": "selected_route_kind",
@@ -131,6 +134,19 @@ HTTP_SERVER_DURATION_MS = Histogram(
     "http_server_duration_milliseconds",
     "HTTP request duration in milliseconds.",
     labelnames=("service", "method", "route", "status"),
+    registry=REGISTRY,
+    buckets=LATENCY_BUCKETS_MS,
+)
+CHAT_CHANNEL_REQUESTS_TOTAL = Counter(
+    "chat_channel_requests_total",
+    "Chat requests grouped by logical channel source and status.",
+    labelnames=("service", "request_source", "status"),
+    registry=REGISTRY,
+)
+CHAT_CHANNEL_DURATION_MS = Histogram(
+    "chat_channel_duration_milliseconds",
+    "Chat request duration grouped by logical channel source and status.",
+    labelnames=("service", "request_source", "status"),
     registry=REGISTRY,
     buckets=LATENCY_BUCKETS_MS,
 )
@@ -364,6 +380,12 @@ def observe_tool_execution(tool_name: str, tool_status: str, duration_ms: float)
     TOOL_EXECUTION_DURATION_MS.labels(*labels).observe(duration_ms)
 
 
+def observe_chat_request(request_source: str, status: str, duration_ms: float) -> None:
+    source = (request_source or "unknown").strip() or "unknown"
+    CHAT_CHANNEL_REQUESTS_TOTAL.labels(ACTIVE_SERVICE_NAME, source, status).inc()
+    CHAT_CHANNEL_DURATION_MS.labels(ACTIVE_SERVICE_NAME, source, status).observe(duration_ms)
+
+
 class _RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.service_name = ACTIVE_SERVICE_NAME
@@ -403,7 +425,7 @@ def setup_observability(service_name: str) -> None:
 
     formatter = logging.Formatter(
         "[%(service_name)s] request_id=%(request_id)s trace_id=%(trace_id)s "
-        "span_id=%(span_id)s selected_route_id=%(selected_route_id)s "
+        "span_id=%(span_id)s request_source=%(request_source)s selected_route_id=%(selected_route_id)s "
         "selected_route_family=%(selected_route_family)s selected_route_kind=%(selected_route_kind)s "
         "selected_source=%(selected_source)s knowledge_route_id=%(knowledge_route_id)s "
         "document_id=%(document_id)s tool_name=%(tool_name)s tool_call_id=%(tool_call_id)s "

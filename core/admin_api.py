@@ -175,7 +175,7 @@ async def get_services():
         return []
     
     services = []
-    target_containers = ["core", "bot", "proxy", "userbot", "admin"]
+    target_containers = ["core", "bot", "proxy", "userbot", "admin", "agent-web"]
     
     for name in target_containers:
         try:
@@ -347,6 +347,7 @@ def load_config():
         "access": {
             "bot_enabled": True,
             "userbot_enabled": True,
+            "web_enabled": os.getenv("WEB_ENABLED", "false").lower() == "true",
             "mode": _default_access_mode(),
             "admin_id": int(os.getenv("ADMIN_USER_ID", "0")),  # 0 = not set, configure via UI
             "allowlist": []  # list of user_ids
@@ -425,6 +426,7 @@ async def get_access():
     return {
         "bot_enabled": access.get("bot_enabled", True),
         "userbot_enabled": access.get("userbot_enabled", True),
+        "web_enabled": access.get("web_enabled", os.getenv("WEB_ENABLED", "false").lower() == "true"),
         "mode": access.get("mode", "admin_only"),
         "admin_id": access.get("admin_id", int(os.getenv("ADMIN_USER_ID", "0")))
     }
@@ -450,6 +452,17 @@ async def toggle_userbot(data: AccessToggle):
     config["access"]["userbot_enabled"] = data.enabled
     save_config(config)
     return {"success": True, "userbot_enabled": data.enabled}
+
+
+@router.put("/access/web")
+async def toggle_web(data: AccessToggle):
+    """Enable/disable embedded web widget access."""
+    config = load_config()
+    if "access" not in config:
+        config["access"] = {}
+    config["access"]["web_enabled"] = data.enabled
+    save_config(config)
+    return {"success": True, "web_enabled": data.enabled}
 
 
 @router.get("/userbot/config")

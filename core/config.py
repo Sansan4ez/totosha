@@ -57,6 +57,7 @@ class Config:
     # Callbacks
     bot_url: str = "http://bot:4001"
     userbot_url: str = "http://userbot:8080"
+    web_enabled: bool = False
 
 
 def _load_admin_config() -> dict:
@@ -108,6 +109,7 @@ CONFIG = Config(
     workspace=os.getenv("WORKSPACE", "/workspace"),
     bot_url=os.getenv("BOT_URL", "http://bot:4001"),
     userbot_url=os.getenv("USERBOT_URL", "http://userbot:8080"),
+    web_enabled=os.getenv("WEB_ENABLED", "false").lower() == "true",
 )
 
 
