@@ -623,7 +623,11 @@ def eval_routing(meta: Optional[dict[str, Any]], routing: Optional[dict[str, Any
 
     if "wiki_after_corp_db_success" in routing:
         expected = bool(routing.get("wiki_after_corp_db_success"))
-        actual = bool(meta.get("retrieval_wiki_after_corp_db_success"))
+        if "retrieval_wiki_after_corp_db_success" not in meta:
+            errors.append("routing:missing_meta_field=retrieval_wiki_after_corp_db_success")
+            actual = None
+        else:
+            actual = bool(meta.get("retrieval_wiki_after_corp_db_success"))
         if actual != expected:
             errors.append(f"routing:wiki_after_corp_db_success expected={expected} actual={actual}")
 
