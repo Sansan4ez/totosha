@@ -1,9 +1,45 @@
 """Voice message transcription via Whisper ASR API (OpenAI-compatible, ChatGPT, or Faster-Whisper)"""
 
+import asyncio
 import os
 import json
 import aiohttp
 from config import ASR_URL, ASR_TIMEOUT, ASR_LANGUAGE
+
+
+_CHATGPT_CHALLENGE_RETRY_DELAYS = (0.3, 0.9)
+_CHATGPT_CHALLENGE_MARKERS = (
+    "challenge-platform",
+    "enable javascript and cookies to continue",
+    "__cf_chl",
+    "chatgpt.com",
+    "/backend-api/transcribe",
+)
+
+
+class ASRTranscriptionError(Exception):
+    """Normalized ASR failure with a stable error code for bot-side handling."""
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
+def _is_upstream_challenge(error_text: str) -> bool:
+    normalized = (error_text or "").lower()
+    return any(marker in normalized for marker in _CHATGPT_CHALLENGE_MARKERS)
+
+
+def _raise_asr_http_error(status: int, error_text: str) -> None:
+    detail = f"ASR error: {status} {error_text[:200]}"
+    if _is_upstream_challenge(error_text):
+        raise ASRTranscriptionError("upstream_challenge", detail)
+    if status in {408, 504}:
+        raise ASRTranscriptionError("timeout", detail)
+    if status in {401, 403}:
+        raise ASRTranscriptionError("upstream_auth", detail)
+    raise ASRTranscriptionError("upstream_http", detail)
 
 
 def _resolve_openai_asr_endpoint(asr_url: str) -> str:
@@ -88,7 +124,7 @@ async def transcribe_voice(file_url: str, duration: int) -> str:
 
         # 2. Send to ASR API
         if api_type == "chatgpt":
-            result = await _transcribe_chatgpt_api(
+            result = await _transcribe_chatgpt_api_with_retry(
                 session, asr_url, audio_data, asr_language, api_key
             )
         elif api_type == "openai":
@@ -103,6 +139,29 @@ async def transcribe_voice(file_url: str, duration: int) -> str:
             )
 
     return result
+
+
+async def _transcribe_chatgpt_api_with_retry(
+    session: aiohttp.ClientSession,
+    asr_url: str,
+    audio_data: bytes,
+    language: str,
+    api_key: str,
+) -> str:
+    attempts = len(_CHATGPT_CHALLENGE_RETRY_DELAYS) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return await _transcribe_chatgpt_api(
+                session, asr_url, audio_data, language, api_key
+            )
+        except ASRTranscriptionError as exc:
+            if exc.code != "upstream_challenge" or attempt >= attempts:
+                raise
+            delay = _CHATGPT_CHALLENGE_RETRY_DELAYS[attempt - 1]
+            print(
+                f"[voice] Upstream challenge on chatgpt /transcribe, retry {attempt}/{attempts - 1} in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
 
 
 async def _transcribe_openai_api(
@@ -143,13 +202,13 @@ async def _transcribe_openai_api(
     async with session.post(endpoint, data=form, headers=headers) as resp:
         if resp.status != 200:
             error_text = await resp.text()
-            raise Exception(f"ASR error: {resp.status} {error_text[:200]}")
+            _raise_asr_http_error(resp.status, error_text)
         result = await resp.json()
     
     # OpenAI API returns {"text": "..."}
     text = result.get("text", "")
     if not text:
-        raise Exception("Empty ASR response")
+        raise ASRTranscriptionError("empty", "Empty ASR response")
     
     # Опционально логируем детали
     duration_sec = result.get("duration", 0)
@@ -181,12 +240,12 @@ async def _transcribe_chatgpt_api(
     async with session.post(endpoint, data=form, headers=headers) as resp:
         if resp.status != 200:
             error_text = await resp.text()
-            raise Exception(f"ASR error: {resp.status} {error_text[:200]}")
+            _raise_asr_http_error(resp.status, error_text)
         result = await resp.json()
 
     text = result.get("text", "")
     if not text:
-        raise Exception("Empty ASR response")
+        raise ASRTranscriptionError("empty", "Empty ASR response")
 
     return text
 
@@ -216,7 +275,7 @@ async def _transcribe_faster_whisper_api(
     async with session.post(f"{asr_url}/api/v1/transcribe", data=form) as resp:
         if resp.status != 200:
             error_text = await resp.text()
-            raise Exception(f"ASR error: {resp.status} {error_text[:200]}")
+            _raise_asr_http_error(resp.status, error_text)
         result = await resp.json()
 
     # Extract text from Faster-Whisper response
@@ -226,7 +285,7 @@ async def _transcribe_faster_whisper_api(
         full_text = " ".join(s.get("text", "") for s in segments).strip()
 
     if not full_text:
-        raise Exception("Empty ASR response")
+        raise ASRTranscriptionError("empty", "Empty ASR response")
 
     model = result.get("model", "?")
     proc_time = result.get("processing_time", 0)

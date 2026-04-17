@@ -288,14 +288,23 @@ async def handle_voice(message: Message):
         file_info = await bot.get_file(voice.file_id)
         file_url = f"https://api.telegram.org/file/bot{bot.token}/{file_info.file_path}"
         
-        from voice import transcribe_voice
+        from voice import ASRTranscriptionError, transcribe_voice
         transcribed_text = await transcribe_voice(file_url, voice.duration)
     except Exception as e:
         print(f"[voice] Transcription error: {e}")
-        await rate_limiter.safe_send(
-            chat_id,
-            message.reply(t("voice_transcribe_fail", error=str(e)[:100]))
-        )
+        if isinstance(e, ASRTranscriptionError):
+            if e.code == "empty":
+                await rate_limiter.safe_send(chat_id, message.reply(t("voice_empty")))
+            else:
+                await rate_limiter.safe_send(
+                    chat_id,
+                    message.reply(t("voice_transcribe_temporary"))
+                )
+        else:
+            await rate_limiter.safe_send(
+                chat_id,
+                message.reply(t("voice_transcribe_temporary"))
+            )
         return
     
     if not transcribed_text.strip():
