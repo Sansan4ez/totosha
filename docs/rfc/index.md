@@ -32,3 +32,4 @@ RFCs
 - `docs/rfc/RFC-021-runtime-llm-led-orchestration-simplification.md`
 - `docs/rfc/RFC-022-agent-web-chat-frontend-integration.md`
 - `docs/rfc/RFC-023-voice-asr-upstream-stability-and-fallbacks.md`
+- `docs/rfc/RFC-024-agent-web-abuse-controls-and-session-bounding.md`
