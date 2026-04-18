@@ -7,8 +7,7 @@ export const INITIAL_MESSAGE: WidgetMessage = {
   id: "welcome",
   role: "assistant",
   state: "ready",
-  content:
-    "LocalTopSH web widget scaffold is running. The backend adapter is not wired yet, but the chat shell and response contract are ready for integration.",
+  content: "Здравствуйте. Чем могу помочь?",
 };
 
 export function createMessage(

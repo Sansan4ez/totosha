@@ -1,5 +1,6 @@
 const frameAncestors =
-  process.env.AGENT_WEB_ALLOWED_FRAME_ANCESTORS?.trim() || "'self'";
+  process.env.AGENT_WEB_ALLOWED_FRAME_ANCESTORS?.trim() ||
+  "'self' https://ladzavod.ru https://www.ladzavod.ru";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

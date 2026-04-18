@@ -521,7 +521,10 @@ services:
 
   # ============ AGENT-WEB - Embedded iframe widget ============
   agent-web:
-    build: ./agent-web
+    build:
+      context: ./agent-web
+      args:
+        AGENT_WEB_ALLOWED_FRAME_ANCESTORS: ${AGENT_WEB_ALLOWED_FRAME_ANCESTORS:-'self' https://ladzavod.ru https://www.ladzavod.ru}
     container_name: agent-web
     restart: unless-stopped
     expose:
@@ -535,7 +538,7 @@ services:
       - AGENT_WEB_SESSION_TTL_S=${AGENT_WEB_SESSION_TTL_S:-900}
       - AGENT_WEB_MAX_ANON_SESSIONS=${AGENT_WEB_MAX_ANON_SESSIONS:-256}
       - AGENT_WEB_MAX_ANON_SESSIONS_PER_IP=${AGENT_WEB_MAX_ANON_SESSIONS_PER_IP:-4}
-      - AGENT_WEB_ALLOWED_FRAME_ANCESTORS=${AGENT_WEB_ALLOWED_FRAME_ANCESTORS:-'self'}
+      - AGENT_WEB_ALLOWED_FRAME_ANCESTORS=${AGENT_WEB_ALLOWED_FRAME_ANCESTORS:-'self' https://ladzavod.ru https://www.ladzavod.ru}
       - NEXT_PUBLIC_AGENT_WEB_SSE=${NEXT_PUBLIC_AGENT_WEB_SSE:-1}
     networks:
       - agent-net
@@ -547,7 +550,7 @@ services:
     tmpfs:
       - /tmp:size=64M,mode=1777
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/api/web/health >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "IP=$$(hostname -i | awk '{print $$1}'); wget -qO- http://$$IP:3003/api/web/health >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

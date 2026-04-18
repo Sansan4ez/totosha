@@ -25,8 +25,8 @@ export default function Chat({
           <Message key={item.id} message={item} />
         ))}
       </div>
-      <div className="border-t border-border/80 bg-white/85 px-4 py-4 backdrop-blur sm:px-6">
-        <div className="rounded-[1.35rem] border border-border bg-white shadow-sm">
+      <div className="border-t border-border/80 bg-white/85 px-4 py-3 backdrop-blur sm:px-6">
+        <div className="flex items-end gap-3 rounded-[1.35rem] border border-border bg-white px-3 py-3 shadow-sm">
           <textarea
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
@@ -38,21 +38,16 @@ export default function Chat({
             }}
             rows={1}
             placeholder="Send a message"
-            className="min-h-[3.5rem] w-full resize-none rounded-[1.35rem] bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
+            className="min-h-[3rem] flex-1 resize-none rounded-[1rem] bg-transparent px-3 py-3 text-sm outline-none placeholder:text-muted-foreground"
           />
-          <div className="flex items-center justify-between border-t border-border/70 px-4 py-3">
-            <p className="text-xs text-muted-foreground">
-              Embedded widget shell. History lives only in this page instance.
-            </p>
-            <button
-              type="button"
-              disabled={pending || !input.trim()}
-              onClick={onSendMessage}
-              className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {pending ? "Sending..." : "Send"}
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={pending || !input.trim()}
+            onClick={onSendMessage}
+            className="mb-1 shrink-0 rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {pending ? "Sending..." : "Send"}
+          </button>
         </div>
       </div>
     </div>

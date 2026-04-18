@@ -5,6 +5,8 @@ RUN npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
+ARG AGENT_WEB_ALLOWED_FRAME_ANCESTORS="'self'"
+ENV AGENT_WEB_ALLOWED_FRAME_ANCESTORS=${AGENT_WEB_ALLOWED_FRAME_ANCESTORS}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

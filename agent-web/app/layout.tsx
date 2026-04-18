@@ -15,8 +15,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "LocalTopSH Agent Web",
-  description: "Embedded chat widget scaffold for LocalTopSH",
+  title: "LocalTopSH Chat",
+  description: "Embedded chat widget",
 };
 
 export default function RootLayout({
