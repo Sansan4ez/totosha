@@ -30,7 +30,7 @@ from tool_output_policy import (
 from tools import execute_tool, filter_tools_for_session
 from models import ToolContext, ToolResult
 from opentelemetry import trace
-from session_manager import SessionManager
+from session_manager import Session, SessionManager
 
 # Cache for tool definitions
 _tools_cache = None
