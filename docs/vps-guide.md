@@ -286,18 +286,40 @@ Caddy проще для VPS: сам получает/обновляет TLS-се
 sudo nano /opt/totosha/Caddyfile
 ```
 
-Пример (проксируем FastAPI из контейнера):
+Пример для `lab.llm-studio.ru`, где нужно отдать LocalTopSH web widget сразу по двум путям:
 
 ```caddy
-your-domain.com {
+lab.llm-studio.ru {
 	encode zstd gzip
-	reverse_proxy fastapi:8000
+
+	@legacy_chatbot path /chatbot /chatbot/*
+	handle @legacy_chatbot {
+		rewrite * /
+		reverse_proxy 127.0.0.1:3003
+	}
+
+	@agent_web path /agent-web /agent-web/*
+	handle @agent_web {
+		uri strip_prefix /agent-web
+		rewrite * /
+		reverse_proxy 127.0.0.1:3003
+	}
+
+	handle /_next/* {
+		reverse_proxy 127.0.0.1:3003
+	}
+
+	handle /api/web/* {
+		reverse_proxy 127.0.0.1:3003
+	}
 }
 ```
 
 Требования:
-- DNS A-запись `your-domain.com` должна указывать на IP сервера
+- DNS A-запись домена должна указывать на IP сервера
 - порты **80** и **443** должны быть доступны снаружи (см. UFW)
+- `agent-web` должен быть доступен локально на `127.0.0.1:3003` или на другом адресе, который вы укажете в `reverse_proxy`
+- если виджет отдаётся под путями `/chatbot/...` и `/agent-web/`, нужно обязательно проксировать и `/_next/*`, и `/api/web/*`, иначе Next.js-ассеты и AJAX/SSE запросы не загрузятся
 
 ---
 

@@ -29,6 +29,28 @@ Use the widget in an iframe:
 </iframe>
 ```
 
+For the current `lab.llm-studio.ru` deployment there are two supported iframe URLs:
+
+```html
+<iframe
+  src="https://lab.llm-studio.ru/chatbot/5wEyI3e609HadGKN"
+  style="width: 100%; height: 100%; min-height: 700px; border: 0"
+  allow="clipboard-read; clipboard-write">
+</iframe>
+```
+
+```html
+<iframe
+  src="https://lab.llm-studio.ru/agent-web/"
+  style="width: 100%; height: 100%; min-height: 700px; border: 0"
+  allow="clipboard-read; clipboard-write">
+</iframe>
+```
+
+Both URLs are expected to be reverse-proxied to the same `agent-web` instance. Because
+the widget is a Next.js app, the proxy must also forward `/_next/*` and `/api/web/*`
+to `agent-web`.
+
 ## Runtime knobs
 
 - `CORE_API_URL`: internal URL for `core`, defaults to `http://127.0.0.1:4000`
