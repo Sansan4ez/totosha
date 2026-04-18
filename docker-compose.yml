@@ -328,9 +328,8 @@ services:
     build: ./core
     container_name: core
     restart: unless-stopped
-    # Uncomment to expose port (set CORE_PORT in .env):
-    # ports:
-    #   - "${CORE_PORT:-4000}:4000"
+    ports:
+      - "127.0.0.1:${CORE_PORT:-4000}:4000"
     depends_on:
       proxy:
         condition: service_healthy
@@ -525,8 +524,8 @@ services:
     build: ./agent-web
     container_name: agent-web
     restart: unless-stopped
-    ports:
-      - "${AGENT_WEB_PORT:-3003}:3003"
+    expose:
+      - "3003"
     depends_on:
       core:
         condition: service_healthy
@@ -558,6 +557,28 @@ services:
         limits:
           cpus: '0.5'
           memory: 384M
+
+  # ============ CADDY - public reverse proxy for embedded web widget ============
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - agent-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 192M
 
 # ============ SECRETS ============
 secrets:
@@ -593,6 +614,8 @@ secrets:
 volumes:
   corp-db-data:
   google-workspace-creds:
+  caddy_data:
+  caddy_config:
 
 networks:
   agent-net:

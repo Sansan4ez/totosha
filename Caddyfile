@@ -1,0 +1,35 @@
+lab.llm-studio.ru {
+	encode zstd gzip
+
+	# Existing embedded chatbot path. The trailing slug is ignored and the
+	# LocalTopSH widget shell is always served from the same agent-web root.
+	@legacy_chatbot path /chatbot /chatbot/*
+	handle @legacy_chatbot {
+		rewrite * /
+		reverse_proxy agent-web:3003
+	}
+
+	# New canonical widget path for the site.
+	@agent_web path /agent-web /agent-web/*
+	handle @agent_web {
+		uri strip_prefix /agent-web
+		rewrite * /
+		reverse_proxy agent-web:3003
+	}
+
+	# Next.js assets and widget API endpoints resolve from the site root, so
+	# they must be routed to agent-web even when the page itself is loaded under
+	# /chatbot/... or /agent-web/.
+	handle /_next/* {
+		reverse_proxy agent-web:3003
+	}
+
+	handle /api/web/* {
+		reverse_proxy agent-web:3003
+	}
+
+	# Optional direct health probe through the public vhost.
+	handle /agent-web-health {
+		redir /api/web/health 302
+	}
+}

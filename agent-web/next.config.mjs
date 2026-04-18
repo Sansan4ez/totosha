@@ -4,6 +4,7 @@ const frameAncestors =
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  output: "standalone",
   async headers() {
     return [
       {
