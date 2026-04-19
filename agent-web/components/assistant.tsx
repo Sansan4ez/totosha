@@ -29,7 +29,7 @@ export default function Assistant() {
     }
 
     const userMessage = createMessage("user", trimmed);
-    const thinkingMessage = createMessage("assistant", "Waiting for the web adapter response...", {
+    const thinkingMessage = createMessage("assistant", "Думаю...", {
       id: `pending-${Date.now()}`,
       state: "pending",
     });
@@ -80,8 +80,8 @@ export default function Assistant() {
   }
 
   return (
-    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(31,56,88,0.18)] backdrop-blur">
-      <div className="h-[calc(100vh-4rem)] min-h-[32rem] bg-[linear-gradient(180deg,rgba(245,248,251,0.55),rgba(255,255,255,0.88))]">
+    <section className="h-full overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(31,56,88,0.18)] backdrop-blur">
+      <div className="h-full bg-[linear-gradient(180deg,rgba(245,248,251,0.55),rgba(255,255,255,0.88))]">
         <Chat
           items={messages}
           pending={pending}
