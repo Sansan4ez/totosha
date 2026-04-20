@@ -15,7 +15,7 @@ export default function Message({ message }: MessageProps) {
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div className={cn("max-w-[88%] space-y-2", isUser ? "items-end" : "items-start")}>
         <div className="px-1 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-          {isUser ? "You" : message.state === "pending" ? "Thinking" : "Agent"}
+          {isUser ? "Вы" : "ЛАД"}
         </div>
         <div
           className={cn(
