@@ -33,3 +33,4 @@ RFCs
 - `docs/rfc/RFC-022-agent-web-chat-frontend-integration.md`
 - `docs/rfc/RFC-023-voice-asr-upstream-stability-and-fallbacks.md`
 - `docs/rfc/RFC-024-agent-web-abuse-controls-and-session-bounding.md`
+- `docs/rfc/RFC-025-route-card-centered-retrieval-refactor.md`
