@@ -10,8 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from documents.routing import (
     ROUTING_CATALOG_FILENAME,
+    RouteCatalogUnavailable,
+    build_route_selector_payload,
     build_routing_index,
     load_routing_index,
+    routing_catalog_health,
     select_route,
 )
 
@@ -21,6 +24,11 @@ class RoutingCatalogTests(unittest.TestCase):
         route_dir = repo_root / "doc-corpus" / "manifests" / "routes"
         route_dir.mkdir(parents=True, exist_ok=True)
         (route_dir / "test-catalog.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    def _write_repo_manifest_named(self, repo_root: Path, name: str, payload: dict) -> None:
+        route_dir = repo_root / "doc-corpus" / "manifests" / "routes"
+        route_dir.mkdir(parents=True, exist_ok=True)
+        (route_dir / name).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     def _write_live_document(
         self,
@@ -132,8 +140,283 @@ class RoutingCatalogTests(unittest.TestCase):
             route_ids = {route["route_id"] for route in payload["routes"]}
             self.assertIn("corp_kb.company_common", route_ids)
             self.assertIn("doc_search.doc_fire_line", route_ids)
+            self.assertIn("source_manifests", payload)
+            self.assertIn("source_digests", payload)
+            self.assertIn("route_count_by_kind", payload)
+            self.assertGreaterEqual(payload["route_count_by_kind"]["doc_domain"], 1)
+            self.assertTrue(payload["validation_report"]["valid"])
+            self.assertIn("missing_corp_db_domains", payload["validation_report"])
             runtime_catalog = docs_root / "manifests" / "routes" / ROUTING_CATALOG_FILENAME
             self.assertTrue(runtime_catalog.exists())
+
+    def test_load_routing_index_revalidates_persisted_runtime_catalog(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            docs_root = Path(docs_tmp)
+            runtime_dir = docs_root / "manifests" / "routes"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            runtime_catalog = runtime_dir / ROUTING_CATALOG_FILENAME
+            runtime_catalog.write_text(
+                json.dumps(
+                    {
+                        "catalog_id": "test-routing",
+                        "schema_version": 1,
+                        "catalog_version": "stale-runtime-v1",
+                        "source_owner": "runtime_merged",
+                        "validation_report": {"valid": True, "errors": []},
+                        "routes": [
+                            {
+                                "route_id": "corp_db.runtime_lookup",
+                                "route_family": "corp_db.runtime_lookup",
+                                "route_kind": "corp_table",
+                                "authority": "primary",
+                                "title": "Runtime lookup",
+                                "executor": "corp_db_search",
+                                "executor_args_template": {"kind": "lamp_exact"},
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(Path(repo_tmp)), "CORP_DOCS_ROOT": str(docs_root)},
+                clear=False,
+            ):
+                payload = load_routing_index()
+
+            self.assertEqual(payload["manifest_origin"], "runtime_merged")
+            self.assertEqual(payload["route_count"], 1)
+            self.assertEqual(payload["route_count_by_kind"]["corp_table"], 1)
+            self.assertTrue(payload["validation_report"]["valid"])
+            self.assertEqual(payload["source_manifests"][0]["source_owner"], "runtime_merged")
+
+    def test_load_routing_index_rejects_runtime_catalog_with_stale_valid_report(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            docs_root = Path(docs_tmp)
+            runtime_dir = docs_root / "manifests" / "routes"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            runtime_catalog = runtime_dir / ROUTING_CATALOG_FILENAME
+            runtime_catalog.write_text(
+                json.dumps(
+                    {
+                        "catalog_id": "test-routing",
+                        "schema_version": 1,
+                        "catalog_version": "stale-runtime-v1",
+                        "source_owner": "runtime_merged",
+                        "validation_report": {"valid": True, "errors": []},
+                        "route_count": 1,
+                        "routes": [
+                            {
+                                "route_id": "corp_db.stale_lookup",
+                                "route_family": "corp_db.stale_lookup",
+                                "route_kind": "corp_table",
+                                "authority": "primary",
+                                "title": "Stale lookup",
+                                "executor": "corp_db_search",
+                                "executor_args_template": {"kind": 123},
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(Path(repo_tmp)), "CORP_DOCS_ROOT": str(docs_root)},
+                clear=False,
+            ):
+                payload = load_routing_index()
+
+            self.assertEqual(payload["manifest_origin"], "bootstrap")
+            self.assertNotIn("corp_db.stale_lookup", {route["route_id"] for route in payload["routes"]})
+
+    def test_generated_source_owned_route_overrides_bootstrap_route_id(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            repo_root = Path(repo_tmp)
+            self._write_repo_manifest(
+                repo_root,
+                {
+                    "catalog_id": "test-routing",
+                    "schema_version": 1,
+                    "catalog_version": "generated-v1",
+                    "source_owner": "corp_db",
+                    "routes": [
+                        {
+                            "route_id": "corp_db.catalog_lookup",
+                            "route_family": "corp_db.catalog_lookup",
+                            "route_kind": "corp_table",
+                            "authority": "primary",
+                            "title": "Generated catalog lookup",
+                            "keywords": ["generated"],
+                            "patterns": ["generated catalog"],
+                            "executor": "corp_db_search",
+                            "executor_args_template": {"kind": "lamp_exact"},
+                        }
+                    ],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(repo_root), "CORP_DOCS_ROOT": str(Path(docs_tmp))},
+                clear=False,
+            ):
+                payload = build_routing_index()
+
+            route = next(route for route in payload["routes"] if route["route_id"] == "corp_db.catalog_lookup")
+            self.assertEqual(route["title"], "Generated catalog lookup")
+            self.assertEqual(route["route_owner"], "corp_db")
+            self.assertTrue(payload["validation_report"]["valid"])
+            self.assertEqual(payload["validation_report"]["overrides"][0]["reason"], "bootstrap_precedence")
+
+    def test_duplicate_route_ids_from_different_owners_require_explicit_override(self):
+        base_route = {
+            "route_id": "corp_db.conflict",
+            "route_family": "corp_db.conflict",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Conflict",
+            "keywords": ["conflict"],
+            "patterns": ["conflict"],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact"},
+        }
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            repo_root = Path(repo_tmp)
+            self._write_repo_manifest_named(
+                repo_root,
+                "01-static.json",
+                {
+                    "catalog_id": "test-routing",
+                    "schema_version": 1,
+                    "catalog_version": "static-v1",
+                    "source_owner": "repo_static",
+                    "routes": [base_route],
+                },
+            )
+            self._write_repo_manifest_named(
+                repo_root,
+                "02-generated.json",
+                {
+                    "catalog_id": "test-routing",
+                    "schema_version": 1,
+                    "catalog_version": "generated-v1",
+                    "source_owner": "corp_db",
+                    "routes": [{**base_route, "title": "Generated conflict"}],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(repo_root), "CORP_DOCS_ROOT": str(Path(docs_tmp))},
+                clear=False,
+            ):
+                payload = build_routing_index()
+
+            self.assertFalse(payload["validation_report"]["valid"])
+            self.assertEqual(payload["validation_report"]["duplicate_route_ids"][0]["route_id"], "corp_db.conflict")
+
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            repo_root = Path(repo_tmp)
+            self._write_repo_manifest_named(
+                repo_root,
+                "01-static.json",
+                {
+                    "catalog_id": "test-routing",
+                    "schema_version": 1,
+                    "catalog_version": "static-v1",
+                    "source_owner": "repo_static",
+                    "routes": [base_route],
+                },
+            )
+            self._write_repo_manifest_named(
+                repo_root,
+                "02-generated.json",
+                {
+                    "catalog_id": "test-routing",
+                    "schema_version": 1,
+                    "catalog_version": "generated-v1",
+                    "source_owner": "corp_db",
+                    "routes": [{**base_route, "title": "Generated conflict", "overrides_route_ids": ["corp_db.conflict"]}],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(repo_root), "CORP_DOCS_ROOT": str(Path(docs_tmp))},
+                clear=False,
+            ):
+                payload = build_routing_index()
+
+            route = next(route for route in payload["routes"] if route["route_id"] == "corp_db.conflict")
+            self.assertTrue(payload["validation_report"]["valid"])
+            self.assertEqual(route["title"], "Generated conflict")
+            self.assertEqual(payload["validation_report"]["overrides"][0]["reason"], "explicit_override")
+
+    def test_production_runtime_reports_unavailable_without_valid_active_catalog(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {
+                    "DOC_REPO_ROOT": repo_tmp,
+                    "CORP_DOCS_ROOT": docs_tmp,
+                    "ROUTING_CATALOG_REQUIRED": "true",
+                },
+                clear=False,
+            ):
+                selection = select_route("Какие есть сертификаты?")
+                health = routing_catalog_health()
+
+            self.assertTrue(selection["temporary_unavailable"])
+            self.assertEqual(selection["route_count"], 0)
+            self.assertEqual(health["status"], "unavailable")
+
+    def test_required_runtime_catalog_fails_closed_even_with_repo_manifests(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            repo_root = Path(repo_tmp)
+            self._write_repo_manifest(
+                repo_root,
+                {
+                    "catalog_id": "test-routing",
+                    "schema_version": 1,
+                    "catalog_version": "repo-v1",
+                    "routes": [
+                        {
+                            "route_id": "corp_db.custom_lookup",
+                            "route_family": "corp_db.custom_lookup",
+                            "route_kind": "corp_table",
+                            "authority": "primary",
+                            "title": "Custom lookup",
+                            "keywords": ["custom"],
+                            "patterns": ["custom lookup"],
+                            "executor": "corp_db_search",
+                            "executor_args_template": {"kind": "lamp_exact"},
+                        }
+                    ],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "DOC_REPO_ROOT": str(repo_root),
+                    "CORP_DOCS_ROOT": str(Path(docs_tmp)),
+                    "ROUTING_CATALOG_REQUIRED": "true",
+                },
+                clear=False,
+            ):
+                with self.assertRaises(RouteCatalogUnavailable):
+                    load_routing_index()
+                with self.assertRaises(RouteCatalogUnavailable):
+                    build_route_selector_payload("custom lookup")
+                selection = select_route("custom lookup")
+                health = routing_catalog_health()
+
+            self.assertTrue(selection["temporary_unavailable"])
+            self.assertTrue(selection["catalog_unavailable"])
+            self.assertEqual(selection["route_count"], 0)
+            self.assertEqual(health["status"], "unavailable")
 
     def test_document_routing_metadata_can_override_route_identity_and_win_selection(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -184,25 +467,118 @@ class RoutingCatalogTests(unittest.TestCase):
             route_kinds = {route["route_kind"] for route in payload["routes"]}
             self.assertIn("corp_table", route_kinds)
             self.assertIn("corp_script", route_kinds)
-            self.assertIn("doc_domain", route_kinds)
+            self.assertNotIn("doc_search.document_lookup", {route["route_id"] for route in payload["routes"]})
 
     def test_select_route_returns_candidates_reason_and_kind(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            docs_root = Path(docs_tmp)
+            self._write_live_document(
+                docs_root,
+                document_id="doc_fire_line",
+                title="Пожарный сертификат LINE",
+                summary="Пожарный сертификат LINE с прямой ссылкой.",
+                routing={
+                    "route_id": "doc_search.fire_line_certificate",
+                    "route_family": "doc_search.fire_line_certificate",
+                    "topics": ["fire_certificate", "line"],
+                    "keywords": ["пожарный сертификат line", "сертификат line"],
+                    "patterns": ["пожарный сертификат line"],
+                },
+            )
             with patch.dict(
                 os.environ,
                 {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
                 clear=False,
             ):
+                build_routing_index()
                 selection = select_route(
                     "Нужен пожарный сертификат LINE, дай прямую ссылку.",
                     explicit_document_request=True,
                 )
-            self.assertEqual(selection["selected"]["route_id"], "doc_search.document_lookup")
-            self.assertEqual(selection["primary_candidate"]["route_id"], "doc_search.document_lookup")
+            self.assertEqual(selection["selected"]["route_id"], "doc_search.fire_line_certificate")
+            self.assertEqual(selection["primary_candidate"]["route_id"], "doc_search.fire_line_certificate")
             self.assertEqual(selection["selected_route_kind"], "doc_domain")
             self.assertEqual(selection["intent_family"], "document_lookup")
             self.assertIn("explicit_document_request", selection["selection_reason"])
             self.assertTrue(selection["candidate_route_ids"])
+
+    def test_generic_document_lookup_route_is_filtered_from_manifests(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            repo_root = Path(repo_tmp)
+            self._write_repo_manifest(
+                repo_root,
+                {
+                    "catalog_id": "test-routing",
+                    "schema_version": 1,
+                    "catalog_version": "repo-v1",
+                    "routes": [
+                        {
+                            "route_id": "doc_search.document_lookup",
+                            "route_family": "doc_domain.document_lookup",
+                            "route_kind": "doc_domain",
+                            "authority": "secondary",
+                            "title": "Generic document lookup",
+                            "keywords": ["сертификат", "pdf"],
+                            "patterns": ["сертификат"],
+                            "executor": "doc_search",
+                            "executor_args_template": {"top": 5},
+                        }
+                    ],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(repo_root), "CORP_DOCS_ROOT": str(Path(docs_tmp))},
+                clear=False,
+            ):
+                payload = load_routing_index()
+                selection = select_route("Нужен пожарный сертификат LINE, дай прямую ссылку.")
+
+            self.assertNotIn("doc_search.document_lookup", {route["route_id"] for route in payload["routes"]})
+            self.assertIsNone(selection["selected"])
+
+    def test_live_document_can_publish_multiple_thematic_routes_with_shared_selectors(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            docs_root = Path(docs_tmp)
+            self._write_live_document(
+                docs_root,
+                document_id="doc_sports_norms",
+                title="СП 440.1325800.2023",
+                summary="Освещение спортивных сооружений.",
+                routing={
+                    "routes": [
+                        {
+                            "route_id": "doc_search.sports_lighting_norms",
+                            "route_family": "doc_search.sports_lighting_norms",
+                            "topics": ["sports_lighting"],
+                            "keywords": ["нормы освещенности спортивных объектов"],
+                            "patterns": ["нормы освещенности для спортивных объектов"],
+                        },
+                        {
+                            "route_id": "doc_search.sports_tv_lighting",
+                            "route_family": "doc_search.sports_tv_lighting",
+                            "topics": ["sports_tv_lighting"],
+                            "keywords": ["телевизионная трансляция спортивных игр"],
+                            "patterns": ["требования для телевизионной трансляции"],
+                        },
+                    ]
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(Path(repo_tmp)), "CORP_DOCS_ROOT": str(docs_root)},
+                clear=False,
+            ):
+                payload = build_routing_index()
+
+            routes = {route["route_id"]: route for route in payload["routes"]}
+            self.assertIn("doc_search.sports_lighting_norms", routes)
+            self.assertIn("doc_search.sports_tv_lighting", routes)
+            for route_id in ("doc_search.sports_lighting_norms", "doc_search.sports_tv_lighting"):
+                route = routes[route_id]
+                self.assertIn("doc_sports_norms", route["document_selectors"])
+                self.assertIn("doc_sports_norms.pdf", route["document_selectors"])
+                self.assertEqual(route["executor_args_template"]["preferred_document_ids"], route["document_selectors"])
 
     def test_select_route_keeps_generic_link_requests_on_authoritative_kb_routes(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -218,6 +594,65 @@ class RoutingCatalogTests(unittest.TestCase):
             self.assertNotIn("explicit_document_request", company_selection["selection_reason"])
             self.assertEqual(luxnet_selection["selected"]["route_id"], "corp_kb.luxnet")
             self.assertNotIn("explicit_document_request", luxnet_selection["selection_reason"])
+
+    def test_select_route_routes_generic_certification_and_quality_to_company_common(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                cases = (
+                    ("какие есть сертификаты?", "certification"),
+                    ("Какие используются комплектующие?", "quality"),
+                )
+                for query, facet in cases:
+                    with self.subTest(query=query):
+                        selection = select_route(query)
+
+                        self.assertEqual(selection["intent_family"], "company_fact")
+                        self.assertEqual(selection["selected"]["route_id"], "corp_kb.company_common")
+                        self.assertEqual(selection["primary_candidate"]["route_id"], "corp_kb.company_common")
+                        self.assertEqual(selection["selected_route_kind"], "corp_table")
+                        self.assertIn(f"company_common_facet={facet}", selection["selection_reason"])
+                        self.assertNotEqual(selection["selected"]["route_id"], "doc_search.document_lookup")
+
+    def test_default_corp_db_routes_cover_structured_domains(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                payload = load_routing_index()
+
+        routes = {route["route_id"]: route for route in payload["routes"]}
+        expected_route_ids = {
+            "corp_kb.company_common",
+            "corp_db.catalog_lookup",
+            "corp_db.sku_lookup",
+            "corp_db.category_lamps",
+            "corp_db.sphere_categories",
+            "corp_db.lamp_filters",
+            "corp_db.category_mountings",
+            "corp_db.lamp_mounting_compatibility",
+            "corp_db.portfolio_by_sphere",
+            "corp_db.portfolio_examples_by_lamp",
+            "corp_db.application_recommendation",
+        }
+        self.assertTrue(expected_route_ids.issubset(routes))
+        self.assertEqual(payload["validation_report"]["missing_corp_db_domains"], [])
+
+        for route_id in expected_route_ids:
+            route = routes[route_id]
+            self.assertEqual(route["executor"], "corp_db_search")
+            self.assertIn("kind", route["locked_args"])
+            self.assertIn("kind", route["argument_schema"]["properties"])
+            self.assertTrue(route["evidence_policy"])
+            self.assertTrue(route["table_scopes"])
+
+        self.assertNotIn("enum", routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["etm"])
+        self.assertNotIn("enum", routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["oracl"])
 
     def test_select_route_matches_application_recommendation_for_inflected_environment_phrase(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -271,6 +706,36 @@ class RoutingCatalogTests(unittest.TestCase):
                     self.assertTrue(selection["secondary_candidates"])
                     self.assertIn("corp_db.application_recommendation", selection["candidate_route_ids"])
                     self.assertNotEqual(selection["primary_candidate"]["route_id"], "doc_search.sports_lighting_norms")
+
+    def test_passport_query_does_not_match_unrelated_sports_document_route(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            docs_root = Path(docs_tmp)
+            self._write_live_document(
+                docs_root,
+                document_id="doc_sports_norms",
+                title="СП 440.1325800.2023 Освещение спортивных сооружений",
+                summary="Нормы освещенности спортивных объектов, спортивных залов и спортивных сооружений.",
+                routing={
+                    "route_id": "doc_search.sports_lighting_norms",
+                    "route_family": "doc_search.sports_lighting_norms",
+                    "topics": ["sports_lighting", "sports_halls"],
+                    "keywords": [
+                        "нормы освещенности спортивных объектов",
+                        "нормы освещенности спортивного зала",
+                    ],
+                    "patterns": ["нормы освещенности для спортивных объектов"],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(Path(repo_tmp)), "CORP_DOCS_ROOT": str(docs_root)},
+                clear=False,
+            ):
+                selection = select_route("Нужен паспорт светильника LINE.")
+
+            selected = selection.get("selected")
+            self.assertNotEqual((selected or {}).get("route_id"), "doc_search.sports_lighting_norms")
+            self.assertNotIn("doc_search.sports_lighting_norms", selection["candidate_route_ids"][:1])
 
 
 if __name__ == "__main__":
