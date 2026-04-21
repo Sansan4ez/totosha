@@ -129,10 +129,17 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertNotIn("power_w_min", rewritten)
         self.assertNotIn("voltage_kind", rewritten)
         self.assertNotIn("explosion_protected", rewritten)
-        voice_route = _MODULE._authoritative_kb_route_hint(
-            "[От: @bench (42)]\n[Голосовое сообщение, распознанный текст:]\nЧто такое Luxnet?"
-        )
-        self.assertEqual(voice_route["route_id"], "corp_kb.luxnet")
+        with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
+            clear=False,
+        ):
+            voice_selection = _MODULE.select_route(
+                _MODULE._routing_query_text(
+                    "[От: @bench (42)]\n[Голосовое сообщение, распознанный текст:]\nЧто такое Luxnet?"
+                )
+            )
+        self.assertEqual(voice_selection["selected"]["route_id"], "corp_kb.luxnet")
         weak_about_payload = {
             "status": "success",
             "results": [
@@ -162,6 +169,286 @@ class RoutingGuardrailTests(unittest.TestCase):
         preferred = _MODULE._preferred_company_fact_texts(ranked_about_payload, "about_company")
         self.assertTrue(preferred)
         self.assertIn("Компания ЛАДзавод светотехники занимается", preferred[0])
+
+    def test_generic_certification_and_quality_questions_are_company_common_facets(self):
+        cert_query = "какие есть сертификаты?"
+        quality_query = "Какие используются комплектующие?"
+
+        self.assertFalse(_MODULE._is_document_lookup_intent(cert_query))
+        self.assertEqual(_MODULE._company_fact_intent_type(cert_query), "certification")
+        self.assertEqual(_MODULE._company_common_topic_facets(cert_query), ["certification"])
+        with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
+            clear=False,
+        ):
+            cert_selection = _MODULE.select_route(cert_query)
+        cert_route = cert_selection["selected"]
+        self.assertEqual(cert_route["route_id"], "corp_kb.company_common")
+
+        self.assertFalse(_MODULE._is_document_lookup_intent(quality_query))
+        self.assertEqual(_MODULE._company_fact_intent_type(quality_query), "quality")
+        self.assertEqual(_MODULE._company_common_topic_facets(quality_query), ["quality"])
+        with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
+            clear=False,
+        ):
+            quality_selection = _MODULE.select_route(quality_query)
+        quality_route = quality_selection["selected"]
+        self.assertEqual(quality_route["route_id"], "corp_kb.company_common")
+
+    def test_llm_route_selector_validates_route_and_tool_args(self):
+        selector_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_route_id": "corp_kb.company_common",
+                                "confidence": "high",
+                                "reason": "company certification question",
+                                "tool_args": {
+                                    "query": "сертификаты декларации CE EAC",
+                                    "topic_facets": ["certification"],
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+
+        async def fake_call_llm(messages, tool_definitions, model_override=""):
+            self.assertEqual(tool_definitions, [])
+            self.assertIn("corp_kb.company_common", messages[-1]["content"])
+            return selector_response
+
+        with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
+            clear=False,
+        ), patch.object(_MODULE, "call_llm", AsyncMock(side_effect=fake_call_llm)):
+            route_selection, route_hint, secondary = asyncio.run(
+                _MODULE._select_route_with_llm("какие есть сертификаты?")
+            )
+
+        self.assertEqual(route_hint["route_id"], "corp_kb.company_common")
+        self.assertEqual(route_hint["tool_args"]["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(route_hint["tool_args"]["topic_facets"], ["certification"])
+        self.assertEqual(route_hint["selector_status"], "valid")
+        self.assertIn("query", route_hint["validated_arg_keys"])
+        self.assertIn("topic_facets", route_hint["validated_arg_keys"])
+        self.assertGreater(route_hint["selector_latency_ms"], 0)
+        self.assertEqual(route_selection["selector"]["status"], "valid")
+        self.assertEqual(route_selection["selector"]["confidence"], "high")
+        self.assertEqual(route_selection["selector"]["repair_status"], "not_needed")
+        self.assertIn("query", route_selection["selector"]["validated_arg_keys"])
+        self.assertIn("catalog_version", route_selection)
+        self.assertIn("schema_version", route_selection)
+        self.assertIn("corp_kb.company_common", route_selection["candidate_route_ids"])
+        self.assertTrue(secondary)
+
+    def test_llm_route_selector_repairs_invalid_selector_args_once(self):
+        invalid_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_route_id": "corp_kb.company_common",
+                                "tool_args": {"query": "сертификаты", "undeclared": "drop me"},
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        repaired_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_route_id": "corp_kb.company_common",
+                                "confidence": "medium",
+                                "reason": "repaired args",
+                                "tool_args": {
+                                    "query": "сертификаты декларации",
+                                    "topic_facets": ["certification"],
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "model": "selector-test-model",
+        }
+
+        with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
+            clear=False,
+        ), patch.object(_MODULE, "call_llm", AsyncMock(side_effect=[invalid_response, repaired_response])):
+            route_selection, route_hint, _secondary = asyncio.run(
+                _MODULE._select_route_with_llm("какие есть сертификаты?")
+            )
+
+        self.assertEqual(route_hint["route_id"], "corp_kb.company_common")
+        self.assertEqual(route_hint["tool_args"]["topic_facets"], ["certification"])
+        self.assertEqual(route_selection["selector"]["repair_status"], "succeeded")
+        self.assertTrue(route_selection["selector"]["repair_attempted"])
+        self.assertEqual(route_selection["selector"]["validation_error_code"], "invalid_tool_args")
+        self.assertIn("undeclared", route_selection["selector"]["validation_error"])
+        self.assertEqual(route_selection["selector"]["model"], "selector-test-model")
+
+    def test_route_selector_llm_outage_returns_temporary_unavailable(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="какие есть сертификаты?",
+            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+            llm_responses_override=[{"error": "selector upstream unavailable"}],
+            route_selector_enabled=True,
+        )
+
+        self.assertEqual(response, _MODULE.ROUTE_SELECTOR_UNAVAILABLE_MESSAGE)
+        self.assertEqual(exec_mock.await_count, 0)
+        self.assertEqual(meta["route_selector_status"], "unavailable")
+        self.assertEqual(meta["retrieval_evidence_status"], "error")
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_unavailable")
+        self.assertIn("selector upstream unavailable", meta["route_selector_validation_error"])
+
+    def test_selector_executes_scoped_route_and_finalizes_without_extra_tools(self):
+        selector_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_route_id": "corp_kb.company_common",
+                                "confidence": "high",
+                                "reason": "company quality question",
+                                "tool_args": {
+                                    "query": "качество комплектующих CREE LED",
+                                    "topic_facets": ["quality"],
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        finalizer_response = self._final_response("Используются проверенные комплектующие, включая CREE LED.")
+        response, exec_mock, meta = self._run_flow(
+            user_message="Какие используются комплектующие?",
+            corp_db_payload={
+                "status": "success",
+                "kind": "hybrid_search",
+                "results": [
+                    {
+                        "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                        "heading": "Качество комплектующих",
+                        "preview": "Используются проверенные комплектующие, включая CREE LED.",
+                    }
+                ],
+            },
+            llm_responses_override=[selector_response, finalizer_response],
+            route_selector_enabled=True,
+        )
+
+        self.assertIn("CREE LED", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
+        args = exec_mock.await_args_list[0].args[1]
+        self.assertEqual(args["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(args["topic_facets"], ["quality"])
+        self.assertEqual(meta["retrieval_phase"], "closed")
+        self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
+        self.assertEqual(meta["route_selector_status"], "valid")
+        self.assertEqual(meta["route_selector_confidence"], "high")
+        self.assertIn("company quality question", meta["route_selector_reason"])
+        self.assertGreater(meta["route_selector_latency_ms"], 0)
+        self.assertIn("query", meta["retrieval_validated_arg_keys"])
+        self.assertIn("topic_facets", meta["retrieval_validated_arg_keys"])
+        self.assertTrue(meta["routing_catalog_version"])
+        self.assertGreaterEqual(meta["routing_schema_version"], 1)
+
+    def test_selector_finalizer_llm_outage_returns_temporary_unavailable(self):
+        selector_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_route_id": "corp_kb.company_common",
+                                "confidence": "high",
+                                "reason": "company certification question",
+                                "tool_args": {
+                                    "query": "сертификаты декларации",
+                                    "topic_facets": ["certification"],
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        response, exec_mock, meta = self._run_flow(
+            user_message="какие есть сертификаты?",
+            corp_db_payload={
+                "status": "success",
+                "kind": "hybrid_search",
+                "results": [
+                    {
+                        "heading": "Сертификация",
+                        "preview": "Сертификаты и декларации соответствия.",
+                    }
+                ],
+            },
+            llm_responses_override=[selector_response, {"error": "finalizer upstream unavailable"}],
+            route_selector_enabled=True,
+        )
+
+        self.assertEqual(response, _MODULE.ROUTE_SELECTOR_UNAVAILABLE_MESSAGE)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
+        self.assertEqual(meta["finalizer_mode"], "llm")
+
+    def test_wrong_document_doc_search_output_is_weak(self):
+        payload = {
+            "status": "success",
+            "results": [
+                {
+                    "relative_path": "part_440.1325800.2023.doc",
+                    "document_title": "СП 440.1325800.2023 Освещение спортивных сооружений",
+                    "preview": "Нормы освещенности для спортивных объектов.",
+                }
+            ],
+        }
+        result = _ToolResult(True, output=json.dumps(payload, ensure_ascii=False))
+        args = {"query": "пожарный сертификат line", "preferred_document_ids": ["doc_fire_line"]}
+        state = {"document_id": "doc_fire_line"}
+
+        self.assertEqual(_MODULE._doc_domain_evidence_status(result, args=args, state=state), "weak")
+        self.assertFalse(
+            _MODULE._is_successful_document_lookup(
+                "doc_search",
+                args,
+                json.dumps(payload, ensure_ascii=False),
+                "Найди пожарный сертификат LINE и покажи фрагмент",
+            )
+        )
 
     def test_deterministic_fallback_prefers_route_hint_args_for_doc_routes(self):
         tool_name, args = _MODULE._build_deterministic_fallback_call(
@@ -227,6 +514,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         llm_responses_override: list[dict] | None = None,
         execution_mode: str = "runtime",
         skill_mentions: str = "",
+        route_selector_enabled: bool = False,
     ) -> tuple[str, AsyncMock, dict]:
         meta: dict = {}
         remaining_corp_db_payloads = list(corp_db_payloads or [])
@@ -329,7 +617,10 @@ class RoutingGuardrailTests(unittest.TestCase):
                 (route_dir / "index.json").write_text(json.dumps(route_index, ensure_ascii=False), encoding="utf-8")
             with patch.dict(
                 os.environ,
-                {"CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs")},
+                {
+                    "CORP_DOCS_ROOT": str(Path(tmpdir) / "corp_docs"),
+                    "ROUTE_SELECTOR_ENABLED": "true" if route_selector_enabled else "false",
+                },
                 clear=False,
             ), patch.object(
                 _MODULE.CONFIG, "workspace", tmpdir
@@ -404,6 +695,80 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_phase"], "open")
         self.assertEqual(meta["retrieval_evidence_status"], "empty")
 
+    def test_generic_certification_query_uses_company_common_once(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="какие есть сертификаты?",
+            corp_db_payload={
+                "status": "success",
+                "kind": "hybrid_search",
+                "results": [
+                    {
+                        "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                        "heading": "Сертификаты и декларации",
+                        "preview": "Сертификаты и декларации подтверждают соответствие продукции требованиям.",
+                        "metadata": {"source_file": "common_information_about_company.md"},
+                    }
+                ],
+            },
+            wiki_tool_name="doc_search",
+            wiki_tool_args={"query": "сертификаты"},
+            tool_call_sequence=[
+                ("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "сертификаты"}),
+            ],
+            llm_responses_override=[
+                self._tool_call_response("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "сертификаты"}),
+                self._final_response("Есть сертификаты и декларации соответствия."),
+            ],
+        )
+
+        self.assertIn("сертификаты", response.lower())
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
+        args = exec_mock.await_args_list[0].args[1]
+        self.assertEqual(args["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(args["source_files"], ["common_information_about_company.md"])
+        self.assertEqual(args["topic_facets"], ["certification"])
+        self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
+
+    def test_generic_component_query_uses_company_common_once(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Какие используются комплектующие?",
+            corp_db_payload={
+                "status": "success",
+                "kind": "hybrid_search",
+                "results": [
+                    {
+                        "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                        "heading": "Качество и комплектующие",
+                        "preview": "Комплектующие проходят входной контроль качества и проверку надежности.",
+                        "metadata": {"source_file": "common_information_about_company.md"},
+                    }
+                ],
+            },
+            wiki_tool_name="doc_search",
+            wiki_tool_args={"query": "комплектующие"},
+            tool_call_sequence=[
+                ("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "комплектующие"}),
+            ],
+            llm_responses_override=[
+                self._tool_call_response("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "комплектующие"}),
+                self._final_response("Комплектующие проходят контроль качества."),
+            ],
+        )
+
+        self.assertIn("комплектующие", response.lower())
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
+        args = exec_mock.await_args_list[0].args[1]
+        self.assertEqual(args["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(args["source_files"], ["common_information_about_company.md"])
+        self.assertEqual(args["topic_facets"], ["quality"])
+        self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
+
     def test_explicit_wiki_request_keeps_wiki_available_after_corp_db_success(self):
         response, exec_mock, meta = self._run_flow(
             user_message="Найди в wiki официальный сайт компании ЛАДзавод светотехники и покажи фрагмент.",
@@ -467,8 +832,41 @@ class RoutingGuardrailTests(unittest.TestCase):
             corp_db_args={"kind": "hybrid_search", "profile": "kb_search", "query": "пожарный сертификат line"},
             wiki_tool_name="doc_search",
             wiki_tool_args={"query": "пожарный сертификат line"},
+            wiki_payload={
+                "status": "success",
+                "results": [
+                    {
+                        "relative_path": "certs/line-fire.pdf",
+                        "document_title": "Пожарный сертификат LINE",
+                        "preview": "Пожарный сертификат LINE: https://ladzavod.ru/certs/line-fire.pdf",
+                    }
+                ],
+            },
+            route_index={
+                "generated_at": "2026-04-20T00:00:00Z",
+                "route_count": 1,
+                "routes": [
+                    {
+                        "route_id": "doc_search.doc_fire_line",
+                        "route_kind": "doc_domain",
+                        "route_family": "doc_search.doc_fire_line",
+                        "source": "doc_search",
+                        "title": "Пожарный сертификат LINE",
+                        "keywords": ["пожарный", "сертификат", "line"],
+                        "patterns": ["пожарный сертификат line"],
+                        "tool_name": "doc_search",
+                        "tool_args": {"preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"]},
+                    }
+                ],
+            },
             tool_call_sequence=[
-                ("doc_search", {"query": "пожарный сертификат line"}),
+                (
+                    "doc_search",
+                    {
+                        "query": "пожарный сертификат line",
+                        "preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"],
+                    },
+                ),
                 ("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "пожарный сертификат line"}),
             ],
         )
@@ -760,12 +1158,41 @@ class RoutingGuardrailTests(unittest.TestCase):
                             }
                         ],
                     },
+                    route_index={
+                        "generated_at": "2026-04-20T00:00:00Z",
+                        "route_count": 1,
+                        "routes": [
+                            {
+                                "route_id": "doc_search.doc_fire_line",
+                                "route_kind": "doc_domain",
+                                "route_family": "doc_search.doc_fire_line",
+                                "source": "doc_search",
+                                "title": "Пожарный сертификат LINE",
+                                "keywords": ["пожарный", "сертификат", "line"],
+                                "patterns": ["пожарный сертификат line"],
+                                "tool_name": "doc_search",
+                                "tool_args": {"preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"]},
+                            }
+                        ],
+                    },
                     tool_call_sequence=[
-                        ("doc_search", {"query": "пожарный сертификат line"}),
+                        (
+                            "doc_search",
+                            {
+                                "query": "пожарный сертификат line",
+                                "preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"],
+                            },
+                        ),
                         (tool_name, tool_args),
                     ],
                     llm_responses_override=[
-                        self._tool_call_response("doc_search", {"query": "пожарный сертификат line"}),
+                        self._tool_call_response(
+                            "doc_search",
+                            {
+                                "query": "пожарный сертификат line",
+                                "preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"],
+                            },
+                        ),
                         self._tool_call_response(tool_name, tool_args),
                         self._final_response("Нашёл пожарный сертификат LINE. Прямая ссылка: https://ladzavod.ru/certs/line-fire.pdf"),
                     ],

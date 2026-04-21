@@ -11,7 +11,8 @@ from typing import Optional, Any
 from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
-from documents.routing import select_route
+from documents.route_schema import validate_selector_output
+from documents.routing import build_route_selector_payload, select_route
 from logger import agent_logger, log_agent_step
 from observability import (
     REQUEST_ID as OBS_REQUEST_ID,
@@ -47,7 +48,8 @@ COMPANY_FACT_KEYWORDS = (
     "email", "e-mail", "почт", "реквизит", "инн", "кпп", "огрн", "соцсет", "телеграм",
     "telegram", "youtube", "ютуб", "vk", "вконтакте", "канал", "год основания",
     "основан", "основана", "сколько лет компании", "о компании", "общая информация о компании",
-    "гаранти", "сервис", "консультац",
+    "гаранти", "сервис", "консультац", "сертифик", "декларац", "экспертиз", "сертификац",
+    "качеств", "комплектующ", "надежн", "надёжн",
 )
 COMPANY_FACT_INTENT_KEYWORDS = {
     "requisites": ("реквизит", "инн", "кпп", "огрн"),
@@ -57,6 +59,8 @@ COMPANY_FACT_INTENT_KEYWORDS = {
     "socials": ("соцсет", "телеграм", "telegram", "youtube", "ютуб", "vk", "вконтакте", "канал"),
     "contacts": ("контакт", "телефон", "email", "e-mail", "почт", "связат", "консультац"),
     "about_company": ("о компании", "общая информация о компании", "расскажи о компании", "чем занимается компания", "наш профиль"),
+    "certification": ("сертифик", "декларац", "экспертиз", "сертификац"),
+    "quality": ("качеств", "комплектующ", "надежн", "надёжн"),
 }
 COMPANY_COMMON_FACET_BY_SUBTYPE = {
     "requisites": "requisites",
@@ -66,6 +70,8 @@ COMPANY_COMMON_FACET_BY_SUBTYPE = {
     "socials": "socials",
     "contacts": "contacts",
     "about_company": "about_company",
+    "certification": "certification",
+    "quality": "quality",
 }
 COMPANY_COMMON_FACET_KEYWORDS = {
     "certification": ("сертифик", "декларац", "экспертиз", "сертификац"),
@@ -78,7 +84,7 @@ COMPANY_COMMON_FACET_KEYWORDS = {
     "series": ("серии", "серия", "линейк", "модел"),
 }
 DOCUMENT_LOOKUP_KEYWORDS = (
-    "сертификат", "пожарный сертификат", "ce", "pdf", "паспорт", "документ",
+    "пожарный сертификат", "сертификат ce", "ce", "pdf", "паспорт", "документ",
     "закаленное стекло", "закалённое стекло", "закал", "стекл",
     "чем отличается серия", "отличается серия", "отличие между серией",
 )
@@ -90,19 +96,6 @@ APPLICATION_RECOMMENDATION_KEYWORDS = (
     "стадион", "арена", "спорткомплекс", "футболь", "карьер", "рудник", "гок",
     "аэропорт", "апрон", "перрон", "склад", "логист", "высокие прол", "high-bay",
     "high bay", "офис", "кабинет", "абк", "агрессивн", "мойка", "азс",
-)
-LUXNET_ROUTE_KEYWORDS = (
-    "luxnet",
-    "люкснет",
-)
-LIGHTING_NORMS_ROUTE_KEYWORDS = (
-    "нормы освещ",
-    "норма освещ",
-    "освещенност",
-    "освещённост",
-    "норматив освещ",
-    "естественное освещение",
-    "искусственное освещение",
 )
 KB_ROUTE_SPECS = {
     "corp_kb.company_common": {
@@ -283,7 +276,17 @@ def _company_fact_intent_type(message: str) -> str:
     normalized = _routing_message_text(message)
     if _is_document_lookup_intent(normalized) or _is_portfolio_lookup_intent(normalized) or _is_application_recommendation_intent(normalized):
         return ""
-    for subtype in ("requisites", "year_founded", "website", "address", "socials", "contacts", "about_company"):
+    for subtype in (
+        "requisites",
+        "year_founded",
+        "website",
+        "address",
+        "socials",
+        "contacts",
+        "about_company",
+        "certification",
+        "quality",
+    ):
         if _text_has_any(normalized, COMPANY_FACT_INTENT_KEYWORDS[subtype]):
             return subtype
     if _text_has_any(normalized, COMPANY_FACT_KEYWORDS):
@@ -320,49 +323,6 @@ def _lighting_norms_topic_facets(message: str) -> list[str]:
     if _text_has_any(normalized, ("правил", "требован", "как нужно", "какие нормы")):
         facets.append("rules")
     return _dedupe_strings(facets)
-
-
-def _authoritative_kb_route_hint(message: str) -> dict[str, Any] | None:
-    normalized = _routing_message_text(message)
-    if not normalized:
-        return None
-    route_id = ""
-    topic_facets: list[str] = []
-    if _text_has_any(normalized, LUXNET_ROUTE_KEYWORDS):
-        route_id = "corp_kb.luxnet"
-    elif _text_has_any(normalized, LIGHTING_NORMS_ROUTE_KEYWORDS):
-        route_id = "corp_kb.lighting_norms"
-        topic_facets = _lighting_norms_topic_facets(message)
-    elif (
-        bool(_company_fact_intent_type(message))
-        or _text_has_any(normalized, ("о самой компании", "о компании", "компания", "ладзавод", "ladzavod"))
-    ) and not _is_document_lookup_intent(normalized) and not _is_portfolio_lookup_intent(normalized) and not _is_application_recommendation_intent(normalized):
-        route_id = "corp_kb.company_common"
-        topic_facets = _company_common_topic_facets(message)
-    if not route_id:
-        return None
-    spec = KB_ROUTE_SPECS[route_id]
-    tool_args: dict[str, Any] = {
-        "kind": "hybrid_search",
-        "profile": "kb_route_lookup",
-        "knowledge_route_id": route_id,
-        "source_files": list(spec["source_files"]),
-    }
-    if topic_facets:
-        tool_args["topic_facets"] = topic_facets
-    return {
-        "route_id": route_id,
-        "route_family": route_id,
-        "route_kind": "corp_table",
-        "selected_route_kind": "corp_table",
-        "selected_route_family": route_id,
-        "intent_family": "company_fact" if route_id == "corp_kb.company_common" else "other",
-        "source": "corp_db",
-        "title": spec["title"],
-        "tool_name": "corp_db_search",
-        "tool_args": tool_args,
-        "score": 100,
-    }
 
 
 def _format_route_candidate_for_prompt(candidate: dict[str, Any] | None) -> str:
@@ -507,6 +467,10 @@ def _company_fact_payload_is_relevant(payload: dict[str, Any], message: str) -> 
         return bool(requisites) or _texts_contain_any(texts, ("реквизиты",))
     if subtype == "socials":
         return bool(socials)
+    if subtype == "certification":
+        return _texts_contain_any(texts, COMPANY_COMMON_FACET_KEYWORDS["certification"])
+    if subtype == "quality":
+        return _texts_contain_any(texts, COMPANY_COMMON_FACET_KEYWORDS["quality"])
     return _texts_contain_any(_collect_row_heading_texts(rows), ("о компании", "наш профиль", "о заводе", "об организации"))
 
 
@@ -589,7 +553,11 @@ def _is_successful_document_lookup(name: str, args: dict, tool_output: str, mess
     if payload.get("status") != "success":
         return False
     results = payload.get("results")
-    return isinstance(results, list) and len(results) > 0
+    return (
+        isinstance(results, list)
+        and len(results) > 0
+        and _doc_search_payload_matches_expected_document(payload, args=args)
+    )
 
 
 def _is_wiki_tool_attempt(name: str, args: dict) -> bool:
@@ -660,7 +628,56 @@ def _has_authoritative_kb_route(state: dict[str, Any]) -> bool:
     return bool(state.get("knowledge_route_id"))
 
 
-def _doc_domain_evidence_status(tool_result: ToolResult) -> str:
+def _doc_search_result_identifiers(row: dict[str, Any]) -> list[str]:
+    identifiers: list[str] = []
+    for key in ("document_id", "relative_path", "path", "document_title", "title"):
+        value = str(row.get(key) or "").strip()
+        if value:
+            identifiers.append(value)
+    return identifiers
+
+
+def _doc_search_expected_document_ids(args: dict[str, Any] | None = None, state: dict[str, Any] | None = None) -> list[str]:
+    expected: list[str] = []
+    document_id = str((state or {}).get("document_id") or "").strip()
+    if document_id:
+        expected.append(document_id)
+    preferred = (args or {}).get("preferred_document_ids")
+    if isinstance(preferred, list):
+        expected.extend(str(item or "").strip() for item in preferred)
+    elif isinstance(preferred, str):
+        expected.append(preferred.strip())
+    return _dedupe_strings([item for item in expected if item])
+
+
+def _doc_search_payload_matches_expected_document(
+    payload: dict[str, Any],
+    *,
+    args: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
+) -> bool:
+    expected = [_normalize_routing_text(item) for item in _doc_search_expected_document_ids(args, state)]
+    if not expected:
+        return True
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return False
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        identifiers = [_normalize_routing_text(item) for item in _doc_search_result_identifiers(row)]
+        for expected_id in expected:
+            if any(expected_id and (expected_id in identifier or identifier in expected_id) for identifier in identifiers):
+                return True
+    return False
+
+
+def _doc_domain_evidence_status(
+    tool_result: ToolResult,
+    *,
+    args: dict[str, Any] | None = None,
+    state: dict[str, Any] | None = None,
+) -> str:
     if not tool_result.success:
         return "error"
     payload = _parse_json_object(tool_result.output or "")
@@ -668,8 +685,87 @@ def _doc_domain_evidence_status(tool_result: ToolResult) -> str:
         return "empty"
     results = payload.get("results")
     if payload.get("status") == "success" and isinstance(results, list) and len(results) > 0:
+        if not _doc_search_payload_matches_expected_document(payload, args=args, state=state):
+            return "weak"
         return "sufficient"
     return "weak"
+
+
+def _route_evidence_status(
+    name: str,
+    args: dict[str, Any],
+    tool_result: ToolResult,
+    message: str,
+    state: dict[str, Any],
+) -> str:
+    if name == "doc_search":
+        return _doc_domain_evidence_status(tool_result, args=args, state=state)
+    if name != "corp_db_search":
+        return "weak"
+    if _has_authoritative_kb_route(state):
+        return _authoritative_kb_evidence_status(args, tool_result, message, state)
+    if not tool_result.success:
+        return "error"
+    payload = _parse_json_object(tool_result.output or "")
+    if payload.get("status") == "empty":
+        return "empty"
+    if payload.get("status") == "needs_clarification":
+        return "sufficient"
+    results = payload.get("results")
+    if payload.get("status") == "success" and isinstance(results, list) and results:
+        return "sufficient"
+    return "weak"
+
+
+def _route_tool_name(route_hint: dict[str, Any] | None) -> str:
+    if not route_hint:
+        return ""
+    return str(route_hint.get("tool_name") or route_hint.get("executor") or "").strip()
+
+
+def _route_execution_args(route_hint: dict[str, Any], query: str) -> dict[str, Any]:
+    args = dict(route_hint.get("tool_args") or {})
+    schema = route_hint.get("argument_schema") if isinstance(route_hint.get("argument_schema"), dict) else {}
+    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    if "query" in properties and not args.get("query"):
+        args["query"] = query
+    return args
+
+
+async def _finalize_with_scoped_evidence(
+    *,
+    base_messages: list[dict[str, Any]],
+    tool_name: str,
+    tool_args: dict[str, Any],
+    tool_result: ToolResult,
+    route_hint: dict[str, Any],
+) -> str:
+    evidence_payload = {
+        "selected_route_id": str(route_hint.get("route_id") or ""),
+        "selected_route_kind": str(route_hint.get("route_kind") or ""),
+        "tool_name": tool_name,
+        "tool_args": tool_args,
+        "tool_output": str(tool_result.output or "")[:12000],
+    }
+    finalizer_messages = list(base_messages)
+    finalizer_messages.append(
+        {
+            "role": "user",
+            "content": (
+                "Сформулируй финальный ответ пользователю только по этим retrieved evidence. "
+                "Если evidence не отвечает на вопрос, скажи что данных недостаточно.\n"
+                + json.dumps(evidence_payload, ensure_ascii=False)
+            ),
+        }
+    )
+    result = await call_llm(finalizer_messages, [])
+    if "error" in result:
+        raise RuntimeError(str(result.get("error") or "finalizer LLM error"))
+    choices = result.get("choices") or []
+    if not choices:
+        raise RuntimeError("finalizer returned no choices")
+    content = str((choices[0].get("message") or {}).get("content") or "")
+    return clean_response(content)
 
 
 def _is_authoritative_kb_tool_attempt(name: str, args: dict, state: dict[str, Any]) -> bool:
@@ -774,6 +870,21 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["retrieval_evidence_status"] = str(state.get("retrieval_evidence_status") or "")
         meta["retrieval_retry_count"] = int(state.get("retrieval_retry_count") or 0)
         meta["retrieval_close_reason"] = str(state.get("retrieval_close_reason") or "")
+        meta["retrieval_validated_arg_keys"] = list(state.get("retrieval_validated_arg_keys") or [])
+        meta["retrieval_validation_errors"] = list(state.get("retrieval_validation_errors") or [])
+        meta["retrieval_fallback_route_ids"] = list(state.get("retrieval_fallback_route_ids") or [])
+        meta["route_selector_status"] = str(state.get("route_selector_status") or "")
+        meta["route_selector_model"] = str(state.get("route_selector_model") or "")
+        meta["route_selector_latency_ms"] = float(state.get("route_selector_latency_ms") or 0.0)
+        meta["route_selector_confidence"] = str(state.get("route_selector_confidence") or "")
+        meta["route_selector_reason"] = str(state.get("route_selector_reason") or "")
+        meta["route_selector_repair_attempted"] = bool(state.get("route_selector_repair_attempted"))
+        meta["route_selector_repair_status"] = str(state.get("route_selector_repair_status") or "")
+        meta["route_selector_validation_error_code"] = str(state.get("route_selector_validation_error_code") or "")
+        meta["route_selector_validation_error"] = str(state.get("route_selector_validation_error") or "")
+        meta["routing_catalog_version"] = str(state.get("routing_catalog_version") or "")
+        meta["routing_catalog_origin"] = str(state.get("routing_catalog_origin") or "")
+        meta["routing_schema_version"] = int(state.get("routing_schema_version") or 0)
         meta["knowledge_route_id"] = str(state.get("knowledge_route_id") or "")
         meta["document_id"] = str(state.get("document_id") or "")
         meta["source_file_scope"] = list(state.get("source_file_scope") or [])
@@ -805,6 +916,8 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         retrieval_phase=str(state.get("retrieval_phase") or ""),
         retrieval_evidence_status=str(state.get("retrieval_evidence_status") or ""),
         retrieval_close_reason=str(state.get("retrieval_close_reason") or ""),
+        route_selector_status=str(state.get("route_selector_status") or ""),
+        routing_catalog_version=str(state.get("routing_catalog_version") or ""),
         routing_guardrail_hits=int(state.get("guardrail_activations", 0)),
         guardrail_blocked_tool=blocked_tool,
         finalizer_mode=str(state.get("finalizer_mode") or ""),
@@ -826,6 +939,27 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         span.set_attribute("retrieval.evidence_status", str(state.get("retrieval_evidence_status") or ""))
         span.set_attribute("retrieval.retry_count", int(state.get("retrieval_retry_count") or 0))
         span.set_attribute("retrieval.close_reason", str(state.get("retrieval_close_reason") or ""))
+        validated_arg_keys = state.get("retrieval_validated_arg_keys")
+        if isinstance(validated_arg_keys, list):
+            span.set_attribute("retrieval.validated_arg_keys", ",".join(str(item) for item in validated_arg_keys))
+        validation_errors = state.get("retrieval_validation_errors")
+        if isinstance(validation_errors, list):
+            span.set_attribute("retrieval.validation_errors", " | ".join(str(item) for item in validation_errors)[:500])
+        fallback_route_ids = state.get("retrieval_fallback_route_ids")
+        if isinstance(fallback_route_ids, list):
+            span.set_attribute("retrieval.fallback_route_ids", ",".join(str(item) for item in fallback_route_ids))
+        span.set_attribute("route_selector.status", str(state.get("route_selector_status") or ""))
+        span.set_attribute("route_selector.model", str(state.get("route_selector_model") or ""))
+        span.set_attribute("route_selector.latency_ms", float(state.get("route_selector_latency_ms") or 0.0))
+        span.set_attribute("route_selector.confidence", str(state.get("route_selector_confidence") or ""))
+        span.set_attribute("route_selector.reason", str(state.get("route_selector_reason") or "")[:500])
+        span.set_attribute("route_selector.repair_attempted", bool(state.get("route_selector_repair_attempted")))
+        span.set_attribute("route_selector.repair_status", str(state.get("route_selector_repair_status") or ""))
+        span.set_attribute("route_selector.validation_error_code", str(state.get("route_selector_validation_error_code") or ""))
+        span.set_attribute("route_selector.validation_error", str(state.get("route_selector_validation_error") or "")[:500])
+        span.set_attribute("routing.catalog_version", str(state.get("routing_catalog_version") or ""))
+        span.set_attribute("routing.catalog_origin", str(state.get("routing_catalog_origin") or ""))
+        span.set_attribute("routing.schema_version", int(state.get("routing_schema_version") or 0))
         span.set_attribute("knowledge_route_id", str(state.get("knowledge_route_id") or ""))
         span.set_attribute("document_id", str(state.get("document_id") or ""))
         source_file_scope = state.get("source_file_scope")
@@ -858,6 +992,8 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
                     guardrail_blocked_tool=blocked_tool,
                     routing_guardrail_hits=int(state.get("guardrail_activations", 0)),
                     retrieval_phase=str(state.get("retrieval_phase") or ""),
+                    route_selector_status=str(state.get("route_selector_status") or ""),
+                    routing_catalog_version=str(state.get("routing_catalog_version") or ""),
                 )
                 agent_logger.warning(
                     "Routing event=guardrail_blocked blocked_tool=%s route_id=%s route_family=%s route_kind=%s",
@@ -883,6 +1019,8 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
                     retrieval_phase=str(state.get("retrieval_phase") or ""),
                     retrieval_evidence_status=str(state.get("retrieval_evidence_status") or ""),
                     retrieval_close_reason=str(state.get("retrieval_close_reason") or ""),
+                    route_selector_status=str(state.get("route_selector_status") or ""),
+                    routing_catalog_version=str(state.get("routing_catalog_version") or ""),
                     finalizer_mode=str(state.get("finalizer_mode") or ""),
                 )
                 agent_logger.info(
@@ -906,6 +1044,8 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
                     document_id=str(state.get("document_id") or ""),
                     finalizer_mode=str(state.get("finalizer_mode") or ""),
                     retrieval_phase=str(state.get("retrieval_phase") or ""),
+                    route_selector_status=str(state.get("route_selector_status") or ""),
+                    routing_catalog_version=str(state.get("routing_catalog_version") or ""),
                 )
                 agent_logger.warning(
                     "Routing event=fallback_finalizer mode=%s route_id=%s route_family=%s route_kind=%s",
@@ -961,6 +1101,10 @@ def _expand_company_fact_query(message: str) -> str:
         return "реквизиты компании ладзавод инн кпп огрн"
     if subtype == "socials":
         return "telegram youtube vk соцсети ladzavod"
+    if subtype == "certification":
+        return "сертификаты декларации экспертиза сертификация ЛАДзавод светотехники"
+    if subtype == "quality":
+        return "качество комплектующие надежность ЛАДзавод светотехники"
     normalized = _routing_message_text(message)
     if _text_has_any(normalized, ("консультац", "расчет", "расчёт", "освещен", "освещён")):
         return "lad@ladled.ru 239-18-11 консультация расчет освещенности"
@@ -1017,6 +1161,10 @@ def _preferred_company_fact_texts(payload: dict[str, Any], subtype: str) -> list
         heading_keywords = ("реквизиты",)
     elif subtype == "socials":
         heading_keywords = ("социальные сети",)
+    elif subtype == "certification":
+        heading_keywords = ("сертифик", "декларац", "экспертиз", "сертификац")
+    elif subtype == "quality":
+        heading_keywords = ("качеств", "комплектующ", "надежн", "надёжн")
 
     if heading_keywords:
         preferred_rows = [
@@ -1979,6 +2127,161 @@ def clean_response(text: str) -> str:
     return text.strip()
 
 
+ROUTE_SELECTOR_UNAVAILABLE_MESSAGE = "Извините, сервис сейчас временно недоступен. Попробуйте повторить запрос немного позже."
+
+
+def _route_selector_enabled() -> bool:
+    return os.getenv("ROUTE_SELECTOR_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dict[str, str]]:
+    payload = json.dumps(selector_payload, ensure_ascii=False, separators=(",", ":"))
+    system = (
+        "You are a strict retrieval route selector. Choose exactly one route from the provided routes. "
+        "Return only valid JSON with selected_route_id, confidence, reason, tool_args, and optional fallback_route_ids. "
+        "tool_args must contain only fields declared by the selected route argument_schema. "
+        "Do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
+    )
+    user = (
+        "Select the best route and arguments for this user query using only this route catalog payload:\n"
+        f"{payload}"
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def _selector_args_shape(tool_args: dict[str, Any]) -> list[str]:
+    return sorted(str(key) for key in tool_args if str(key).strip())
+
+
+def _record_route_selector_unavailable(error: str) -> None:
+    meta = run_meta_get()
+    if isinstance(meta, dict):
+        meta["route_selector_status"] = "unavailable"
+        meta["route_selector_model"] = get_model()
+        meta["route_selector_validation_error"] = str(error or "")[:500]
+        meta["retrieval_phase"] = "closed"
+        meta["retrieval_evidence_status"] = "error"
+        meta["retrieval_close_reason"] = "route_selector_unavailable"
+    update_correlation_context(
+        route_selector_status="unavailable",
+        retrieval_phase="closed",
+        retrieval_evidence_status="error",
+        retrieval_close_reason="route_selector_unavailable",
+    )
+    record_span_event(
+        "route_selector.unavailable",
+        route_selector_status="unavailable",
+        retrieval_phase="closed",
+        retrieval_evidence_status="error",
+        retrieval_close_reason="route_selector_unavailable",
+    )
+
+
+async def _select_route_with_llm(routing_message: str) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    selector_started = perf_counter()
+    selector_payload = build_route_selector_payload(routing_message)
+    candidate_routes = list(selector_payload.get("routes") or [])
+    if not candidate_routes:
+        raise RuntimeError("route selector has no candidate routes")
+
+    result = await call_llm(_build_route_selector_messages(selector_payload), [])
+    selector_model = str(result.get("model") or get_model())
+    if "error" in result:
+        raise RuntimeError(str(result.get("error") or "route selector LLM error"))
+    choices = result.get("choices") or []
+    if not choices:
+        raise RuntimeError("route selector returned no choices")
+    message = choices[0].get("message") or {}
+    content = str(message.get("content") or "").strip()
+    validation = validate_selector_output(content, candidate_routes)
+    first_validation_error_code = ""
+    first_validation_error = ""
+    repair_attempted = False
+    repair_status = "not_needed"
+    if not validation.valid and validation.repairable:
+        first_validation_error_code = validation.error_code
+        first_validation_error = validation.error
+        repair_attempted = True
+        repair_status = "attempted"
+        repair_messages = _build_route_selector_messages(selector_payload)
+        repair_messages.append({"role": "assistant", "content": content})
+        repair_messages.append({"role": "user", "content": validation.repair_prompt})
+        repair_result = await call_llm(repair_messages, [])
+        selector_model = str(repair_result.get("model") or selector_model)
+        if "error" in repair_result:
+            raise RuntimeError(str(repair_result.get("error") or "route selector repair LLM error"))
+        repair_choices = repair_result.get("choices") or []
+        repair_content = ""
+        if repair_choices:
+            repair_content = str((repair_choices[0].get("message") or {}).get("content") or "").strip()
+        validation = validate_selector_output(repair_content, candidate_routes, repair_attempted=True)
+        repair_status = "succeeded" if validation.valid else "failed"
+    if not validation.valid:
+        raise RuntimeError(f"route selector output rejected: {validation.error_code}: {validation.error}")
+
+    selected_route = dict(validation.route or {})
+    selected_route["tool_args"] = dict(validation.tool_args)
+    selected_route["selection_reason"] = str(validation.route.get("selection_reason") if validation.route else "") or "llm_selector"
+    selected_route["selector_confidence"] = ""
+    selected_route["selector_reason"] = ""
+    try:
+        parsed = json.loads(content)
+        selected_route["selector_confidence"] = str(parsed.get("confidence") or "")
+        selected_route["selector_reason"] = str(parsed.get("reason") or "")
+        if parsed.get("reason"):
+            selected_route["selection_reason"] = "llm_selector: " + str(parsed.get("reason"))
+    except Exception:
+        pass
+    selected_route["candidate_route_ids"] = list(selector_payload.get("candidate_route_ids") or [])
+    selected_route["fallback_route_ids"] = list(validation.fallback_route_ids)
+    selected_route["selector_status"] = "valid"
+    selected_route["selector_model"] = selector_model
+    selected_route["selector_latency_ms"] = (perf_counter() - selector_started) * 1000
+    selected_route["selector_repair_attempted"] = repair_attempted
+    selected_route["selector_repair_status"] = repair_status
+    selected_route["selector_validation_error_code"] = first_validation_error_code
+    selected_route["selector_validation_error"] = first_validation_error
+    selected_route["validated_arg_keys"] = _selector_args_shape(validation.tool_args)
+    selected_route["routing_catalog_version"] = str(selector_payload.get("catalog_version") or "")
+    selected_route["routing_catalog_origin"] = str(selector_payload.get("catalog_origin") or "")
+    selected_route["routing_schema_version"] = int(selector_payload.get("schema_version") or 0)
+
+    secondary_candidates = [
+        dict(route)
+        for route in candidate_routes
+        if str(route.get("route_id") or "") != str(selected_route.get("route_id") or "")
+    ][:3]
+    route_selection = {
+        "intent_family": str(selected_route.get("route_intent_family") or selected_route.get("intent_family") or ""),
+        "primary_candidate": selected_route,
+        "selected": selected_route,
+        "candidate_route_ids": list(selector_payload.get("candidate_route_ids") or []),
+        "secondary_candidates": secondary_candidates,
+        "selection_reason": str(selected_route.get("selection_reason") or ""),
+        "selection_score": 0,
+        "selected_route_kind": str(selected_route.get("route_kind") or ""),
+        "selected_route_family": str(selected_route.get("route_family") or ""),
+        "catalog_version": str(selector_payload.get("catalog_version") or ""),
+        "catalog_origin": str(selector_payload.get("catalog_origin") or ""),
+        "schema_version": int(selector_payload.get("schema_version") or 0),
+        "route_count": int(selector_payload.get("route_count") or 0),
+        "selector": {
+            "status": "valid",
+            "model": selector_model,
+            "latency_ms": selected_route.get("selector_latency_ms"),
+            "confidence": selected_route.get("selector_confidence"),
+            "reason": selected_route.get("selector_reason"),
+            "repair_attempted": repair_attempted,
+            "repair_status": repair_status,
+            "validation_error_code": first_validation_error_code,
+            "validation_error": first_validation_error,
+            "validated_arg_keys": list(selected_route.get("validated_arg_keys") or []),
+            "candidate_route_ids": list(selector_payload.get("candidate_route_ids") or []),
+        },
+    }
+    return route_selection, selected_route, secondary_candidates
+
+
 def _get_admin_id() -> int:
     """Get admin user ID from config or env"""
     from admin_api import load_config as load_admin_config
@@ -2055,13 +2358,26 @@ async def run_agent(
     
     routing_message = _routing_query_text(message) or str(message or "")
     explicit_document_request = _is_document_lookup_intent(routing_message)
-    route_selection = select_route(routing_message, explicit_document_request=explicit_document_request)
-    route_hint = (
-        route_selection.get("primary_candidate")
-        or route_selection.get("selected")
-        or _authoritative_kb_route_hint(routing_message)
-    )
-    secondary_route_candidates = list(route_selection.get("secondary_candidates") or []) if route_selection else []
+    if _route_selector_enabled():
+        try:
+            route_selection, route_hint, secondary_route_candidates = await _select_route_with_llm(routing_message)
+        except Exception as exc:
+            agent_logger.error(f"Route selector unavailable or invalid: {exc}")
+            _record_route_selector_unavailable(str(exc))
+            return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
+    else:
+        route_selection = select_route(routing_message, explicit_document_request=explicit_document_request)
+        if route_selection.get("catalog_unavailable"):
+            agent_logger.error("Routing catalog unavailable: %s", route_selection.get("error") or "unknown")
+            return (
+                "Маршрутизация временно недоступна: активный каталог маршрутов не опубликован "
+                "или не прошел проверку. Повторите запрос позже."
+            )
+        route_hint = (
+            route_selection.get("primary_candidate")
+            or route_selection.get("selected")
+        )
+        secondary_route_candidates = list(route_selection.get("secondary_candidates") or []) if route_selection else []
     if route_hint:
         workspace_info += "\nRouting shortlist:"
         workspace_info += f"\n- primary: {_format_route_candidate_for_prompt(route_hint)}"
@@ -2114,6 +2430,26 @@ async def run_agent(
     candidate_route_ids = list(route_hint.get("candidate_route_ids") or route_selection.get("candidate_route_ids") or []) if route_hint else []
     if not candidate_route_ids and route_hint and route_hint.get("route_id"):
         candidate_route_ids = [str(route_hint.get("route_id"))]
+    selector_meta = route_selection.get("selector") if isinstance(route_selection.get("selector"), dict) else {}
+    selector_latency_ms = float(selector_meta.get("latency_ms") or route_hint.get("selector_latency_ms") or 0.0) if route_hint else 0.0
+    routing_catalog_version = str(
+        route_selection.get("catalog_version")
+        or route_hint.get("routing_catalog_version")
+        or route_hint.get("catalog_version")
+        or ""
+    ) if route_hint else str(route_selection.get("catalog_version") or "")
+    routing_catalog_origin = str(
+        route_selection.get("catalog_origin")
+        or route_hint.get("routing_catalog_origin")
+        or route_hint.get("catalog_origin")
+        or ""
+    ) if route_hint else str(route_selection.get("catalog_origin") or "")
+    routing_schema_version = int(
+        route_selection.get("schema_version")
+        or route_hint.get("routing_schema_version")
+        or route_hint.get("schema_version")
+        or 0
+    ) if route_hint else int(route_selection.get("schema_version") or 0)
     retrieval_route_family = ""
     if route_hint:
         retrieval_route_family = str(
@@ -2152,6 +2488,27 @@ async def run_agent(
         "retrieval_evidence_status": "",
         "retrieval_retry_count": 0,
         "retrieval_close_reason": "",
+        "retrieval_validated_arg_keys": list(route_hint.get("validated_arg_keys") or selector_meta.get("validated_arg_keys") or []) if route_hint else [],
+        "retrieval_validation_errors": [
+            str(item)
+            for item in [
+                selector_meta.get("validation_error") or route_hint.get("selector_validation_error")
+            ]
+            if str(item or "").strip()
+        ] if route_hint else [],
+        "retrieval_fallback_route_ids": list(route_hint.get("fallback_route_ids") or [] if route_hint else []),
+        "route_selector_status": str(selector_meta.get("status") or route_hint.get("selector_status") or "") if route_hint else "",
+        "route_selector_model": str(selector_meta.get("model") or route_hint.get("selector_model") or "") if route_hint else "",
+        "route_selector_latency_ms": selector_latency_ms,
+        "route_selector_confidence": str(selector_meta.get("confidence") or route_hint.get("selector_confidence") or "") if route_hint else "",
+        "route_selector_reason": str(selector_meta.get("reason") or route_hint.get("selector_reason") or "") if route_hint else "",
+        "route_selector_repair_attempted": bool(selector_meta.get("repair_attempted") or route_hint.get("selector_repair_attempted")) if route_hint else False,
+        "route_selector_repair_status": str(selector_meta.get("repair_status") or route_hint.get("selector_repair_status") or "") if route_hint else "",
+        "route_selector_validation_error_code": str(selector_meta.get("validation_error_code") or route_hint.get("selector_validation_error_code") or "") if route_hint else "",
+        "route_selector_validation_error": str(selector_meta.get("validation_error") or route_hint.get("selector_validation_error") or "") if route_hint else "",
+        "routing_catalog_version": routing_catalog_version,
+        "routing_catalog_origin": routing_catalog_origin,
+        "routing_schema_version": routing_schema_version,
         "authoritative_kb_attempt_count": 0,
         "knowledge_route_id": authoritative_route_id,
         "document_id": selected_document_id,
@@ -2176,7 +2533,58 @@ async def run_agent(
         "_last_observability_event": "",
     }
     _update_routing_observability(routing_state)
-    
+
+    if _route_selector_enabled() and route_hint:
+        primary_tool_name = _route_tool_name(route_hint)
+        primary_args = _route_execution_args(route_hint, routing_message)
+        if primary_tool_name:
+            try:
+                routing_state["retrieval_tool_used"] = True
+                _record_retrieval_attempt(primary_tool_name, primary_args, routing_state)
+                primary_result = await execute_tool(
+                    primary_tool_name,
+                    primary_args,
+                    tool_ctx,
+                    tool_call_id="route-selector-primary",
+                    tool_call_seq=0,
+                )
+                if primary_result.success:
+                    _record_tool_output_contract(primary_tool_name, primary_result, routing_state)
+                evidence_status = _route_evidence_status(
+                    primary_tool_name,
+                    primary_args,
+                    primary_result,
+                    routing_message,
+                    routing_state,
+                )
+                routing_state["retrieval_evidence_status"] = evidence_status
+                routing_state["selected_source"] = "doc_search" if primary_tool_name == "doc_search" else "corp_db"
+                routing_state["retrieval_close_reason"] = ""
+                if evidence_status == "sufficient":
+                    routing_state["retrieval_phase"] = "closed"
+                    routing_state["retrieval_close_reason"] = "route_selector_payload_sufficient"
+                    routing_state["finalizer_mode"] = "llm"
+                    _update_routing_observability(routing_state)
+                    try:
+                        final_response = await _finalize_with_scoped_evidence(
+                            base_messages=messages,
+                            tool_name=primary_tool_name,
+                            tool_args=primary_args,
+                            tool_result=primary_result,
+                            route_hint=route_hint,
+                        )
+                    except Exception as exc:
+                        agent_logger.error(f"Route finalizer unavailable: {exc}")
+                        return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
+                    if final_response:
+                        return final_response
+                else:
+                    routing_state["retrieval_phase"] = "open"
+                    _update_routing_observability(routing_state)
+            except Exception as exc:
+                agent_logger.error(f"Selected route execution failed: {exc}")
+                return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
+
     agent_logger.info(f"Available tools for {chat_type}/{source}: {len(tool_definitions)} (lazy={use_lazy_loading})")
     
     max_iter = get_max_iterations()
@@ -2365,7 +2773,7 @@ async def run_agent(
                             _update_routing_observability(routing_state)
 
                 if name == "doc_search" and _is_doc_domain_route(routing_state):
-                    evidence_status = _doc_domain_evidence_status(tool_result)
+                    evidence_status = _doc_domain_evidence_status(tool_result, args=args, state=routing_state)
                     routing_state["retrieval_evidence_status"] = evidence_status
                     routing_state["retrieval_close_reason"] = ""
                     if tool_result.success:

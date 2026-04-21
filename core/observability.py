@@ -76,6 +76,8 @@ CORRELATION_FIELDS = (
     "retrieval_phase",
     "retrieval_evidence_status",
     "retrieval_close_reason",
+    "route_selector_status",
+    "routing_catalog_version",
     "routing_guardrail_hits",
     "guardrail_blocked_tool",
     "finalizer_mode",
@@ -95,6 +97,8 @@ CORRELATION_FIELD_DEFAULTS = {
     "retrieval_phase": "-",
     "retrieval_evidence_status": "-",
     "retrieval_close_reason": "-",
+    "route_selector_status": "-",
+    "routing_catalog_version": "-",
     "routing_guardrail_hits": "0",
     "guardrail_blocked_tool": "-",
     "finalizer_mode": "-",
@@ -114,6 +118,8 @@ SPAN_ATTRIBUTE_NAMES = {
     "retrieval_phase": "retrieval_phase",
     "retrieval_evidence_status": "retrieval_evidence_status",
     "retrieval_close_reason": "retrieval_close_reason",
+    "route_selector_status": "route_selector_status",
+    "routing_catalog_version": "routing_catalog_version",
     "routing_guardrail_hits": "routing_guardrail_hits",
     "guardrail_blocked_tool": "guardrail_blocked_tool",
     "finalizer_mode": "finalizer_mode",
@@ -431,6 +437,7 @@ def setup_observability(service_name: str) -> None:
         "document_id=%(document_id)s tool_name=%(tool_name)s tool_call_id=%(tool_call_id)s "
         "tool_call_seq=%(tool_call_seq)s tool_status=%(tool_status)s retrieval_phase=%(retrieval_phase)s "
         "retrieval_evidence_status=%(retrieval_evidence_status)s retrieval_close_reason=%(retrieval_close_reason)s "
+        "route_selector_status=%(route_selector_status)s routing_catalog_version=%(routing_catalog_version)s "
         "routing_guardrail_hits=%(routing_guardrail_hits)s guardrail_blocked_tool=%(guardrail_blocked_tool)s "
         "finalizer_mode=%(finalizer_mode)s %(name)s: %(message)s"
     )

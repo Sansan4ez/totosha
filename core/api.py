@@ -2,7 +2,7 @@
 
 import os
 import aiohttp
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from opentelemetry import trace
 from pydantic import BaseModel
 from time import perf_counter
@@ -96,6 +96,21 @@ def _build_run_meta(*, execution_mode: str) -> dict:
         "retrieval_evidence_status": "",
         "retrieval_retry_count": 0,
         "retrieval_close_reason": "",
+        "retrieval_validated_arg_keys": [],
+        "retrieval_validation_errors": [],
+        "retrieval_fallback_route_ids": [],
+        "route_selector_status": "",
+        "route_selector_model": "",
+        "route_selector_latency_ms": 0.0,
+        "route_selector_confidence": "",
+        "route_selector_reason": "",
+        "route_selector_repair_attempted": False,
+        "route_selector_repair_status": "",
+        "route_selector_validation_error_code": "",
+        "route_selector_validation_error": "",
+        "routing_catalog_version": "",
+        "routing_catalog_origin": "",
+        "routing_schema_version": 0,
         "knowledge_route_id": "",
         "document_id": "",
         "source_file_scope": [],
@@ -185,6 +200,8 @@ def _apply_meta_correlation(meta: dict, source: str) -> None:
         retrieval_phase=str(meta.get("retrieval_phase") or ""),
         retrieval_evidence_status=str(meta.get("retrieval_evidence_status") or ""),
         retrieval_close_reason=str(meta.get("retrieval_close_reason") or ""),
+        route_selector_status=str(meta.get("route_selector_status") or ""),
+        routing_catalog_version=str(meta.get("routing_catalog_version") or ""),
         routing_guardrail_hits=int(meta.get("routing_guardrail_hits") or 0),
         finalizer_mode=str(meta.get("finalizer_mode") or ""),
     )
@@ -255,8 +272,24 @@ async def startup():
 
 
 @app.get("/health")
-async def health():
-    return {"status": "ok", "service": "core"}
+async def health(response: Response):
+    from documents import routing_catalog_health
+
+    catalog_health = routing_catalog_health()
+    if catalog_health.get("status") == "unavailable":
+        response.status_code = 503
+        return {"status": "unavailable", "service": "core", "routing_catalog": catalog_health}
+    return {"status": "ok", "service": "core", "routing_catalog": catalog_health}
+
+
+@app.get("/health/routing")
+async def routing_health(response: Response):
+    from documents import routing_catalog_health
+
+    catalog_health = routing_catalog_health()
+    if catalog_health.get("status") != "ok":
+        response.status_code = 503
+    return catalog_health
 
 
 @app.post("/api/chat")
