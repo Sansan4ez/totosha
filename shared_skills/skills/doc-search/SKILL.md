@@ -1,19 +1,19 @@
 ---
 name: doc-search
-description: Многоформатный поиск по локальному document corpus: `md`, `pdf`, `docx`, `xlsx`, `pptx`, `png`, `jpg`, `tiff` и другим рабочим документам; legacy `doc/xls/ppt` доступны только после ingest через `doc-worker` с LiteParse/LibreOffice runtime. Используй tool `doc_search` как canonical document-search path.
+description: Многоформатный поиск внутри конкретных document-domain routes локального corpus: `md`, `pdf`, `docx`, `xlsx`, `pptx`, `png`, `jpg`, `tiff` и другим рабочим документам; legacy `doc/xls/ppt` доступны только после ingest через `doc-worker` с LiteParse/LibreOffice runtime. Используй tool `doc_search` только когда route card указывает конкретный документ/документную тематику.
 ---
 
 # Doc search
 
-Use this skill as the first-class `doc_domain` route when the user explicitly asks for document context, citation, fragment, policy text, certificate link, manual, scan, norms, or any other file-backed fact from the local document corpus. `corp_db_search empty` / error can also escalate here, but that is only one entry path, not the main meaning of `doc_search`.
+Use this skill for concrete `doc_domain` route cards: the route must point at known document selectors, preferred document ids, or a defined document topic from ingestion metadata. `doc_search` is not a generic corpus fallback and not the default for bare company facts.
 
 ## Core rules
 
 - Canonical tool: `doc_search`.
 - Canonical source name: `doc-search`.
-- Treat `doc_search` as the primary route for explicit document-domain requests, not as a generic fallback after KB miss.
+- Treat `doc_search` as the primary route only for concrete document-domain requests, not as a generic fallback after KB miss.
 - Do not use this skill as default path for short company-fact questions if `corp_db_search` already returned a sufficient answer.
-- Prefer `corp_db_search` for company facts and promoted hot-path content.
+- Prefer `corp_db_search` for company facts and promoted hot-path content, including generic certificates, declarations, components, and quality questions.
 
 ## Corpus model
 
@@ -25,10 +25,10 @@ The tool reads normalized sidecars on the chat path. Heavy parsing and legacy Of
 
 ## Quick workflow
 
-1. Clarify what exact document fact, quote, fragment, file, or document-domain topic the user wants.
-2. If the request explicitly asks for document text or file-backed evidence, run `doc_search` immediately.
+1. Clarify what exact document, quote, fragment, file, or document-domain topic the user wants.
+2. If the route selector selected a concrete document route, run `doc_search` with the route `preferred_document_ids` / document selectors.
 3. If the request is a short company fact without document-domain signal, use `corp_db_search` first.
-4. If `corp_db_search` returned `empty` / error and document retrieval is still appropriate, escalate to `doc_search`.
+4. If `corp_db_search` returned `empty` / error and document retrieval is still appropriate, escalate only to a concrete document route.
 5. Answer from the returned snippet. Quote only short fragments when needed.
 6. Offer one narrow follow-up if the query is broad.
 

@@ -199,7 +199,6 @@ services:
       - TZ=${TZ:-Europe/Moscow}
       - DOC_REPO_ROOT=/repo
       - CORP_DOCS_ROOT=/data/corp_docs
-      - CORP_WIKI_PATH=/data/skills/corp-wiki-md-search/wiki
       - DOC_SEARCH_OCR_ENABLED=0
       - DOC_SEARCH_COMMAND_TIMEOUT_S=120
       - DOC_SEARCH_MAX_MEMORY_MB=900

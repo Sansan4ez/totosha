@@ -1,6 +1,6 @@
 {
   "name": "doc-search",
-  "description": "Многоформатный поиск по локальному document corpus через tool doc_search как first-class document-domain route.",
+  "description": "Многоформатный поиск по локальному document corpus через tool doc_search только для concrete document-domain route с известными document selectors.",
   "version": "1.0.0",
   "author": "LAD",
   "system_prompt_file": "SKILL.md",
