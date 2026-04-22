@@ -4,12 +4,17 @@ RFC-025 LLM-Selected Route Cards And Retrieval Arguments
 Status
 ------
 
-Proposed
+Implemented
 
 Date
 ----
 
 2026-04-20
+
+Last updated
+------------
+
+2026-04-22
 
 Related RFCs
 ------------
@@ -110,7 +115,9 @@ The route card catalog becomes the only place that defines:
 
 Runtime code should interpret and validate route-card decisions, not recreate route-specific knowledge in parallel.
 
-The previous score-based selector should be demoted to an optional candidate prefilter, offline diagnostic tool, and benchmark comparison baseline. It should not be the normal production authority for choosing routes.
+The previous score-based selector is removed from production routing. Route selector payload construction must not compute a hand-weighted score, must not expose score fields to the prompt, and must not use score fallback after selector failures.
+
+The current v1 implementation keeps only a small deterministic ordering path for non-production/degraded configurations and tests. Production with the LLM selector enabled fails closed with a temporary-unavailable response when selector or finalizer LLM access is unavailable.
 
 Route model
 -----------
@@ -366,6 +373,37 @@ The catalog should include small examples or generated cards for every major dat
 }
 ```
 
+### Portfolio object lookup
+
+```json
+{
+  "route_id": "corp_db.portfolio_lookup",
+  "route_family": "corp_db.portfolio_lookup",
+  "route_kind": "corp_table",
+  "title": "Portfolio object lookup",
+  "summary": "Find named realized projects, portfolio objects, references, customers, and implementation cases.",
+  "topics": ["portfolio", "projects", "objects", "references", "realized_projects"],
+  "keywords": ["портфолио", "реализованные проекты", "ржд", "логистический центр", "белый раст"],
+  "executor": "corp_db_search",
+  "locked_args": {
+    "kind": "hybrid_search",
+    "profile": "entity_resolver",
+    "entity_types": ["portfolio", "sphere"]
+  },
+  "argument_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "query": {"type": "string", "maxLength": 500},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 50}
+    },
+    "required": ["query"]
+  },
+  "argument_hints": "Use the original user wording with named object, customer, project, or portfolio terms.",
+  "fallback_route_ids": ["corp_db.portfolio_by_sphere", "corp_db.portfolio_examples_by_lamp"]
+}
+```
+
 ### Document-domain search
 
 ```json
@@ -420,22 +458,18 @@ The route selector should not depend on a complex hand-weighted score in normal 
 
 If the active catalog is small enough, pass all compact route cards to the LLM selector.
 
-If the catalog becomes large, use a simple deterministic prefilter only to reduce prompt size:
+The implemented v1 limit is 60 selector-visible routes. If the catalog is at or below that limit, the selector payload uses `candidate_mode=all_visible` and includes the whole compact catalog.
+
+If the catalog becomes larger than the compact limit, use only simple deterministic ordering to reduce prompt size:
 
 - exact route id or document id matches;
 - exact phrase matches on title, summary, topics, and keywords;
 - simple token overlap;
 - source availability filters.
 
-The prefilter must not make the final route decision. It only produces a candidate list, for example the top 20 routes. The LLM then selects the route and arguments.
+The ordering layer must not make the final production route decision. It only produces a bounded candidate list. The LLM then selects the route and arguments.
 
-The previous weighted scoring rules can remain only as:
-
-- offline diagnostics;
-- candidate prefilter input when the catalog becomes too large;
-- benchmark comparison against the LLM selector.
-
-They should not be used as a production degraded fallback.
+The previous weighted scoring rules should not remain in production selector payload construction, route prompts, or degraded route fallback. If future diagnostics need ranking experiments, they should live in separate offline tooling and must not share the runtime selector contract.
 
 If the selector or finalizer LLM is unavailable, the service should not try to emulate route selection or answer synthesis with complex scoring. The agent cannot produce a trustworthy final answer without LLM access anyway, so the runtime should return a clear temporary-unavailable response instead of running an uncertain route.
 
@@ -508,9 +542,17 @@ Default v1 policy:
 - if it returns `empty`, `error`, or `weak`, allow at most one fallback;
 - fallback priority is: selected route card `fallback_route_ids`, selector output `fallback_route_ids`, then the prefilter candidate list only if the candidate has a compatible route kind and evidence policy;
 - do not use `doc_search` as generic fallback for company facts;
-- do not use a score-ranked route as fallback unless it is already in the bounded candidate list;
+- do not use a separately ranked route as fallback unless it is already in the bounded candidate list;
 - do not continue LLM iterations after scoped evidence is sufficient;
 - do not retry the same tool with semantically identical args.
+
+Implemented portfolio hardening:
+
+- if the selected route is `corp_kb.company_common`;
+- and primary evidence is `empty` or `weak`;
+- and the query contains strong portfolio/project signals such as `проект`, `реализован`, `РЖД`, `логистический центр`, or `Белый Раст`;
+- run exactly one controlled fallback to `corp_db.portfolio_lookup` or `corp_db.portfolio_by_sphere`;
+- classify that fallback evidence independently, without carrying the previous `knowledge_route_id` scope.
 
 This reduces latency and removes the current pattern where most time is spent on extra LLM iterations after a fast DB call.
 
@@ -551,6 +593,13 @@ Validation rules:
 - every `corp_table` route has table/entity/source scope or an explicit reason for being broad;
 - every route's `locked_args` are accepted by the executor schema;
 - enum-like lists above the compact threshold are rejected unless explicitly marked as external resolver input.
+
+Runtime catalog hardening:
+
+- loaded `catalog.v1.json` payloads are revalidated with the current code before they become active;
+- stale embedded `validation_report` fields are not trusted as-is;
+- current bootstrap route cards are merged during revalidation so newly shipped core routes are visible even when the runtime catalog file is older than the deployed code;
+- when `ROUTING_CATALOG_REQUIRED=true`, runtime fails closed if the active merged catalog is missing or invalid, instead of falling back to repo manifests or bootstrap-only routing.
 
 Route ownership by source
 -------------------------
@@ -717,6 +766,21 @@ Phase 6. Add regression tests and replay:
 4. Add catalog validation tests for missing table/entity route coverage.
 5. Add bench/replay cases for the request ids that exposed the bug.
 
+Phase 7. Remove score-gated routing remnants:
+
+1. Remove production score calculation from selector payload construction.
+2. Remove `score` and `selection_score` fields from route selector prompts and normal route-selection results.
+3. Pass all selector-visible routes when the catalog fits the compact selector budget.
+4. Use simple intent/catalog ordering only as a bounded candidate-size reducer for large catalogs or non-production degraded routing.
+5. Verify selector/finalizer LLM outage returns temporary-unavailable instead of score fallback.
+
+Phase 8. Portfolio route hardening:
+
+1. Add `corp_db.portfolio_lookup` for named portfolio objects and realized project queries.
+2. Add portfolio keywords for `РЖД`, `Белый Раст`, `логистический центр`, and realized project wording.
+3. Add controlled fallback from weak/empty `corp_kb.company_common` evidence to portfolio routes for strong project queries.
+4. Add replay tests for `Белый Раст` and `РЖД` project questions.
+
 Testing approach
 ----------------
 
@@ -738,6 +802,8 @@ Integration tests:
 - `Какие используются комплектующие?` selects a quality route and calls `corp_db_search` with `corp_kb.company_common`, `topic_facets=["quality"]`, and an LLM-produced component-quality query;
 - `какие есть сертификаты?` selects a certification route and calls `corp_db_search` with `corp_kb.company_common`, `topic_facets=["certification"]`, and an LLM-produced certification query;
 - `Какие нормы освещенности для спортивных объектов?` selects the sports lighting document route only when document-domain wording or route-specific sports lighting wording is present;
+- `Расскажи подробнее про терминально-логистический центр Белый Раст` selects `corp_db.portfolio_lookup` and can reach portfolio entity evidence;
+- `Какие объекты были реализованы для РЖД?` selects `corp_db.portfolio_by_sphere` or a portfolio-capable route and does not stay trapped in `corp_kb.company_common`;
 - generic company questions do not call `doc_search` after a sufficient company KB payload.
 
 Operational checks:
@@ -769,4 +835,8 @@ Acceptance criteria
 17. Route-specific evidence requirements are represented in route metadata or a shared policy module, not as scattered special cases.
 18. `corp-wiki-md-search` is not loaded as an enabled runtime skill.
 19. Route catalog validation covers KB, catalog, SKU, category, mounting, portfolio, and document-domain routes.
-20. The two production failure cases complete with one selector call, one fast authoritative DB retrieval, and a final answer, without extra irrelevant tool iterations.
+20. `Расскажи подробнее про терминально-логистический центр Белый Раст` reaches `corp_db.portfolio_lookup`, not only `corp_kb.company_common`.
+21. `Какие объекты были реализованы для РЖД?` reaches a portfolio-capable route, preferably `corp_db.portfolio_by_sphere`.
+22. Normal selector payloads contain route cards and arguments, not score fields.
+23. Loaded runtime catalogs are revalidated against current code and do not hide newly shipped bootstrap routes.
+24. The original certification/component failures and the portfolio failures complete with one selector call, one fast authoritative DB retrieval when evidence is sufficient, and a final answer, without extra irrelevant tool iterations.
