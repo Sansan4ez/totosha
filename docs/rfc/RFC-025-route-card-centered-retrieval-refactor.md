@@ -678,6 +678,13 @@ It should shed or shrink:
 
 The selector in `core/documents/routing.py` should become the catalog loader, compact route-card formatter, optional prefilter, and validator. It should not remain a second business taxonomy.
 
+Open follow-up gaps after the 2026-04-22 implementation:
+
+- `doc_search.document_lookup` is filtered out at runtime, but stale route cards still exist in checked-in and runtime-generated JSON catalogs. They should be removed or regenerated so operators do not see an inactive catch-all route.
+- deterministic/degraded document routing can still pick an unrelated `doc_domain` route when no concrete document route matches the query. Degraded routing should fail closed or return no selected document route instead of using an unrelated document route.
+- `core/agent.py` still contains duplicated keyword, facet, and rewrite helpers that belong in route metadata or a shared routing policy module.
+- the repository needs a short living architecture document that explains ownership boundaries between `core/agent.py`, `core/documents/routing.py`, `db/search_docs.py`, `doc-corpus/`, and `workspace/_shared/corp_docs`.
+
 System prompt update
 --------------------
 
@@ -780,6 +787,13 @@ Phase 8. Portfolio route hardening:
 2. Add portfolio keywords for `РЖД`, `Белый Раст`, `логистический центр`, and realized project wording.
 3. Add controlled fallback from weak/empty `corp_kb.company_common` evidence to portfolio routes for strong project queries.
 4. Add replay tests for `Белый Раст` and `РЖД` project questions.
+
+Phase 9. Follow-up cleanup and ownership documentation:
+
+1. Remove stale `doc_search.document_lookup` cards from source and generated route manifests, and remove the bootstrap catch-all route card so the inactive route is not visible in operator-facing files.
+2. Harden degraded `doc_domain` selection so an explicit document query without a matching concrete document route does not select an unrelated document route.
+3. Extract remaining routing keywords, company facets, and deterministic KB rewrite helpers from `core/agent.py` into a shared routing policy module or route metadata path.
+4. Add `docs/architecture/routing.md` as the living architecture view for the current retrieval routing system.
 
 Testing approach
 ----------------
