@@ -91,6 +91,9 @@ DOCUMENT_LOOKUP_KEYWORDS = (
 PORTFOLIO_LOOKUP_KEYWORDS = (
     "портфолио", "пример проекта", "пример объекта", "примеры реализации",
     "какие проекты были", "где применялся", "покажи проекты", "покажи объект",
+    "проект", "проекты", "реализован", "реализация",
+    "ржд", "логистический центр", "терминально-логистический", "белый раст",
+    "склад", "терминал",
 )
 APPLICATION_RECOMMENDATION_KEYWORDS = (
     "стадион", "арена", "спорткомплекс", "футболь", "карьер", "рудник", "гок",
@@ -262,10 +265,7 @@ def _is_document_lookup_intent(message: str) -> bool:
 
 def _is_portfolio_lookup_intent(message: str) -> bool:
     normalized = _routing_message_text(message)
-    return _text_has_any(normalized, PORTFOLIO_LOOKUP_KEYWORDS) and _text_has_any(
-        normalized,
-        APPLICATION_RECOMMENDATION_KEYWORDS + ("наружн", "уличн", "дорожн", "промышлен", "тяжел"),
-    )
+    return _text_has_any(normalized, PORTFOLIO_LOOKUP_KEYWORDS)
 
 
 def _is_company_fact_intent(message: str) -> bool:
@@ -332,7 +332,6 @@ def _format_route_candidate_for_prompt(candidate: dict[str, Any] | None) -> str:
         f"route_id={candidate.get('route_id') or ''} "
         f"route_kind={candidate.get('selected_route_kind') or candidate.get('route_kind') or ''} "
         f"tool={candidate.get('tool_name') or ''} "
-        f"score={candidate.get('score') or 0} "
         f"reason={candidate.get('selection_reason') or ''} "
         f"tool_args={json.dumps(candidate.get('tool_args') or {}, ensure_ascii=False)}"
     )
@@ -535,7 +534,13 @@ def _is_successful_application_recommendation(args: dict, tool_output: str, mess
 
 
 def _is_successful_portfolio_by_sphere(args: dict, tool_output: str, message: str) -> bool:
-    if str(args.get("kind") or "") != "portfolio_by_sphere":
+    kind = str(args.get("kind") or "")
+    profile = str(args.get("profile") or "")
+    if kind == "hybrid_search" and profile == "entity_resolver":
+        entity_types = args.get("entity_types")
+        if not isinstance(entity_types, list) or not any(str(item) in {"portfolio", "sphere"} for item in entity_types):
+            return False
+    elif kind != "portfolio_by_sphere":
         return False
     payload = _parse_json_object(tool_output)
     if payload.get("status") != "success":
@@ -601,7 +606,7 @@ def _is_portfolio_fallback_attempt(name: str, args: dict) -> bool:
     if name != "corp_db_search":
         return False
     kind = str(args.get("kind") or "")
-    return kind in {"hybrid_search", "application_recommendation", "category_lamps", "sphere_categories"}
+    return kind in {"hybrid_search", "application_recommendation", "category_lamps", "sphere_categories", "portfolio_by_sphere"}
 
 
 def _is_document_fallback_attempt(name: str, args: dict) -> bool:
@@ -732,6 +737,36 @@ def _route_execution_args(route_hint: dict[str, Any], query: str) -> dict[str, A
     return args
 
 
+def _portfolio_lookup_fallback_call(message: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    normalized = _routing_message_text(message)
+    if "ржд" in normalized:
+        args = {
+            "kind": "portfolio_by_sphere",
+            "sphere": "РЖД",
+            "query": message,
+            "fuzzy": True,
+            "limit": 10,
+        }
+        route_id = "corp_db.portfolio_by_sphere"
+    else:
+        args = {
+            "kind": "hybrid_search",
+            "profile": "entity_resolver",
+            "entity_types": ["portfolio", "sphere"],
+            "query": message,
+            "limit": 8,
+        }
+        route_id = "corp_db.portfolio_lookup"
+    route_hint = {
+        "route_id": route_id,
+        "route_family": route_id,
+        "route_kind": "corp_table",
+        "tool_name": "corp_db_search",
+        "tool_args": dict(args),
+    }
+    return "corp_db_search", args, route_hint
+
+
 async def _finalize_with_scoped_evidence(
     *,
     base_messages: list[dict[str, Any]],
@@ -766,6 +801,97 @@ async def _finalize_with_scoped_evidence(
         raise RuntimeError("finalizer returned no choices")
     content = str((choices[0].get("message") or {}).get("content") or "")
     return clean_response(content)
+
+
+def _selected_company_common_route(route_hint: dict[str, Any] | None, state: dict[str, Any]) -> bool:
+    route_id = str((route_hint or {}).get("route_id") or state.get("route_id") or "")
+    route_args = (route_hint or {}).get("tool_args") if isinstance((route_hint or {}).get("tool_args"), dict) else {}
+    knowledge_route_id = str(
+        state.get("knowledge_route_id")
+        or route_args.get("knowledge_route_id")
+        or ""
+    )
+    return route_id == "corp_kb.company_common" or knowledge_route_id == "corp_kb.company_common"
+
+
+async def _try_controlled_portfolio_fallback(
+    *,
+    base_messages: list[dict[str, Any]],
+    message: str,
+    route_hint: dict[str, Any] | None,
+    routing_state: dict[str, Any],
+    tool_ctx: ToolContext,
+    evidence_status: str,
+) -> str:
+    if evidence_status not in {"empty", "weak"}:
+        return ""
+    if not _is_portfolio_lookup_intent(message):
+        return ""
+    if not _selected_company_common_route(route_hint, routing_state):
+        return ""
+
+    name, args, fallback_route_hint = _portfolio_lookup_fallback_call(message)
+    if _is_duplicate_retrieval_attempt(name, args, routing_state):
+        return ""
+
+    fallback_route_id = str(fallback_route_hint.get("route_id") or "")
+    fallback_ids = routing_state.get("retrieval_fallback_route_ids")
+    if not isinstance(fallback_ids, list):
+        fallback_ids = []
+        routing_state["retrieval_fallback_route_ids"] = fallback_ids
+    if fallback_route_id and fallback_route_id not in fallback_ids:
+        fallback_ids.append(fallback_route_id)
+
+    agent_logger.warning(
+        "Weak company KB evidence for portfolio query, executing controlled fallback %s with args=%s",
+        fallback_route_id,
+        json.dumps(args, ensure_ascii=False),
+    )
+    _record_retrieval_attempt(name, args, routing_state)
+    tool_result = await execute_tool(
+        name,
+        args,
+        tool_ctx,
+        tool_call_id="route-selector-portfolio-fallback",
+        tool_call_seq=1,
+    )
+    if tool_result.success:
+        bench_artifact = tool_result.metadata.get("bench_artifact") if isinstance(tool_result.metadata, dict) else None
+        if isinstance(bench_artifact, dict):
+            run_meta_append_artifact(bench_artifact)
+        _record_tool_output_contract(name, tool_result, routing_state)
+
+    fallback_status_state = dict(routing_state)
+    fallback_status_state["knowledge_route_id"] = ""
+    fallback_status = _route_evidence_status(name, args, tool_result, message, fallback_status_state)
+    routing_state["retrieval_evidence_status"] = fallback_status
+    routing_state["selected_source"] = "corp_db" if tool_result.success else routing_state.get("selected_source", "")
+    if fallback_status != "sufficient":
+        routing_state["retrieval_phase"] = "open"
+        routing_state["retrieval_close_reason"] = ""
+        _update_routing_observability(routing_state)
+        return ""
+
+    routing_state["intent"] = "portfolio_lookup"
+    routing_state["route_id"] = fallback_route_id
+    routing_state["route_source"] = "corp_db"
+    routing_state["retrieval_route_family"] = fallback_route_id
+    routing_state["selected_route_kind"] = "corp_table"
+    routing_state["knowledge_route_id"] = ""
+    routing_state["source_file_scope"] = []
+    routing_state["topic_facets"] = []
+    routing_state["corp_db_portfolio_success"] = True
+    routing_state["retrieval_phase"] = "closed"
+    routing_state["retrieval_close_reason"] = "controlled_portfolio_fallback_sufficient"
+    routing_state["finalizer_mode"] = "llm"
+    _update_routing_observability(routing_state)
+    return await _finalize_with_scoped_evidence(
+        base_messages=base_messages,
+        tool_name=name,
+        tool_args=args,
+        tool_result=tool_result,
+        route_hint=fallback_route_hint,
+    )
 
 
 def _is_authoritative_kb_tool_attempt(name: str, args: dict, state: dict[str, Any]) -> bool:
@@ -1317,6 +1443,27 @@ def _render_portfolio_payload(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _render_portfolio_entity_payload(payload: dict[str, Any]) -> str:
+    results = payload.get("results") or []
+    if not isinstance(results, list) or not results:
+        return ""
+    lines = ["Нашёл релевантные проекты и объекты:"]
+    for row in results[:5]:
+        if not isinstance(row, dict):
+            continue
+        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        title = str(row.get("title") or row.get("name") or metadata.get("name") or "Объект").strip()
+        url = str(row.get("url") or metadata.get("url") or "").strip()
+        sphere = str(metadata.get("sphere_name") or "").strip()
+        detail = title
+        if sphere and sphere.lower() not in detail.lower():
+            detail += f" ({sphere})"
+        if url:
+            detail += f": {url}"
+        lines.append(f"- {detail}")
+    return "\n".join(lines)
+
+
 def _render_application_payload(payload: dict[str, Any]) -> str:
     status = str(payload.get("status") or "")
     if status == "needs_clarification":
@@ -1360,6 +1507,10 @@ def _render_deterministic_tool_output(name: str, args: dict[str, Any], output: s
     kind = str(args.get("kind") or payload.get("kind") or "")
     if kind == "hybrid_search":
         knowledge_route_id = str(args.get("knowledge_route_id") or "")
+        if str(args.get("profile") or "") == "entity_resolver":
+            entity_types = args.get("entity_types")
+            if isinstance(entity_types, list) and any(str(item) in {"portfolio", "sphere"} for item in entity_types):
+                return _render_portfolio_entity_payload(payload)
         if knowledge_route_id in {"corp_kb.luxnet", "corp_kb.lighting_norms"}:
             return _render_generic_kb_payload(payload)
         return _render_company_fact_payload(payload, message)
@@ -1376,6 +1527,9 @@ def _build_deterministic_fallback_call(
     routing_state: dict[str, Any],
 ) -> tuple[str, dict[str, Any]] | None:
     intent = str(routing_state.get("intent") or "other")
+    if _is_portfolio_lookup_intent(message):
+        name, args, _ = _portfolio_lookup_fallback_call(message)
+        return name, args
     if str(routing_state.get("knowledge_route_id") or ""):
         return (
             "corp_db_search",
@@ -2258,7 +2412,6 @@ async def _select_route_with_llm(routing_message: str) -> tuple[dict[str, Any], 
         "candidate_route_ids": list(selector_payload.get("candidate_route_ids") or []),
         "secondary_candidates": secondary_candidates,
         "selection_reason": str(selected_route.get("selection_reason") or ""),
-        "selection_score": 0,
         "selected_route_kind": str(selected_route.get("route_kind") or ""),
         "selected_route_family": str(selected_route.get("route_family") or ""),
         "catalog_version": str(selector_payload.get("catalog_version") or ""),
@@ -2579,6 +2732,16 @@ async def run_agent(
                     if final_response:
                         return final_response
                 else:
+                    fallback_response = await _try_controlled_portfolio_fallback(
+                        base_messages=messages,
+                        message=routing_message,
+                        route_hint=route_hint,
+                        routing_state=routing_state,
+                        tool_ctx=tool_ctx,
+                        evidence_status=evidence_status,
+                    )
+                    if fallback_response:
+                        return fallback_response
                     routing_state["retrieval_phase"] = "open"
                     _update_routing_observability(routing_state)
             except Exception as exc:

@@ -188,10 +188,11 @@ class RoutingCatalogTests(unittest.TestCase):
                 payload = load_routing_index()
 
             self.assertEqual(payload["manifest_origin"], "runtime_merged")
-            self.assertEqual(payload["route_count"], 1)
-            self.assertEqual(payload["route_count_by_kind"]["corp_table"], 1)
+            self.assertGreaterEqual(payload["route_count"], 1)
+            self.assertIn("corp_db.runtime_lookup", {route["route_id"] for route in payload["routes"]})
+            self.assertIn("corp_db.portfolio_lookup", {route["route_id"] for route in payload["routes"]})
             self.assertTrue(payload["validation_report"]["valid"])
-            self.assertEqual(payload["source_manifests"][0]["source_owner"], "runtime_merged")
+            self.assertIn("runtime_merged", {item["source_owner"] for item in payload["source_manifests"]})
 
     def test_load_routing_index_rejects_runtime_catalog_with_stale_valid_report(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -469,6 +470,27 @@ class RoutingCatalogTests(unittest.TestCase):
             self.assertIn("corp_script", route_kinds)
             self.assertNotIn("doc_search.document_lookup", {route["route_id"] for route in payload["routes"]})
 
+    def test_loaded_runtime_catalog_revalidates_with_current_bootstrap_routes(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                payload = build_routing_index()
+                route_dir = Path(docs_tmp) / "manifests" / "routes"
+                catalog_path = route_dir / ROUTING_CATALOG_FILENAME
+                stale_payload = dict(payload)
+                stale_payload["routes"] = [
+                    route for route in payload["routes"] if route.get("route_id") != "corp_db.portfolio_lookup"
+                ]
+                catalog_path.write_text(json.dumps(stale_payload, ensure_ascii=False), encoding="utf-8")
+
+                loaded = load_routing_index()
+
+        self.assertIn("corp_db.portfolio_lookup", {route["route_id"] for route in loaded["routes"]})
+        self.assertTrue(loaded["validation_report"]["valid"])
+
     def test_select_route_returns_candidates_reason_and_kind(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             docs_root = Path(docs_tmp)
@@ -499,7 +521,7 @@ class RoutingCatalogTests(unittest.TestCase):
             self.assertEqual(selection["primary_candidate"]["route_id"], "doc_search.fire_line_certificate")
             self.assertEqual(selection["selected_route_kind"], "doc_domain")
             self.assertEqual(selection["intent_family"], "document_lookup")
-            self.assertIn("explicit_document_request", selection["selection_reason"])
+            self.assertEqual(selection["selection_reason"], "degraded_intent_order:document_lookup")
             self.assertTrue(selection["candidate_route_ids"])
 
     def test_generic_document_lookup_route_is_filtered_from_manifests(self):
@@ -614,7 +636,7 @@ class RoutingCatalogTests(unittest.TestCase):
                         self.assertEqual(selection["selected"]["route_id"], "corp_kb.company_common")
                         self.assertEqual(selection["primary_candidate"]["route_id"], "corp_kb.company_common")
                         self.assertEqual(selection["selected_route_kind"], "corp_table")
-                        self.assertIn(f"company_common_facet={facet}", selection["selection_reason"])
+                        self.assertIn("corp_kb.company_common", selection["candidate_route_ids"])
                         self.assertNotEqual(selection["selected"]["route_id"], "doc_search.document_lookup")
 
     def test_default_corp_db_routes_cover_structured_domains(self):
@@ -636,6 +658,7 @@ class RoutingCatalogTests(unittest.TestCase):
             "corp_db.lamp_filters",
             "corp_db.category_mountings",
             "corp_db.lamp_mounting_compatibility",
+            "corp_db.portfolio_lookup",
             "corp_db.portfolio_by_sphere",
             "corp_db.portfolio_examples_by_lamp",
             "corp_db.application_recommendation",
@@ -653,6 +676,25 @@ class RoutingCatalogTests(unittest.TestCase):
 
         self.assertNotIn("enum", routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["etm"])
         self.assertNotIn("enum", routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["oracl"])
+
+    def test_select_route_matches_portfolio_lookup_for_realized_project_queries(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                named_project = select_route("Расскажи подробнее про терминально-логистический центр Белый Раст")
+                rzd_projects = select_route("Какие объекты были реализованы для РЖД?")
+                payload = build_route_selector_payload("Какие реализованные проекты есть у компании?")
+
+        self.assertEqual(named_project["intent_family"], "portfolio_lookup")
+        self.assertEqual(named_project["selected"]["route_id"], "corp_db.portfolio_lookup")
+        self.assertEqual(rzd_projects["intent_family"], "portfolio_lookup")
+        self.assertEqual(rzd_projects["selected"]["route_id"], "corp_db.portfolio_by_sphere")
+        self.assertIn("corp_db.portfolio_lookup", payload["candidate_route_ids"])
+        self.assertNotIn("score", payload["routes"][0])
+        self.assertNotIn("selection_score", named_project)
 
     def test_select_route_matches_application_recommendation_for_inflected_environment_phrase(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:

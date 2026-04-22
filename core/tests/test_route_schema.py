@@ -92,7 +92,7 @@ class RouteSchemaTests(unittest.TestCase):
         self.assertEqual(final_args["profile"], "kb_route_lookup")
         self.assertEqual(final_args["source_files"], ["common_information_about_company.md"])
 
-    def test_selector_rejects_locked_override_without_score_fallback(self):
+    def test_selector_rejects_locked_override(self):
         route = _route({})
         result = validate_selector_output(
             {
@@ -105,7 +105,6 @@ class RouteSchemaTests(unittest.TestCase):
         self.assertFalse(result.valid)
         self.assertEqual(result.error_code, "unsafe_selector_output")
         self.assertFalse(result.repairable)
-        self.assertFalse(result.allow_score_fallback)
 
     def test_selector_rejects_undeclared_args_and_can_repair_once(self):
         route = _route({})
@@ -120,7 +119,6 @@ class RouteSchemaTests(unittest.TestCase):
 
         self.assertFalse(result.valid)
         self.assertEqual(result.error_code, "unsafe_selector_output")
-        self.assertFalse(result.allow_score_fallback)
         self.assertFalse(retried.valid)
         self.assertFalse(retried.repairable)
 
@@ -244,7 +242,6 @@ class RouteSchemaTests(unittest.TestCase):
                 )
                 self.assertFalse(result.valid)
                 self.assertIn(result.error_code, {"invalid_tool_args", "unsafe_selector_output"})
-                self.assertFalse(result.allow_score_fallback)
 
     def test_large_enum_domains_are_rejected_by_route_schema(self):
         with self.assertRaises(RouteCardContractError):
@@ -274,7 +271,6 @@ class RouteSchemaTests(unittest.TestCase):
 
         self.assertFalse(result.valid)
         self.assertEqual(result.error_code, "unsafe_selector_output")
-        self.assertFalse(result.allow_score_fallback)
 
 
 if __name__ == "__main__":

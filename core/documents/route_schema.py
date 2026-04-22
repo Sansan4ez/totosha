@@ -16,8 +16,7 @@ Argument merge order is:
 3. ``locked_args`` are applied last and cannot be changed by selector output.
 
 Invalid selector JSON/arguments may be repaired once by the caller. Unsafe
-selector output is rejected outright and must not fall back to score-based
-production routing.
+selector output is rejected outright.
 """
 
 from __future__ import annotations
@@ -96,7 +95,6 @@ class SelectorValidationResult:
     error: str = ""
     repairable: bool = False
     repair_prompt: str = ""
-    allow_score_fallback: bool = False
 
 
 def _dedupe_strings(values: Any) -> list[str]:
@@ -567,7 +565,6 @@ def _selector_error_result(error: RouteSelectorOutputError, *, repair_attempted:
         error=error.message,
         repairable=repairable,
         repair_prompt=_build_repair_prompt(error) if repairable else "",
-        allow_score_fallback=False,
     )
 
 

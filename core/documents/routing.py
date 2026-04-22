@@ -129,6 +129,9 @@ CATALOG_LOOKUP_KEYWORDS = (
 )
 PORTFOLIO_LOOKUP_KEYWORDS = (
     "портфолио",
+    "проект",
+    "проекты",
+    "реализован",
     "пример проекта",
     "пример объекта",
     "примеры проектов",
@@ -137,7 +140,32 @@ PORTFOLIO_LOOKUP_KEYWORDS = (
     "какие проекты",
     "покажи проекты",
     "реализация",
+    "ржд",
+    "логистический центр",
+    "терминально-логистический",
+    "белый раст",
 )
+ROUTE_MATCH_STOPWORDS = {
+    "и",
+    "в",
+    "на",
+    "по",
+    "для",
+    "про",
+    "дай",
+    "найди",
+    "покажи",
+    "какие",
+    "какой",
+    "какая",
+    "какое",
+    "нужен",
+    "нужна",
+    "нужно",
+    "документ",
+    "фрагмент",
+    "ссылка",
+}
 APPLICATION_RECOMMENDATION_KEYWORDS = (
     "подбери",
     "рекоменд",
@@ -166,8 +194,7 @@ ROUTING_SCHEMA_VERSION = 1
 ROUTING_CATALOG_ID = "totosha.unified-routing-catalog"
 ROUTING_CATALOG_FILENAME = "catalog.v1.json"
 LEGACY_ROUTING_INDEX_FILENAME = "index.json"
-MIN_SELECTION_SCORE = 4
-SHORTLIST_SIZE = 4
+SELECTOR_ROUTE_LIMIT = 60
 PRODUCTION_ENV_VALUES = {"prod", "production"}
 TRUTH_SOURCE_OWNERS = {"repo_static", "corp_db", "document_ingestion", "runtime_merged"}
 KNOWN_CORP_DB_DOMAINS = (
@@ -683,6 +710,59 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "observability_labels": {"scope": "mounting_compatibility"},
         },
         {
+            "route_id": "corp_db.portfolio_lookup",
+            "route_family": "corp_db.portfolio_lookup",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Portfolio object lookup",
+            "summary": (
+                "Named portfolio object, realized project, customer, reference, or implementation lookup. "
+                "Use this when the user names a concrete object or asks about completed projects, including "
+                "RZhD/RЖД, logistics centers, terminals, warehouses, bridges, plants, and Белый Раст."
+            ),
+            "topics": ["portfolio", "projects", "objects", "references", "realized_projects"],
+            "keywords": [
+                "портфолио",
+                "реализованные проекты",
+                "реализованные объекты",
+                "объекты",
+                "проект",
+                "проекты",
+                "референсы",
+                "кейс",
+                "кейсы",
+                "ржд",
+                "железнодорожные объекты",
+                "логистический центр",
+                "терминально-логистический центр",
+                "терминал",
+                "склад",
+                "белый раст",
+            ],
+            "patterns": [
+                "какие объекты были реализованы",
+                "список объектов",
+                "список проектов",
+                "расскажи подробнее про объект",
+                "расскажи подробнее про проект",
+                "реализованные проекты для",
+                "терминально-логистический центр",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {
+                "kind": "hybrid_search",
+                "profile": "entity_resolver",
+                "entity_types": ["portfolio", "sphere"],
+                "limit": 8,
+            },
+            "argument_hints": {
+                "query": "Use the original user wording with named object/customer/project terms.",
+                "entity_types": "Keep locked to portfolio and sphere for portfolio entity resolution.",
+            },
+            "fallback_route_ids": ["corp_db.portfolio_by_sphere", "corp_db.portfolio_examples_by_lamp"],
+            "observability_labels": {"scope": "portfolio_lookup"},
+        },
+        {
             "route_id": "corp_db.portfolio_by_sphere",
             "route_family": "corp_db.portfolio_by_sphere",
             "route_kind": "corp_script",
@@ -704,10 +784,18 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "офис",
                 "карьер",
                 "наружное освещение",
+                "ржд",
+                "логистический центр",
+                "белый раст",
             ],
             "patterns": ["пример проекта", "пример объекта", "из портфолио", "портфолио по"],
             "executor": "corp_db_search",
             "executor_args_template": {"kind": "portfolio_by_sphere", "fuzzy": True},
+            "argument_hints": {
+                "sphere": "Extract a broad sphere or customer segment such as РЖД, склад, логистический центр, стадион.",
+                "query": "Keep the original wording when the sphere is ambiguous.",
+            },
+            "fallback_route_ids": ["corp_db.portfolio_lookup", "corp_db.portfolio_examples_by_lamp"],
         },
         {
             "route_id": "corp_db.portfolio_examples_by_lamp",
@@ -1300,8 +1388,14 @@ def build_routing_index() -> dict[str, Any]:
 
 
 def _revalidate_loaded_runtime_catalog(payload: dict[str, Any]) -> dict[str, Any]:
-    """Recompute runtime catalog metadata with the current route-card contract."""
-    revalidated = _merge_catalogs([payload], manifest_origin="runtime_merged")
+    """Recompute runtime catalog metadata with the current route-card contract.
+
+    Runtime catalogs may outlive code deploys. Merge the current bootstrap cards
+    first so newly shipped core routes become visible without requiring a
+    writable catalog rebuild during request handling; loaded runtime routes keep
+    precedence for already-published route ids.
+    """
+    revalidated = _merge_catalogs([_bootstrap_catalog_payload(), payload], manifest_origin="runtime_merged")
     revalidated["manifest_origin"] = "runtime_merged"
     return revalidated
 
@@ -1386,14 +1480,10 @@ def _is_explicit_document_request(query: str) -> bool:
     )
 
 
-def _authority_rank(authority: str) -> int:
-    return 2 if authority == "primary" else 1
-
-
 def _route_intent_family(route: dict[str, Any]) -> str:
     route_id = str(route.get("route_id") or "")
     route_family = str(route.get("route_family") or "")
-    if route_id.startswith("corp_kb.company_"):
+    if route_id.startswith("corp_kb."):
         return "company_fact"
     if route_id in {
         "corp_db.catalog_lookup",
@@ -1407,7 +1497,7 @@ def _route_intent_family(route: dict[str, Any]) -> str:
         return "catalog_lookup"
     if route_id == "corp_db.application_recommendation":
         return "application_recommendation"
-    if route_id in {"corp_db.portfolio_by_sphere", "corp_db.portfolio_examples_by_lamp"}:
+    if route_id in {"corp_db.portfolio_lookup", "corp_db.portfolio_by_sphere", "corp_db.portfolio_examples_by_lamp"}:
         return "portfolio_lookup"
     if route_family.startswith("doc_domain.") or str(route.get("route_kind") or "") == "doc_domain":
         return "document_lookup"
@@ -1416,14 +1506,6 @@ def _route_intent_family(route: dict[str, Any]) -> str:
 
 def _intent_contains(query_text: str, needles: tuple[str, ...]) -> bool:
     return any(needle in query_text for needle in needles)
-
-
-def _company_common_facet_signal(query_text: str) -> str:
-    if _intent_contains(query_text, CERTIFICATE_TERMS):
-        return "certification"
-    if _intent_contains(query_text, ("комплектующ", "качеств", "надежн", "надёжн")):
-        return "quality"
-    return ""
 
 
 def _infer_intent_family(query: str, *, explicit_document_request: bool) -> str:
@@ -1441,134 +1523,106 @@ def _infer_intent_family(query: str, *, explicit_document_request: bool) -> str:
     return "other"
 
 
-def _kind_rank(route_kind: str, *, explicit_document_request: bool) -> int:
-    if explicit_document_request:
-        ranks = {"doc_domain": 3, "corp_table": 2, "corp_script": 1}
-    else:
-        ranks = {"corp_table": 3, "corp_script": 2, "doc_domain": 1}
-    return ranks.get(route_kind, 0)
+def _visible_catalog_routes(catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        route
+        for route in catalog.get("routes", [])
+        if isinstance(route, dict)
+        and str(route.get("route_id") or "").strip()
+        and route.get("hidden") is not True
+        and route.get("selector_visible") is not False
+    ]
 
 
-def _intent_bonus(route: dict[str, Any], *, intent_family: str, explicit_document_request: bool) -> tuple[int, str | None]:
-    route_intent = _route_intent_family(route)
-    route_kind = str(route.get("route_kind") or "")
-    if not intent_family or intent_family == "other":
-        return (0, None)
-    if route_intent == intent_family:
-        bonus_by_intent = {
-            "company_fact": 14,
-            "catalog_lookup": 12,
-            "application_recommendation": 16,
-            "portfolio_lookup": 14,
-            "document_lookup": 18,
-        }
-        return (bonus_by_intent.get(intent_family, 10), f"intent_match={intent_family}")
-    if intent_family == "application_recommendation":
-        if route_intent == "portfolio_lookup":
-            return (8, "neighbor_intent=portfolio_lookup")
-        if route_kind == "doc_domain" and not explicit_document_request:
-            return (-12, "application_vs_doc_penalty")
-    if intent_family == "portfolio_lookup" and route_intent == "application_recommendation":
-        return (6, "neighbor_intent=application_recommendation")
-    if intent_family == "company_fact" and route_kind == "doc_domain" and not explicit_document_request:
-        return (-8, "company_fact_vs_doc_penalty")
-    if intent_family == "catalog_lookup" and route_kind == "doc_domain" and not explicit_document_request:
-        return (-6, "catalog_vs_doc_penalty")
-    if intent_family == "document_lookup" and route_kind != "doc_domain":
-        return (-6, "document_lookup_prefers_doc_domain")
-    return (0, None)
-
-
-def _score_route_card(
-    route: dict[str, Any],
-    query: str,
-    *,
-    explicit_document_request: bool,
-    intent_family: str,
-) -> dict[str, Any]:
+def _route_matches_query(route: dict[str, Any], query: str) -> bool:
     query_text = _normalize(query)
-    query_terms = set(_terms(query))
-    score = 0
-    reasons: list[str] = []
-    matched_keywords: list[str] = []
-    matched_patterns: list[str] = []
+    query_terms = {term for term in _terms(query) if term not in ROUTE_MATCH_STOPWORDS and len(term) > 1}
+    route_id = str(route.get("route_id") or "").lower()
+    route_family = str(route.get("route_family") or "").lower()
+    if route_id and route_id in query_text:
+        return True
+    if route_family and route_family in query_text:
+        return True
 
     for pattern in route.get("patterns", []) or []:
         normalized = _normalize(pattern)
         if normalized and normalized in query_text:
-            score += 12
-            matched_patterns.append(str(pattern))
-    if matched_patterns:
-        reasons.append(f"pattern:{matched_patterns[0]}")
+            return True
 
     for keyword in route.get("keywords", []) or []:
-        keyword_terms = [term for term in _terms(keyword) if term in query_terms]
-        if keyword_terms:
-            score += 3 * len(keyword_terms)
-            matched_keywords.extend(keyword_terms)
-    if str(route.get("route_kind") or "") == "doc_domain" and (
-        explicit_document_request or intent_family == "document_lookup"
-    ):
-        for keyword in route.get("generated_keywords", []) or []:
-            keyword_terms = [term for term in _terms(keyword) if term in query_terms]
-            if keyword_terms:
-                score += 2 * len(keyword_terms)
-                matched_keywords.extend(keyword_terms)
-    matched_keywords = _dedupe(matched_keywords)
-    if matched_keywords:
-        reasons.append(f"keywords:{','.join(matched_keywords[:3])}")
+        keyword_terms = [term for term in _terms(keyword) if term not in ROUTE_MATCH_STOPWORDS and len(term) > 1]
+        if not keyword_terms:
+            continue
+        required_matches = 1 if len(keyword_terms) == 1 else min(2, len(keyword_terms))
+        if len(query_terms.intersection(keyword_terms)) >= required_matches:
+            return True
 
     title = _normalize(route.get("title"))
-    if route.get("route_kind") == "doc_domain" and title and title in query_text:
-        score += 8
-        reasons.append("document_title_match")
+    title_terms = [term for term in _terms(title) if term not in ROUTE_MATCH_STOPWORDS and len(term) > 1]
+    return bool(title_terms and len(query_terms.intersection(title_terms)) >= min(2, len(title_terms)))
 
-    if explicit_document_request and route.get("route_kind") == "doc_domain":
-        score += 18
-        reasons.append("explicit_document_request")
-    elif explicit_document_request and route.get("route_kind") != "doc_domain":
-        score -= 6
 
-    if route.get("route_kind") == "corp_script" and any(keyword in query_text for keyword in ORCHESTRATION_KEYWORDS):
-        score += 6
-        reasons.append("orchestration_signal")
+def _preferred_route_ids_for_intent(query: str, intent_family: str) -> list[str]:
+    query_text = _normalize(query)
+    if intent_family == "portfolio_lookup":
+        if _intent_contains(query_text, ("список", "какие объект", "какие проект", "для ржд", "ржд")):
+            return ["corp_db.portfolio_by_sphere", "corp_db.portfolio_lookup", "corp_db.portfolio_examples_by_lamp"]
+        return ["corp_db.portfolio_lookup", "corp_db.portfolio_by_sphere", "corp_db.portfolio_examples_by_lamp"]
+    if intent_family == "application_recommendation":
+        return ["corp_db.application_recommendation", "corp_db.portfolio_lookup", "corp_db.portfolio_by_sphere"]
+    if intent_family == "document_lookup":
+        return []
+    if intent_family == "catalog_lookup":
+        return ["corp_db.catalog_lookup", "corp_db.sku_lookup", "corp_db.category_lamps", "corp_db.sphere_categories"]
+    if intent_family == "company_fact":
+        if _intent_contains(query_text, ("luxnet", "люкснет")):
+            return ["corp_kb.luxnet", "corp_kb.company_common"]
+        if _intent_contains(query_text, ("норм", "освещенн", "освещённ")):
+            return ["corp_kb.lighting_norms", "corp_kb.company_common"]
+        return ["corp_kb.company_common", "corp_kb.luxnet", "corp_kb.lighting_norms"]
+    return []
 
-    facet_signal = _company_common_facet_signal(query_text)
-    if route.get("route_id") == "corp_kb.company_common" and facet_signal and not explicit_document_request:
-        score += 12
-        reasons.append(f"company_common_facet={facet_signal}")
 
-    intent_bonus, intent_reason = _intent_bonus(
-        route,
-        intent_family=intent_family,
-        explicit_document_request=explicit_document_request,
-    )
-    score += intent_bonus
-    if intent_reason:
-        reasons.append(intent_reason)
+def _dedupe_routes(routes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    result: list[dict[str, Any]] = []
+    for route in routes:
+        route_id = str(route.get("route_id") or "")
+        if route_id and route_id not in seen:
+            seen.add(route_id)
+            result.append(route)
+    return result
 
-    if route.get("authority") == "primary":
-        score += 2
-        reasons.append("authority=primary")
 
-    if route.get("route_kind") == "corp_table" and route.get("authority") == "primary" and score > 0:
-        score += 1
-        reasons.append("authoritative_table_scope")
+def _ordered_routes_for_intent(routes: list[dict[str, Any]], query: str, intent_family: str) -> list[dict[str, Any]]:
+    by_id = {str(route.get("route_id") or ""): route for route in routes}
+    preferred = [by_id[route_id] for route_id in _preferred_route_ids_for_intent(query, intent_family) if route_id in by_id]
+    intent_matches = [route for route in routes if _route_intent_family(route) == intent_family and route not in preferred]
+    text_matches = [route for route in routes if _route_matches_query(route, query) and route not in preferred and route not in intent_matches]
+    if intent_family == "document_lookup":
+        document_text_matches = [route for route in routes if _route_intent_family(route) == "document_lookup" and _route_matches_query(route, query)]
+        return _dedupe_routes([*document_text_matches, *preferred, *intent_matches, *text_matches, *routes])
+    if intent_family == "company_fact":
+        document_text_matches = [route for route in routes if _route_intent_family(route) == "document_lookup" and _route_matches_query(route, query)]
+        if document_text_matches:
+            return _dedupe_routes([*document_text_matches, *preferred, *intent_matches, *text_matches, *routes])
+    if intent_family == "other":
+        document_text_matches = [route for route in routes if _route_intent_family(route) == "document_lookup" and _route_matches_query(route, query)]
+        if document_text_matches:
+            return _dedupe_routes([*document_text_matches, *preferred, *intent_matches, *text_matches, *routes])
+    return _dedupe_routes([*preferred, *intent_matches, *text_matches, *routes])
 
-    selection_reason = "; ".join(reasons[:4]) or "no_match"
-    return {
-        "route_id": str(route.get("route_id") or ""),
-        "route_family": str(route.get("route_family") or ""),
-        "route_kind": str(route.get("route_kind") or ""),
-        "authority": str(route.get("authority") or ""),
-        "score": score,
-        "selection_reason": selection_reason,
-        "matched_keywords": matched_keywords[:6],
-        "matched_patterns": matched_patterns[:4],
-        "intent_family": intent_family,
-        "route_intent_family": _route_intent_family(route),
-        "route": dict(route),
-    }
+
+def _candidate_payload(route: dict[str, Any], *, intent_family: str, selection_reason: str) -> dict[str, Any]:
+    payload = dict(route)
+    payload["selection_reason"] = selection_reason
+    payload["route_kind"] = str(route.get("route_kind") or "")
+    payload["route_family"] = str(route.get("route_family") or "")
+    payload["selected_route_kind"] = str(route.get("route_kind") or "")
+    payload["selected_route_family"] = str(route.get("route_family") or "")
+    payload["intent_family"] = intent_family
+    payload["route_intent_family"] = _route_intent_family(route)
+    return payload
 
 
 def select_route(query: str, *, explicit_document_request: bool | None = None) -> dict[str, Any]:
@@ -1584,7 +1638,6 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
             "candidate_route_ids": [],
             "secondary_candidates": [],
             "selection_reason": "",
-            "selection_score": 0,
             "selected_route_kind": "",
             "selected_route_family": "",
             "catalog_version": "",
@@ -1594,57 +1647,26 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
             "temporary_unavailable": True,
             "error": str(exc),
         }
-    scored: list[dict[str, Any]] = []
-    for route in catalog.get("routes", []):
-        if not isinstance(route, dict):
-            continue
-        candidate = _score_route_card(
-            route,
-            query,
-            explicit_document_request=explicit_document_request,
-            intent_family=intent_family,
-        )
-        if candidate["score"] > 0:
-            scored.append(candidate)
-
-    scored.sort(
-        key=lambda item: (
-            item["score"],
-            _authority_rank(item["authority"]),
-            _kind_rank(item["route_kind"], explicit_document_request=explicit_document_request),
-            item["route_id"],
-        ),
-        reverse=True,
-    )
-
-    shortlist = scored[:SHORTLIST_SIZE]
-    selected = shortlist[0] if shortlist and shortlist[0]["score"] >= MIN_SELECTION_SCORE else None
-
-    def _candidate_payload(item: dict[str, Any]) -> dict[str, Any]:
-        route = dict(item["route"])
-        route["score"] = int(item["score"])
-        route["selection_reason"] = str(item["selection_reason"])
-        route["route_kind"] = str(item["route_kind"])
-        route["route_family"] = str(item["route_family"])
-        route["selected_route_kind"] = str(item["route_kind"])
-        route["selected_route_family"] = str(item["route_family"])
-        route["intent_family"] = str(item.get("intent_family") or "")
-        route["route_intent_family"] = str(item.get("route_intent_family") or "")
-        return route
-
-    primary_candidate = _candidate_payload(selected) if selected is not None else None
+    routes = _visible_catalog_routes(catalog)
+    ordered = _ordered_routes_for_intent(routes, query, intent_family)
+    selected = ordered[0] if ordered else None
+    selection_reason = f"degraded_intent_order:{intent_family}" if selected is not None else ""
+    primary_candidate = _candidate_payload(
+        selected,
+        intent_family=intent_family,
+        selection_reason=selection_reason,
+    ) if selected is not None else None
     secondary_candidates = [
-        _candidate_payload(item)
-        for item in shortlist[1:]
+        _candidate_payload(route, intent_family=intent_family, selection_reason="degraded_catalog_candidate")
+        for route in ordered[1:4]
     ] if selected is not None else []
     selected_route = None
     if primary_candidate is not None:
         selected_route = dict(primary_candidate)
-        selected_route["candidate_route_ids"] = [item["route_id"] for item in scored[:8]]
+        selected_route["candidate_route_ids"] = [str(route.get("route_id") or "") for route in ordered]
         selected_route["secondary_candidates"] = [
             {
                 "route_id": str(item.get("route_id") or ""),
-                "score": int(item.get("score") or 0),
                 "route_kind": str(item.get("route_kind") or ""),
                 "route_family": str(item.get("route_family") or ""),
                 "selection_reason": str(item.get("selection_reason") or ""),
@@ -1660,11 +1682,10 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
         "intent_family": intent_family,
         "primary_candidate": primary_candidate,
         "selected": selected_route,
-        "candidate_route_ids": [item["route_id"] for item in scored[:8]],
+        "candidate_route_ids": [str(route.get("route_id") or "") for route in ordered],
         "secondary_candidates": [
             {
                 "route_id": str(item.get("route_id") or ""),
-                "score": int(item.get("score") or 0),
                 "route_kind": str(item.get("route_kind") or ""),
                 "route_family": str(item.get("route_family") or ""),
                 "selection_reason": str(item.get("selection_reason") or ""),
@@ -1673,10 +1694,9 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
             }
             for item in secondary_candidates
         ],
-        "selection_reason": str(selected["selection_reason"]) if selected is not None else "",
-        "selection_score": int(selected["score"]) if selected is not None else 0,
-        "selected_route_kind": str(selected["route_kind"]) if selected is not None else "",
-        "selected_route_family": str(selected["route_family"]) if selected is not None else "",
+        "selection_reason": selection_reason,
+        "selected_route_kind": str(selected.get("route_kind") or "") if selected is not None else "",
+        "selected_route_family": str(selected.get("route_family") or "") if selected is not None else "",
         "catalog_version": str(catalog.get("catalog_version") or ""),
         "catalog_origin": str(catalog.get("manifest_origin") or ""),
         "route_count": int(catalog.get("route_count") or 0),
@@ -1685,33 +1705,6 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
 
 def select_route_card(query: str, *, explicit_document_request: bool | None = None) -> dict[str, Any] | None:
     return select_route(query, explicit_document_request=explicit_document_request).get("selected")
-
-
-def _selector_match_weight(route: dict[str, Any], query: str) -> int:
-    query_text = _normalize(query)
-    query_terms = set(_terms(query))
-    weight = 0
-    route_id = str(route.get("route_id") or "").lower()
-    route_family = str(route.get("route_family") or "").lower()
-    if route_id and route_id in query_text:
-        weight += 100
-    if route_family and route_family in query_text:
-        weight += 80
-    for pattern in route.get("patterns") or []:
-        pattern_text = _normalize(pattern)
-        if pattern_text and pattern_text in query_text:
-            weight += 40
-    for keyword in route.get("keywords") or []:
-        terms = [term for term in _terms(keyword) if term in query_terms]
-        weight += 5 * len(terms)
-    for topic in route.get("topics") or []:
-        terms = [term for term in _terms(topic) if term in query_terms]
-        weight += 3 * len(terms)
-    title_terms = [term for term in _terms(route.get("title")) if term in query_terms]
-    weight += 2 * len(title_terms)
-    if str(route.get("authority") or "") == "primary":
-        weight += 1
-    return weight
 
 
 def _compact_selector_route_card(route: dict[str, Any]) -> dict[str, Any]:
@@ -1759,20 +1752,25 @@ def _compact_selector_route_card(route: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_route_selector_payload(query: str, *, limit: int = 12) -> dict[str, Any]:
+def build_route_selector_payload(query: str, *, limit: int = SELECTOR_ROUTE_LIMIT) -> dict[str, Any]:
     catalog = load_routing_index()
-    routes = [route for route in catalog.get("routes", []) if isinstance(route, dict)]
-    weighted = [(_selector_match_weight(route, query), index, route) for index, route in enumerate(routes)]
-    matched = [item for item in weighted if item[0] > 0]
-    selected = matched or weighted
-    selected.sort(key=lambda item: (item[0], -item[1]), reverse=True)
-    candidates = [route for _, _, route in selected[: max(1, min(limit, 24))]]
+    routes = _visible_catalog_routes(catalog)
+    explicit_document_request = _is_explicit_document_request(query)
+    intent_family = _infer_intent_family(query, explicit_document_request=explicit_document_request)
+    max_routes = max(1, min(int(limit or SELECTOR_ROUTE_LIMIT), SELECTOR_ROUTE_LIMIT))
+    if len(routes) <= max_routes:
+        candidates = list(routes)
+        candidate_mode = "all_visible"
+    else:
+        candidates = _ordered_routes_for_intent(routes, query, intent_family)[:max_routes]
+        candidate_mode = "intent_then_catalog_order"
     return {
         "query": query,
         "catalog_version": str(catalog.get("catalog_version") or ""),
         "catalog_origin": str(catalog.get("manifest_origin") or ""),
         "schema_version": int(catalog.get("schema_version") or 0),
         "route_count": int(catalog.get("route_count") or len(routes)),
+        "candidate_mode": candidate_mode,
         "candidate_route_ids": [str(route.get("route_id") or "") for route in candidates],
         "routes": [_compact_selector_route_card(route) for route in candidates],
     }

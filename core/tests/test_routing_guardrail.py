@@ -198,6 +198,59 @@ class RoutingGuardrailTests(unittest.TestCase):
         quality_route = quality_selection["selected"]
         self.assertEqual(quality_route["route_id"], "corp_kb.company_common")
 
+    def test_portfolio_project_queries_use_portfolio_fallback_args(self):
+        self.assertTrue(_MODULE._is_portfolio_lookup_intent("Расскажи про терминально-логистический центр Белый Раст"))
+        self.assertFalse(_MODULE._is_portfolio_lookup_intent("Подбери освещение для спортивного объекта"))
+
+        name, args, route_hint = _MODULE._portfolio_lookup_fallback_call(
+            "Расскажи про терминально-логистический центр Белый Раст"
+        )
+        self.assertEqual(name, "corp_db_search")
+        self.assertEqual(route_hint["route_id"], "corp_db.portfolio_lookup")
+        self.assertEqual(args["kind"], "hybrid_search")
+        self.assertEqual(args["profile"], "entity_resolver")
+        self.assertEqual(args["entity_types"], ["portfolio", "sphere"])
+
+        _, rzd_args, rzd_route_hint = _MODULE._portfolio_lookup_fallback_call("Какие объекты были реализованы для РЖД?")
+        self.assertEqual(rzd_route_hint["route_id"], "corp_db.portfolio_by_sphere")
+        self.assertEqual(rzd_args["kind"], "portfolio_by_sphere")
+        self.assertEqual(rzd_args["sphere"], "РЖД")
+
+        fallback = _MODULE._build_deterministic_fallback_call(
+            "Расскажи про Белый Раст",
+            {
+                "route_id": "corp_kb.company_common",
+                "tool_name": "corp_db_search",
+                "tool_args": {"kind": "hybrid_search", "knowledge_route_id": "corp_kb.company_common"},
+            },
+            {"intent": "company_fact", "knowledge_route_id": "corp_kb.company_common"},
+        )
+        self.assertIsNotNone(fallback)
+        self.assertEqual(fallback[1]["profile"], "entity_resolver")
+
+    def test_portfolio_entity_payload_renders_projects(self):
+        output = json.dumps(
+            {
+                "status": "success",
+                "results": [
+                    {
+                        "entity_type": "portfolio",
+                        "title": "Высокомощные светильники для ТЛЦ Белый Раст",
+                        "metadata": {"sphere_name": "логистический центр", "url": "https://example.test/project"},
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+        rendered = _MODULE._render_deterministic_tool_output(
+            "corp_db_search",
+            {"kind": "hybrid_search", "profile": "entity_resolver", "entity_types": ["portfolio", "sphere"]},
+            output,
+            "Белый Раст",
+        )
+        self.assertIn("Белый Раст", rendered)
+        self.assertIn("https://example.test/project", rendered)
+
     def test_llm_route_selector_validates_route_and_tool_args(self):
         selector_response = {
             "choices": [
