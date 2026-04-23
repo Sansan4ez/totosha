@@ -13,6 +13,27 @@ from pathlib import Path
 from config import CONFIG, get_model, get_temperature, get_max_iterations
 from documents.route_schema import validate_selector_output
 from documents.routing import build_route_selector_payload, select_route
+from documents.routing_policy import (
+    APPLICATION_RECOMMENDATION_KEYWORDS,
+    COMPANY_COMMON_FACET_KEYWORDS,
+    COMPANY_FACT_KEYWORDS,
+    company_common_topic_facets as _company_common_topic_facets,
+    company_fact_intent_type as _company_fact_intent_type,
+    contact_doc_search_query as _contact_doc_search_query,
+    dedupe_strings as _dedupe_strings,
+    expand_company_fact_query as _expand_company_fact_query,
+    is_application_recommendation_intent as _is_application_recommendation_intent,
+    is_company_fact_intent as _is_company_fact_intent,
+    is_document_lookup_intent as _is_document_lookup_intent,
+    is_portfolio_lookup_intent as _is_portfolio_lookup_intent,
+    lighting_norms_topic_facets as _lighting_norms_topic_facets,
+    normalize_routing_text as _normalize_routing_text,
+    rewrite_authoritative_kb_search_args as _rewrite_authoritative_kb_search_args,
+    rewrite_company_fact_search_args as _rewrite_company_fact_search_args,
+    routing_message_text as _routing_message_text,
+    routing_query_text as _routing_query_text,
+    text_has_any as _text_has_any,
+)
 from logger import agent_logger, log_agent_step
 from observability import (
     REQUEST_ID as OBS_REQUEST_ID,
@@ -42,124 +63,6 @@ TOOLS_CACHE_TTL = 60  # seconds
 _userbot_available_cache = None
 _userbot_check_time = 0
 USERBOT_CHECK_TTL = 30  # seconds
-
-COMPANY_FACT_KEYWORDS = (
-    "сайт", "официальный сайт", "адрес", "головной офис", "контак", "телефон",
-    "email", "e-mail", "почт", "реквизит", "инн", "кпп", "огрн", "соцсет", "телеграм",
-    "telegram", "youtube", "ютуб", "vk", "вконтакте", "канал", "год основания",
-    "основан", "основана", "сколько лет компании", "о компании", "общая информация о компании",
-    "гаранти", "сервис", "консультац", "сертифик", "декларац", "экспертиз", "сертификац",
-    "качеств", "комплектующ", "надежн", "надёжн",
-)
-COMPANY_FACT_INTENT_KEYWORDS = {
-    "requisites": ("реквизит", "инн", "кпп", "огрн"),
-    "year_founded": ("сколько лет", "год основания", "основан", "основана", "история компании"),
-    "website": ("официальный сайт", "сайт"),
-    "address": ("головной офис", "адрес", "офис", "где находится"),
-    "socials": ("соцсет", "телеграм", "telegram", "youtube", "ютуб", "vk", "вконтакте", "канал"),
-    "contacts": ("контакт", "телефон", "email", "e-mail", "почт", "связат", "консультац"),
-    "about_company": ("о компании", "общая информация о компании", "расскажи о компании", "чем занимается компания", "наш профиль"),
-    "certification": ("сертифик", "декларац", "экспертиз", "сертификац"),
-    "quality": ("качеств", "комплектующ", "надежн", "надёжн"),
-}
-COMPANY_COMMON_FACET_BY_SUBTYPE = {
-    "requisites": "requisites",
-    "year_founded": "about_company",
-    "website": "contacts",
-    "address": "contacts",
-    "socials": "socials",
-    "contacts": "contacts",
-    "about_company": "about_company",
-    "certification": "certification",
-    "quality": "quality",
-}
-COMPANY_COMMON_FACET_KEYWORDS = {
-    "certification": ("сертифик", "декларац", "экспертиз", "сертификац"),
-    "news": ("новост",),
-    "legal": ("правов", "юридическ", "договор", "политик"),
-    "price": ("прайс", "цена", "стоимост"),
-    "lighting_calculation": ("расчет освещ", "расчёт освещ", "освещен", "освещён"),
-    "fire_hazard_zones": ("пожароопас", "пожарная зона", "пожароопасных зон"),
-    "quality": ("качеств", "комплектующ", "надежн", "надёжн"),
-    "series": ("серии", "серия", "линейк", "модел"),
-}
-DOCUMENT_LOOKUP_KEYWORDS = (
-    "пожарный сертификат", "сертификат ce", "ce", "pdf", "паспорт", "документ",
-    "закаленное стекло", "закалённое стекло", "закал", "стекл",
-    "чем отличается серия", "отличается серия", "отличие между серией",
-)
-PORTFOLIO_LOOKUP_KEYWORDS = (
-    "портфолио", "пример проекта", "пример объекта", "примеры реализации",
-    "какие проекты были", "где применялся", "покажи проекты", "покажи объект",
-    "проект", "проекты", "реализован", "реализация",
-    "ржд", "логистический центр", "терминально-логистический", "белый раст",
-    "склад", "терминал",
-)
-APPLICATION_RECOMMENDATION_KEYWORDS = (
-    "стадион", "арена", "спорткомплекс", "футболь", "карьер", "рудник", "гок",
-    "аэропорт", "апрон", "перрон", "склад", "логист", "высокие прол", "high-bay",
-    "high bay", "офис", "кабинет", "абк", "агрессивн", "мойка", "азс",
-)
-KB_ROUTE_SPECS = {
-    "corp_kb.company_common": {
-        "title": "Company common knowledge base",
-        "source_files": ["common_information_about_company.md"],
-    },
-    "corp_kb.luxnet": {
-        "title": "Luxnet knowledge base",
-        "source_files": ["about_Luxnet.md"],
-    },
-    "corp_kb.lighting_norms": {
-        "title": "Lighting norms knowledge base",
-        "source_files": ["normy_osveschennosty.md"],
-    },
-}
-KB_ROUTE_LAMP_FILTER_KEYS = (
-    "category",
-    "mounting_type",
-    "ip",
-    "beam_pattern",
-    "climate_execution",
-    "electrical_protection_class",
-    "explosion_protection_marking",
-    "supply_voltage_raw",
-    "dimensions_raw",
-    "power_factor_operator",
-    "voltage_kind",
-    "explosion_protected",
-    "power_w_min",
-    "power_w_max",
-    "flux_lm_min",
-    "flux_lm_max",
-    "cct_k_min",
-    "cct_k_max",
-    "weight_kg_min",
-    "weight_kg_max",
-    "cri_ra_min",
-    "cri_ra_max",
-    "power_factor_min_min",
-    "power_factor_min_max",
-    "temp_c_min",
-    "temp_c_max",
-    "voltage_nominal_v_min",
-    "voltage_nominal_v_max",
-    "voltage_min_v_min",
-    "voltage_min_v_max",
-    "voltage_max_v_min",
-    "voltage_max_v_max",
-    "voltage_tol_minus_pct_min",
-    "voltage_tol_minus_pct_max",
-    "voltage_tol_plus_pct_min",
-    "voltage_tol_plus_pct_max",
-    "length_mm_min",
-    "length_mm_max",
-    "width_mm_min",
-    "width_mm_max",
-    "height_mm_min",
-    "height_mm_max",
-    "warranty_years_min",
-    "warranty_years_max",
-)
 
 EXPLICIT_WIKI_KEYWORDS = (
     "wiki", "вики", "согласно wiki", "согласно вики", "найди в wiki", "найди в вики",
@@ -208,121 +111,8 @@ def get_google_email() -> Optional[str]:
     return None
 
 
-def _normalize_routing_text(text: Any) -> str:
-    return re.sub(r"\s+", " ", str(text or "").lower()).strip()
-
-
-def _strip_transport_wrappers(text: Any) -> str:
-    lines: list[str] = []
-    for raw_line in str(text or "").splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        normalized = _normalize_routing_text(line)
-        if normalized.startswith("[от:") and normalized.endswith("]"):
-            continue
-        if normalized.startswith("[реплай на сообщение") and normalized.endswith("]"):
-            continue
-        if normalized in {"[случайный комментарий]", "[random comment]"}:
-            continue
-        if "голосовое сообщение" in normalized or "voice message" in normalized:
-            continue
-        lines.append(line)
-    return "\n".join(lines).strip()
-
-
-def _routing_message_text(message: Any) -> str:
-    return _normalize_routing_text(_strip_transport_wrappers(message))
-
-
-def _routing_query_text(message: Any) -> str:
-    return re.sub(r"\s+", " ", _strip_transport_wrappers(message)).strip()
-
-
-def _dedupe_strings(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        normalized = _normalize_routing_text(value)
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        result.append(value)
-    return result
-
-
-def _text_has_any(text: str, keywords: tuple[str, ...]) -> bool:
-    return any(keyword in text for keyword in keywords)
-
-
 def _is_explicit_wiki_request(message: str) -> bool:
     return _text_has_any(_routing_message_text(message), EXPLICIT_WIKI_KEYWORDS)
-
-
-def _is_document_lookup_intent(message: str) -> bool:
-    return _text_has_any(_routing_message_text(message), DOCUMENT_LOOKUP_KEYWORDS)
-
-
-def _is_portfolio_lookup_intent(message: str) -> bool:
-    normalized = _routing_message_text(message)
-    return _text_has_any(normalized, PORTFOLIO_LOOKUP_KEYWORDS)
-
-
-def _is_company_fact_intent(message: str) -> bool:
-    return bool(_company_fact_intent_type(message))
-
-
-def _company_fact_intent_type(message: str) -> str:
-    normalized = _routing_message_text(message)
-    if _is_document_lookup_intent(normalized) or _is_portfolio_lookup_intent(normalized) or _is_application_recommendation_intent(normalized):
-        return ""
-    for subtype in (
-        "requisites",
-        "year_founded",
-        "website",
-        "address",
-        "socials",
-        "contacts",
-        "about_company",
-        "certification",
-        "quality",
-    ):
-        if _text_has_any(normalized, COMPANY_FACT_INTENT_KEYWORDS[subtype]):
-            return subtype
-    if _text_has_any(normalized, COMPANY_FACT_KEYWORDS):
-        return "about_company"
-    return ""
-
-
-def _is_application_recommendation_intent(message: str) -> bool:
-    return _text_has_any(_routing_message_text(message), APPLICATION_RECOMMENDATION_KEYWORDS)
-
-
-def _company_common_topic_facets(message: str) -> list[str]:
-    normalized = _routing_message_text(message)
-    facets: list[str] = []
-    subtype = _company_fact_intent_type(message)
-    mapped = COMPANY_COMMON_FACET_BY_SUBTYPE.get(subtype)
-    if mapped:
-        facets.append(mapped)
-    for facet, keywords in COMPANY_COMMON_FACET_KEYWORDS.items():
-        if _text_has_any(normalized, keywords):
-            facets.append(facet)
-    if not facets and _text_has_any(normalized, ("компан", "ладзавод", "ladzavod", "лайт аудио дизайн")):
-        facets.append("about_company")
-    return _dedupe_strings(facets)
-
-
-def _lighting_norms_topic_facets(message: str) -> list[str]:
-    normalized = _routing_message_text(message)
-    facets: list[str] = []
-    if _text_has_any(normalized, ("таблиц", "нормативн", "lx", "люкс")):
-        facets.append("tables")
-    if _text_has_any(normalized, ("естествен", "искусствен")):
-        facets.append("definitions")
-    if _text_has_any(normalized, ("правил", "требован", "как нужно", "какие нормы")):
-        facets.append("rules")
-    return _dedupe_strings(facets)
 
 
 def _format_route_candidate_for_prompt(candidate: dict[str, Any] | None) -> str:
@@ -1215,41 +1005,6 @@ def _looks_like_contact_intent(message: str) -> bool:
     return _company_fact_intent_type(message) == "contacts"
 
 
-def _expand_company_fact_query(message: str) -> str:
-    subtype = _company_fact_intent_type(message)
-    if subtype == "year_founded":
-        return "Сколько лет компании ЛАДзавод светотехники? Если точный возраст не знаешь, назови год основания."
-    if subtype == "website":
-        return "официальный сайт компании ЛАДзавод светотехники"
-    if subtype == "address":
-        return "челябинск чайковского 3 адрес офиса ladzavod"
-    if subtype == "requisites":
-        return "реквизиты компании ладзавод инн кпп огрн"
-    if subtype == "socials":
-        return "telegram youtube vk соцсети ladzavod"
-    if subtype == "certification":
-        return "сертификаты декларации экспертиза сертификация ЛАДзавод светотехники"
-    if subtype == "quality":
-        return "качество комплектующие надежность ЛАДзавод светотехники"
-    normalized = _routing_message_text(message)
-    if _text_has_any(normalized, ("консультац", "расчет", "расчёт", "освещен", "освещён")):
-        return "lad@ladled.ru 239-18-11 консультация расчет освещенности"
-    if subtype == "contacts":
-        return "239-18-11 lad@ladled.ru контакты ladzavod"
-    if subtype == "about_company":
-        return "общая информация о компании ЛАДзавод светотехники"
-    return message
-
-
-def _contact_doc_search_query(message: str) -> str:
-    normalized = _routing_message_text(message)
-    if _text_has_any(normalized, ("email", "e-mail", "почт")):
-        return "lad@ladled.ru"
-    if _text_has_any(normalized, ("телефон", "позвон", "связат")):
-        return "239-18-11"
-    return "lad@ladled.ru"
-
-
 def _extract_first_match(pattern: re.Pattern[str], texts: list[str]) -> str:
     for text in texts:
         match = pattern.search(text)
@@ -1370,47 +1125,6 @@ def _render_generic_kb_payload(payload: dict[str, Any]) -> str:
         if snippet and snippet not in lines:
             lines.append(snippet)
     return "\n".join(lines)
-
-
-def _strip_kb_route_lamp_filters(args: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in (args or {}).items() if key not in KB_ROUTE_LAMP_FILTER_KEYS}
-
-
-def _rewrite_authoritative_kb_search_args(args: dict[str, Any], message: str, routing_state: dict[str, Any]) -> dict[str, Any]:
-    route_id = str(routing_state.get("knowledge_route_id") or "")
-    if not route_id:
-        return dict(args or {})
-    rewritten = _strip_kb_route_lamp_filters(args)
-    preserved: dict[str, Any] = {}
-    for key in ("limit", "offset"):
-        value = rewritten.get(key)
-        if isinstance(value, int) and value > 0:
-            preserved[key] = value
-    if bool(rewritten.get("include_debug")):
-        preserved["include_debug"] = True
-    preserved["kind"] = "hybrid_search"
-    preserved["profile"] = "kb_route_lookup"
-    preserved["knowledge_route_id"] = route_id
-    source_files = routing_state.get("source_file_scope")
-    if isinstance(source_files, list) and source_files:
-        preserved["source_files"] = list(source_files)
-    topic_facets = routing_state.get("topic_facets")
-    if isinstance(topic_facets, list) and topic_facets:
-        preserved["topic_facets"] = list(topic_facets)
-    if route_id == "corp_kb.company_common":
-        preserved["query"] = _expand_company_fact_query(message)
-    else:
-        preserved["query"] = _routing_query_text(message) or str(message or "")
-    return preserved
-
-
-def _rewrite_company_fact_search_args(args: dict[str, Any], message: str) -> dict[str, Any]:
-    routing_state = {
-        "knowledge_route_id": "corp_kb.company_common",
-        "source_file_scope": list(KB_ROUTE_SPECS["corp_kb.company_common"]["source_files"]),
-        "topic_facets": _company_common_topic_facets(message),
-    }
-    return _rewrite_authoritative_kb_search_args(args, message, routing_state)
 
 
 def _render_document_payload(payload: dict[str, Any]) -> str:

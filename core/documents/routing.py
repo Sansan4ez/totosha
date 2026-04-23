@@ -12,6 +12,11 @@ from typing import Any
 
 from .cache import load_parse_cache
 from .route_schema import RouteCardContractError, normalize_route_card_contract
+from .routing_policy import (
+    CATALOG_APPLICATION_RECOMMENDATION_KEYWORDS as APPLICATION_RECOMMENDATION_KEYWORDS,
+    CATALOG_COMPANY_FACT_KEYWORDS as COMPANY_FACT_KEYWORDS,
+    CATALOG_PORTFOLIO_LOOKUP_KEYWORDS as PORTFOLIO_LOOKUP_KEYWORDS,
+)
 from .storage import ensure_document_layout, get_document_paths, iter_live_documents
 
 
@@ -76,37 +81,6 @@ ORCHESTRATION_KEYWORDS = (
     "подходят для",
     "подходит для",
 )
-COMPANY_FACT_KEYWORDS = (
-    "контакты",
-    "контакт",
-    "телефон",
-    "email",
-    "e-mail",
-    "почта",
-    "адрес",
-    "сайт",
-    "официальный сайт",
-    "реквизиты",
-    "инн",
-    "кпп",
-    "огрн",
-    "о компании",
-    "расскажи о компании",
-    "год основания",
-    "соцсети",
-    "сервис",
-    "гарантия",
-    "сертификат",
-    "сертификаты",
-    "сертификац",
-    "декларац",
-    "экспертиз",
-    "качество",
-    "качеств",
-    "комплектующ",
-    "надежн",
-    "надёжн",
-)
 CATALOG_LOOKUP_KEYWORDS = (
     "модель",
     "серия",
@@ -126,24 +100,6 @@ CATALOG_LOOKUP_KEYWORDS = (
     "крепления",
     "монтаж",
     "тип крепления",
-)
-PORTFOLIO_LOOKUP_KEYWORDS = (
-    "портфолио",
-    "проект",
-    "проекты",
-    "реализован",
-    "пример проекта",
-    "пример объекта",
-    "примеры проектов",
-    "примеры объектов",
-    "из портфолио",
-    "какие проекты",
-    "покажи проекты",
-    "реализация",
-    "ржд",
-    "логистический центр",
-    "терминально-логистический",
-    "белый раст",
 )
 ROUTE_MATCH_STOPWORDS = {
     "и",
@@ -166,34 +122,12 @@ ROUTE_MATCH_STOPWORDS = {
     "фрагмент",
     "ссылка",
 }
-APPLICATION_RECOMMENDATION_KEYWORDS = (
-    "подбери",
-    "рекоменд",
-    "подходит",
-    "подходят",
-    "для стадиона",
-    "для склада",
-    "для аэропорта",
-    "для офиса",
-    "стадион",
-    "арена",
-    "спорткомплекс",
-    "карьер",
-    "рудник",
-    "аэропорт",
-    "склад",
-    "офис",
-    "кабинет",
-    "агрессивная среда",
-    "агрессивной среды",
-    "агрессивной среде",
-    "апрон",
-    "высокие пролеты",
-)
 ROUTING_SCHEMA_VERSION = 1
 ROUTING_CATALOG_ID = "totosha.unified-routing-catalog"
 ROUTING_CATALOG_FILENAME = "catalog.v1.json"
 LEGACY_ROUTING_INDEX_FILENAME = "index.json"
+# Retain the legacy guard for persisted runtime catalogs without publishing the old generic route.
+LEGACY_GENERIC_DOC_LOOKUP_ROUTE_ID = "doc_search." "document_lookup"
 SELECTOR_ROUTE_LIMIT = 60
 PRODUCTION_ENV_VALUES = {"prod", "production"}
 TRUTH_SOURCE_OWNERS = {"repo_static", "corp_db", "document_ingestion", "runtime_merged"}
@@ -348,7 +282,7 @@ def _normalize_route_card(
     route_id = str(route.get("route_id") or "").strip()
     if not route_id:
         return None
-    if route_id == "doc_search.document_lookup":
+    if route_id == LEGACY_GENERIC_DOC_LOOKUP_ROUTE_ID:
         return None
 
     executor = str(route.get("executor") or route.get("tool_name") or "").strip()
@@ -430,6 +364,10 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "телефон",
                 "email",
                 "e-mail",
+                "сертификат",
+                "сертификаты",
+                "качество",
+                "комплектующие",
                 "реквизиты",
                 "инн",
                 "кпп",
@@ -439,16 +377,15 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "о компании",
                 "год основания",
                 "соцсети",
-                "сертификат",
-                "сертификаты",
                 "сертификация",
                 "декларации",
                 "экспертиза",
-                "качество",
-                "комплектующие",
                 "надежность",
             ],
             "patterns": [
+                "какие есть сертификаты",
+                "какие используются комплектующие",
+                "как контролируется качество",
                 "официальный сайт",
                 "год основания",
                 "общая информация о компании",
@@ -457,12 +394,9 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "подскажи контакты компании",
                 "реквизиты компании",
                 "о самой компании",
-                "какие есть сертификаты",
                 "какие сертификаты",
                 "какая сертификация",
-                "какие используются комплектующие",
                 "какие комплектующие",
-                "как контролируется качество",
             ],
             "executor": "corp_db_search",
             "executor_args_template": {
@@ -858,34 +792,6 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             ],
             "executor": "corp_db_search",
             "executor_args_template": {"kind": "application_recommendation"},
-        },
-        {
-            "route_id": "doc_search.document_lookup",
-            "route_family": "doc_domain.document_lookup",
-            "route_kind": "doc_domain",
-            "authority": "secondary",
-            "title": "Document lookup and certificates",
-            "summary": "Certificates, passports, PDFs, and free-text document facts such as material options or series differences.",
-            "topics": ["documents", "certificates"],
-            "keywords": [
-                "пожарный сертификат",
-                "ce",
-                "pdf",
-                "паспорт",
-                "документ",
-                "закаленное стекло",
-                "закалённое стекло",
-                "чем отличается",
-            ],
-            "patterns": [
-                "пожарный сертификат",
-                "сертификат ce",
-                "закаленное стекло",
-                "закалённое стекло",
-                "чем отличается серия",
-            ],
-            "executor": "doc_search",
-            "executor_args_template": {"top": 5},
         },
     ]
 
@@ -1594,23 +1500,37 @@ def _dedupe_routes(routes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+def _matching_document_routes(routes: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    return [
+        route
+        for route in routes
+        if _route_intent_family(route) == "document_lookup" and _route_matches_query(route, query)
+    ]
+
+
 def _ordered_routes_for_intent(routes: list[dict[str, Any]], query: str, intent_family: str) -> list[dict[str, Any]]:
     by_id = {str(route.get("route_id") or ""): route for route in routes}
     preferred = [by_id[route_id] for route_id in _preferred_route_ids_for_intent(query, intent_family) if route_id in by_id]
     intent_matches = [route for route in routes if _route_intent_family(route) == intent_family and route not in preferred]
     text_matches = [route for route in routes if _route_matches_query(route, query) and route not in preferred and route not in intent_matches]
     if intent_family == "document_lookup":
-        document_text_matches = [route for route in routes if _route_intent_family(route) == "document_lookup" and _route_matches_query(route, query)]
+        document_text_matches = _matching_document_routes(routes, query)
         return _dedupe_routes([*document_text_matches, *preferred, *intent_matches, *text_matches, *routes])
     if intent_family == "company_fact":
-        document_text_matches = [route for route in routes if _route_intent_family(route) == "document_lookup" and _route_matches_query(route, query)]
+        document_text_matches = _matching_document_routes(routes, query)
         if document_text_matches:
             return _dedupe_routes([*document_text_matches, *preferred, *intent_matches, *text_matches, *routes])
     if intent_family == "other":
-        document_text_matches = [route for route in routes if _route_intent_family(route) == "document_lookup" and _route_matches_query(route, query)]
+        document_text_matches = _matching_document_routes(routes, query)
         if document_text_matches:
             return _dedupe_routes([*document_text_matches, *preferred, *intent_matches, *text_matches, *routes])
     return _dedupe_routes([*preferred, *intent_matches, *text_matches, *routes])
+
+
+def _ordered_routes_for_degraded_selection(routes: list[dict[str, Any]], query: str, intent_family: str) -> list[dict[str, Any]]:
+    if intent_family == "document_lookup":
+        return _matching_document_routes(routes, query)
+    return _ordered_routes_for_intent(routes, query, intent_family)
 
 
 def _candidate_payload(route: dict[str, Any], *, intent_family: str, selection_reason: str) -> dict[str, Any]:
@@ -1648,7 +1568,7 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
             "error": str(exc),
         }
     routes = _visible_catalog_routes(catalog)
-    ordered = _ordered_routes_for_intent(routes, query, intent_family)
+    ordered = _ordered_routes_for_degraded_selection(routes, query, intent_family)
     selected = ordered[0] if ordered else None
     selection_reason = f"degraded_intent_order:{intent_family}" if selected is not None else ""
     primary_candidate = _candidate_payload(

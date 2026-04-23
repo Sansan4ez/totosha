@@ -10,10 +10,10 @@
       "route_kind": "corp_table",
       "authority": "primary",
       "title": "Company common knowledge base",
-      "summary": "Source-scoped company KB for contacts, website, legal details, address, service, warranty, and general company facts.",
-      "topics": ["company", "contacts", "legal", "certification"],
-      "keywords": ["сайт", "адрес", "контакты", "телефон", "email", "e-mail", "реквизиты", "инн", "кпп", "огрн", "гарантия", "сервис", "о компании", "год основания", "соцсети"],
-      "patterns": ["официальный сайт", "год основания", "общая информация о компании", "расскажи о компании", "контакты компании", "подскажи контакты компании", "реквизиты компании", "о самой компании"],
+      "summary": "Source-scoped company KB for contacts, website, legal details, address, service, warranty, certification, component quality, and general company facts.",
+      "topics": ["company", "contacts", "legal", "certification", "quality"],
+      "keywords": ["сайт", "адрес", "контакты", "телефон", "email", "e-mail", "сертификат", "сертификаты", "качество", "комплектующие", "реквизиты", "инн", "кпп", "огрн", "гарантия", "сервис", "о компании", "год основания", "соцсети", "сертификация", "декларации", "экспертиза", "надежность"],
+      "patterns": ["какие есть сертификаты", "какие используются комплектующие", "как контролируется качество", "официальный сайт", "год основания", "общая информация о компании", "расскажи о компании", "контакты компании", "подскажи контакты компании", "реквизиты компании", "о самой компании", "какие сертификаты", "какая сертификация", "какие комплектующие"],
       "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 1},
       "executor": "corp_db_search",
       "executor_args_template": {
@@ -108,21 +108,6 @@
       "executor": "corp_db_search",
       "executor_args_template": {"kind": "application_recommendation"},
       "observability_labels": {"scope": "orchestration"}
-    },
-    {
-      "route_id": "doc_search.document_lookup",
-      "route_family": "doc_domain.document_lookup",
-      "route_kind": "doc_domain",
-      "authority": "secondary",
-      "title": "Document lookup and certificates",
-      "summary": "Certificates, passports, PDFs, and free-text document facts such as material options or series differences.",
-      "topics": ["documents", "certificates"],
-      "keywords": ["сертификат", "пожарный сертификат", "ce", "pdf", "паспорт", "документ", "закаленное стекло", "закалённое стекло", "чем отличается"],
-      "patterns": ["пожарный сертификат", "сертификат ce", "закаленное стекло", "закалённое стекло", "чем отличается серия"],
-      "retry_policy": {"max_primary_attempts": 1, "max_local_retries": 0},
-      "executor": "doc_search",
-      "executor_args_template": {"top": 5},
-      "observability_labels": {"scope": "document_domain"}
     }
   ]
 }

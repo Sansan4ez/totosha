@@ -524,6 +524,70 @@ class RoutingCatalogTests(unittest.TestCase):
             self.assertEqual(selection["selection_reason"], "degraded_intent_order:document_lookup")
             self.assertTrue(selection["candidate_route_ids"])
 
+    def test_fire_certificate_query_does_not_select_unrelated_sports_document_route(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            docs_root = Path(docs_tmp)
+            self._write_live_document(
+                docs_root,
+                document_id="doc_sports_norms",
+                title="СП 440.1325800.2023 Освещение спортивных сооружений",
+                summary="Нормы освещенности спортивных объектов, спортивных залов и спортивных сооружений.",
+                routing={
+                    "route_id": "doc_search.sports_lighting_norms",
+                    "route_family": "doc_search.sports_lighting_norms",
+                    "topics": ["sports_lighting", "sports_halls"],
+                    "keywords": [
+                        "нормы освещенности спортивных объектов",
+                        "нормы освещенности спортивного зала",
+                    ],
+                    "patterns": ["нормы освещенности для спортивных объектов"],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(Path(repo_tmp)), "CORP_DOCS_ROOT": str(docs_root)},
+                clear=False,
+            ):
+                build_routing_index()
+                selection = select_route("Найди пожарный сертификат LINE и дай прямую ссылку.")
+
+            self.assertEqual(selection["intent_family"], "document_lookup")
+            self.assertIsNone(selection["selected"])
+            self.assertIsNone(selection["primary_candidate"])
+            self.assertNotIn("doc_search.sports_lighting_norms", selection["candidate_route_ids"])
+
+    def test_explicit_sports_norms_document_query_selects_matching_document_route(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            docs_root = Path(docs_tmp)
+            self._write_live_document(
+                docs_root,
+                document_id="doc_sports_norms",
+                title="СП 440.1325800.2023 Освещение спортивных сооружений",
+                summary="Нормы освещенности спортивных объектов, спортивных залов и спортивных сооружений.",
+                routing={
+                    "route_id": "doc_search.sports_lighting_norms",
+                    "route_family": "doc_search.sports_lighting_norms",
+                    "topics": ["sports_lighting", "sports_halls"],
+                    "keywords": [
+                        "нормы освещенности спортивных объектов",
+                        "нормы освещенности спортивного зала",
+                    ],
+                    "patterns": ["нормы освещенности для спортивных объектов"],
+                },
+            )
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(Path(repo_tmp)), "CORP_DOCS_ROOT": str(docs_root)},
+                clear=False,
+            ):
+                build_routing_index()
+                selection = select_route("Найди в документе нормы освещенности для спортивных объектов.")
+
+            self.assertEqual(selection["selected"]["route_id"], "doc_search.sports_lighting_norms")
+            self.assertEqual(selection["primary_candidate"]["route_id"], "doc_search.sports_lighting_norms")
+            self.assertEqual(selection["selected_route_kind"], "doc_domain")
+            self.assertEqual(selection["intent_family"], "document_lookup")
+
     def test_generic_document_lookup_route_is_filtered_from_manifests(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             repo_root = Path(repo_tmp)
