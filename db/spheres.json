@@ -68,6 +68,20 @@
                 {
                     "id": 85
                 }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 37,
+                    "position": 1
+                },
+                {
+                    "id": 34,
+                    "position": 2
+                },
+                {
+                    "id": 39,
+                    "position": 3
+                }
             ]
         },
         {
@@ -95,6 +109,12 @@
                 },
                 {
                     "id": 106
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 32,
+                    "position": 1
                 }
             ]
         },
@@ -162,6 +182,28 @@
                 },
                 {
                     "id": 13
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 37,
+                    "position": 1
+                },
+                {
+                    "id": 34,
+                    "position": 2
+                },
+                {
+                    "id": 39,
+                    "position": 3
+                },
+                {
+                    "id": 33,
+                    "position": 4
+                },
+                {
+                    "id": 13,
+                    "position": 5
                 }
             ]
         },
@@ -239,6 +281,20 @@
                 {
                     "id": 96
                 }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 169,
+                    "position": 1
+                },
+                {
+                    "id": 33,
+                    "position": 2
+                },
+                {
+                    "id": 37,
+                    "position": 3
+                }
             ]
         },
         {
@@ -270,6 +326,16 @@
                 {
                     "id": 69
                 }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 63,
+                    "position": 1
+                },
+                {
+                    "id": 64,
+                    "position": 2
+                }
             ]
         },
         {
@@ -285,6 +351,16 @@
                 },
                 {
                     "id": 167
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 168,
+                    "position": 1
+                },
+                {
+                    "id": 177,
+                    "position": 2
                 }
             ]
         },
@@ -313,6 +389,20 @@
                 },
                 {
                     "id": 162
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 161,
+                    "position": 1
+                },
+                {
+                    "id": 163,
+                    "position": 2
+                },
+                {
+                    "id": 162,
+                    "position": 3
                 }
             ]
         },
@@ -359,6 +449,20 @@
                 },
                 {
                     "id": 112
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 14,
+                    "position": 1
+                },
+                {
+                    "id": 13,
+                    "position": 2
+                },
+                {
+                    "id": 170,
+                    "position": 3
                 }
             ]
         },
@@ -418,6 +522,24 @@
                 {
                     "id": 121
                 }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 120,
+                    "position": 1
+                },
+                {
+                    "id": 121,
+                    "position": 2
+                },
+                {
+                    "id": 146,
+                    "position": 3
+                },
+                {
+                    "id": 147,
+                    "position": 4
+                }
             ]
         },
         {
@@ -443,6 +565,20 @@
                 {
                     "id": 121
                 }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 74,
+                    "position": 1
+                },
+                {
+                    "id": 121,
+                    "position": 2
+                },
+                {
+                    "id": 147,
+                    "position": 3
+                }
             ]
         },
         {
@@ -465,6 +601,20 @@
                 {
                     "id": 165
                 }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 164,
+                    "position": 1
+                },
+                {
+                    "id": 165,
+                    "position": 2
+                },
+                {
+                    "id": 166,
+                    "position": 3
+                }
             ]
         },
         {
@@ -474,6 +624,12 @@
             "categoriesId": [
                 {
                     "id": 191
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 191,
+                    "position": 1
                 }
             ]
         }

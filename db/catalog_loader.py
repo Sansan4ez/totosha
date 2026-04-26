@@ -33,6 +33,55 @@ def build_portfolio_records(portfolio_rows: list[dict], source_hash: str) -> lis
     return list(deduped.values())
 
 
+def build_category_records(category_rows: list[dict], source_hash: str) -> list[tuple]:
+    return [
+        (
+            row["id"],
+            row["name"],
+            row.get("url"),
+            row.get("image"),
+            source_hash,
+        )
+        for row in category_rows
+    ]
+
+
+def build_category_parent_records(category_rows: list[dict]) -> list[tuple]:
+    return [
+        (
+            row["id"],
+            row["parent"]["id"],
+        )
+        for row in category_rows
+        if row.get("parent")
+    ]
+
+
+def build_sphere_category_records(sphere_rows: list[dict], source_hash: str) -> list[tuple]:
+    return [
+        (
+            row["id"],
+            category_ref["id"],
+            source_hash,
+        )
+        for row in sphere_rows
+        for category_ref in row.get("categoriesId", [])
+    ]
+
+
+def build_sphere_curated_category_records(sphere_rows: list[dict], source_hash: str) -> list[tuple]:
+    return [
+        (
+            row["id"],
+            category_ref["id"],
+            category_ref["position"],
+            source_hash,
+        )
+        for row in sphere_rows
+        for category_ref in row.get("curatedCategoryIds", [])
+    ]
+
+
 async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
     catalog_path = sources_dir / "catalog.json"
     categories_path = sources_dir / "categories.json"
@@ -59,6 +108,10 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
     catalog_hash = sha256_file(catalog_path)
     category_name_by_id = {row["id"]: row["name"] for row in category_rows}
     portfolio_records = build_portfolio_records(portfolio_rows, portfolio_hash)
+    category_records = build_category_records(category_rows, category_hash)
+    category_parent_records = build_category_parent_records(category_rows)
+    sphere_category_records = build_sphere_category_records(sphere_rows, sphere_hash)
+    sphere_curated_category_records = build_sphere_curated_category_records(sphere_rows, sphere_hash)
 
     async with conn.transaction():
         await conn.execute(
@@ -69,6 +122,7 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
                 corp.etm_oracl_catalog_sku,
                 corp.category_mountings,
                 corp.portfolio,
+                corp.sphere_curated_categories,
                 corp.sphere_categories,
                 corp.catalog_lamps,
                 corp.mounting_types,
@@ -83,17 +137,18 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
             INSERT INTO corp.categories (category_id, name, url, image_url, source_hash)
             VALUES ($1, $2, $3, $4, $5)
             """,
-            [
-                (
-                    row["id"],
-                    row["name"],
-                    row.get("url"),
-                    row.get("image"),
-                    category_hash,
-                )
-                for row in category_rows
-            ],
+            category_records,
         )
+
+        if category_parent_records:
+            await conn.executemany(
+                """
+                UPDATE corp.categories
+                SET parent_category_id = $2
+                WHERE category_id = $1
+                """,
+                category_parent_records,
+            )
 
         await conn.executemany(
             """
@@ -137,15 +192,17 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
             INSERT INTO corp.sphere_categories (sphere_id, category_id, source_hash)
             VALUES ($1, $2, $3)
             """,
-            [
-                (
-                    row["id"],
-                    category_ref["id"],
-                    sphere_hash,
-                )
-                for row in sphere_rows
-                for category_ref in row.get("categoriesId", [])
-            ],
+            sphere_category_records,
+        )
+
+        await conn.executemany(
+            """
+            INSERT INTO corp.sphere_curated_categories (
+                sphere_id, category_id, position, source_hash
+            )
+            VALUES ($1, $2, $3, $4)
+            """,
+            sphere_curated_category_records,
         )
 
         await conn.executemany(
@@ -319,9 +376,11 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
 
     return {
         "categories": len(category_rows),
+        "category_parent_links": len(category_parent_records),
         "mounting_types": len(mounting_type_rows),
         "spheres": len(sphere_rows),
-        "sphere_categories": sum(len(row.get("categoriesId", [])) for row in sphere_rows),
+        "sphere_categories": len(sphere_category_records),
+        "sphere_curated_categories": len(sphere_curated_category_records),
         "portfolio": len(portfolio_records),
         "category_mountings": len(category_mounting_rows),
         "catalog_lamps": len(catalog_rows["lamps"]),

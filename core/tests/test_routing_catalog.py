@@ -8,6 +8,11 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from documents.argument_catalogs import (
+    canonical_mounting_type_names,
+    canonical_sphere_names,
+    curated_category_names_for_sphere,
+)
 from documents.routing import (
     ROUTING_CATALOG_FILENAME,
     RouteCatalogUnavailable,
@@ -17,9 +22,31 @@ from documents.routing import (
     routing_catalog_health,
     select_route,
 )
+from documents.series_catalog import SERIES_KB_PATH, canonical_series_names, extract_kb_series_labels, load_canonical_series_catalog
 
 
 class RoutingCatalogTests(unittest.TestCase):
+    def test_canonical_series_catalog_matches_kb_and_expected_runtime_names(self):
+        kb_labels = extract_kb_series_labels(SERIES_KB_PATH.read_text(encoding="utf-8"))
+        catalog = load_canonical_series_catalog()
+
+        self.assertEqual(
+            canonical_series_names(),
+            [
+                "LAD LED R500",
+                "LAD LED R700",
+                "LAD LED R500 2Ex",
+                "LAD LED R320 Ex",
+                "LAD LED LINE",
+                "NL Nova",
+                "NL VEGA",
+            ],
+        )
+        self.assertEqual(
+            {entry["knowledge_base_label"] for entry in catalog["series"]},
+            set(kb_labels),
+        )
+
     def _write_repo_manifest(self, repo_root: Path, payload: dict) -> None:
         route_dir = repo_root / "doc-corpus" / "manifests" / "routes"
         route_dir.mkdir(parents=True, exist_ok=True)
@@ -718,6 +745,7 @@ class RoutingCatalogTests(unittest.TestCase):
             "corp_db.catalog_lookup",
             "corp_db.sku_lookup",
             "corp_db.category_lamps",
+            "corp_db.sphere_curated_categories",
             "corp_db.sphere_categories",
             "corp_db.lamp_filters",
             "corp_db.category_mountings",
@@ -740,6 +768,122 @@ class RoutingCatalogTests(unittest.TestCase):
 
         self.assertNotIn("enum", routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["etm"])
         self.assertNotIn("enum", routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["oracl"])
+        self.assertEqual(
+            routes["corp_db.sphere_curated_categories"]["argument_schema"]["properties"]["sphere"]["enum"],
+            canonical_sphere_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.sphere_categories"]["argument_schema"]["properties"]["sphere"]["enum"],
+            canonical_sphere_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.portfolio_by_sphere"]["argument_schema"]["properties"]["sphere"]["enum"],
+            canonical_sphere_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.category_mountings"]["argument_schema"]["properties"]["mounting_type"]["enum"],
+            canonical_mounting_type_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.lamp_mounting_compatibility"]["argument_schema"]["properties"]["mounting_type"]["enum"],
+            canonical_mounting_type_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.lamp_filters"]["argument_schema"]["properties"]["mounting_type"]["enum"],
+            canonical_mounting_type_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.category_mountings"]["argument_schema"]["properties"]["series"]["enum"],
+            canonical_series_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.lamp_mounting_compatibility"]["argument_schema"]["properties"]["series"]["enum"],
+            canonical_series_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.portfolio_lookup"]["argument_schema"]["required"],
+            ["kind", "query"],
+        )
+        self.assertEqual(
+            routes["corp_db.portfolio_by_sphere"]["argument_schema"]["required"],
+            ["kind", "sphere"],
+        )
+        self.assertEqual(
+            routes["corp_db.sphere_curated_categories"]["argument_schema"]["required"],
+            ["kind", "sphere"],
+        )
+        self.assertNotIn("sphere", routes["corp_db.portfolio_lookup"]["argument_schema"]["properties"])
+        self.assertNotIn("category", routes["corp_db.sphere_curated_categories"]["argument_schema"]["properties"])
+        self.assertNotIn("series", routes["corp_db.catalog_lookup"]["argument_schema"]["properties"])
+
+    def test_selector_payload_uses_compact_route_specific_enums(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                payload = build_route_selector_payload("Какие крепления доступны у серии NL Nova?")
+
+        routes = {route["route_id"]: route for route in payload["routes"]}
+        self.assertEqual(
+            routes["corp_db.category_mountings"]["argument_schema"]["properties"]["series"]["enum"],
+            canonical_series_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.lamp_mounting_compatibility"]["argument_schema"]["properties"]["series"]["enum"],
+            canonical_series_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.portfolio_by_sphere"]["argument_schema"]["properties"]["sphere"]["enum"],
+            canonical_sphere_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.category_mountings"]["argument_schema"]["properties"]["mounting_type"]["enum"],
+            canonical_mounting_type_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.lamp_filters"]["argument_schema"]["properties"]["mounting_type"]["enum"],
+            canonical_mounting_type_names(),
+        )
+        self.assertNotIn("series", routes["corp_db.catalog_lookup"]["argument_schema"]["properties"])
+        for route in routes.values():
+            category_schema = route["argument_schema"]["properties"].get("category")
+            if isinstance(category_schema, dict):
+                self.assertNotIn("enum", category_schema)
+
+    def test_selector_payload_injects_scoped_curated_category_enum_for_local_follow_up(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                payload = build_route_selector_payload(
+                    "Покажи модели из этой категории",
+                    sphere_context={
+                        "sphere_name": "Складские помещения",
+                        "category_names": curated_category_names_for_sphere("Складские помещения"),
+                        "source_turn_id": 1,
+                        "confirmed": True,
+                    },
+                )
+
+        routes = {route["route_id"]: route for route in payload["routes"]}
+        expected_categories = curated_category_names_for_sphere("Складские помещения")
+        self.assertEqual(payload["resolved_sphere_context"]["sphere_name"], "Складские помещения")
+        self.assertEqual(
+            routes["corp_db.category_mountings"]["argument_schema"]["properties"]["category"]["enum"],
+            expected_categories,
+        )
+        self.assertEqual(
+            routes["corp_db.lamp_filters"]["argument_schema"]["properties"]["category"]["enum"],
+            expected_categories,
+        )
+        self.assertEqual(
+            routes["corp_db.category_mountings"]["argument_hints"]["category"],
+            "Choose one curated category from the active sphere context: Складские помещения.",
+        )
 
     def test_select_route_matches_portfolio_lookup_for_realized_project_queries(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:

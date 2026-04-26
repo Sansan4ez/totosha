@@ -53,10 +53,31 @@ CREATE TABLE IF NOT EXISTS corp.categories (
     name text NOT NULL,
     url text,
     image_url text,
+    parent_category_id bigint,
     source_hash text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE IF EXISTS corp.categories
+    ADD COLUMN IF NOT EXISTS parent_category_id bigint;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'categories_parent_category_id_fkey'
+          AND conrelid = 'corp.categories'::regclass
+    ) THEN
+        ALTER TABLE corp.categories
+            ADD CONSTRAINT categories_parent_category_id_fkey
+            FOREIGN KEY (parent_category_id)
+            REFERENCES corp.categories(category_id)
+            ON DELETE SET NULL;
+    END IF;
+END;
+$$;
 
 CREATE TABLE IF NOT EXISTS corp.catalog_lamps (
     lamp_id bigint PRIMARY KEY,
@@ -181,6 +202,18 @@ CREATE TABLE IF NOT EXISTS corp.sphere_categories (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (sphere_id, category_id)
+);
+
+CREATE TABLE IF NOT EXISTS corp.sphere_curated_categories (
+    sphere_id bigint NOT NULL REFERENCES corp.spheres(sphere_id) ON DELETE CASCADE,
+    category_id bigint NOT NULL REFERENCES corp.categories(category_id) ON DELETE CASCADE,
+    position integer NOT NULL,
+    source_hash text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (sphere_id, category_id),
+    UNIQUE (sphere_id, position),
+    CHECK (position > 0)
 );
 
 CREATE TABLE IF NOT EXISTS corp.portfolio (
@@ -744,6 +777,8 @@ FROM base b;
 
 CREATE INDEX IF NOT EXISTS idx_categories_name_trgm
     ON corp.categories USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_categories_parent_category_id
+    ON corp.categories (parent_category_id);
 CREATE INDEX IF NOT EXISTS idx_catalog_lamps_name_trgm
     ON corp.catalog_lamps USING gin (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_catalog_lamps_category_id
@@ -819,6 +854,10 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_name_trgm
     ON corp.portfolio USING gin (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_spheres_name_trgm
     ON corp.spheres USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_sphere_curated_categories_category_id
+    ON corp.sphere_curated_categories (category_id);
+CREATE INDEX IF NOT EXISTS idx_sphere_curated_categories_sphere_position
+    ON corp.sphere_curated_categories (sphere_id, position);
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_source_file
     ON corp.knowledge_chunks (source_file);

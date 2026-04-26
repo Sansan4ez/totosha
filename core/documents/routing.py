@@ -10,13 +10,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .argument_catalogs import (
+    canonical_mounting_type_names,
+    canonical_sphere_names,
+    curated_category_names_for_sphere,
+)
 from .cache import load_parse_cache
-from .route_schema import RouteCardContractError, normalize_route_card_contract
+from .route_schema import (
+    ROUTE_CONTRACT_FIELDS,
+    RouteCardContractError,
+    default_argument_schema,
+    normalize_route_card_contract,
+)
 from .routing_policy import (
     CATALOG_APPLICATION_RECOMMENDATION_KEYWORDS as APPLICATION_RECOMMENDATION_KEYWORDS,
     CATALOG_COMPANY_FACT_KEYWORDS as COMPANY_FACT_KEYWORDS,
     CATALOG_PORTFOLIO_LOOKUP_KEYWORDS as PORTFOLIO_LOOKUP_KEYWORDS,
 )
+from .series_catalog import canonical_series_names
 from .storage import ensure_document_layout, get_document_paths, iter_live_documents
 
 
@@ -148,6 +159,155 @@ ROUTE_OWNER_PRIORITY = {
     "document_ingestion": 30,
     "runtime_merged": 40,
 }
+SERIES_AWARE_ROUTE_IDS = {
+    "corp_db.category_mountings",
+    "corp_db.lamp_mounting_compatibility",
+}
+SPHERE_AWARE_ROUTE_IDS = {
+    "corp_db.portfolio_by_sphere",
+    "corp_db.sphere_curated_categories",
+    "corp_db.sphere_categories",
+}
+MOUNTING_TYPE_AWARE_ROUTE_IDS = {
+    "corp_db.lamp_filters",
+    "corp_db.category_mountings",
+    "corp_db.lamp_mounting_compatibility",
+}
+CATEGORY_AWARE_ROUTE_IDS = {
+    "corp_db.category_lamps",
+    "corp_db.lamp_filters",
+    "corp_db.category_mountings",
+    "corp_db.lamp_mounting_compatibility",
+}
+ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
+    "corp_db.catalog_lookup": {
+        "kind",
+        "query",
+        "name",
+        "category",
+        "mounting_type",
+        "limit",
+        "offset",
+        "fuzzy",
+    },
+    "corp_db.sku_lookup": {
+        "kind",
+        "query",
+        "etm",
+        "oracl",
+        "limit",
+        "offset",
+    },
+    "corp_db.category_lamps": {
+        "kind",
+        "category",
+        "query",
+        "limit",
+        "offset",
+        "fuzzy",
+    },
+    "corp_db.portfolio_lookup": {
+        "kind",
+        "query",
+        "profile",
+        "entity_types",
+        "limit",
+        "offset",
+    },
+    "corp_db.portfolio_by_sphere": {
+        "kind",
+        "sphere",
+        "query",
+        "fuzzy",
+        "limit",
+        "offset",
+    },
+    "corp_db.sphere_curated_categories": {
+        "kind",
+        "sphere",
+        "query",
+        "fuzzy",
+    },
+    "corp_db.sphere_categories": {
+        "kind",
+        "sphere",
+        "query",
+        "fuzzy",
+    },
+    "corp_db.lamp_filters": {
+        "kind",
+        "query",
+        "category",
+        "mounting_type",
+        "beam_pattern",
+        "climate_execution",
+        "electrical_protection_class",
+        "explosion_protection_marking",
+        "supply_voltage_raw",
+        "dimensions_raw",
+        "power_factor_operator",
+        "ip",
+        "voltage_kind",
+        "explosion_protected",
+        "power_w_min",
+        "power_w_max",
+        "flux_lm_min",
+        "flux_lm_max",
+        "cct_k_min",
+        "cct_k_max",
+        "weight_kg_min",
+        "weight_kg_max",
+        "cri_ra_min",
+        "cri_ra_max",
+        "power_factor_min_min",
+        "power_factor_min_max",
+        "temp_c_min",
+        "temp_c_max",
+        "voltage_nominal_v_min",
+        "voltage_nominal_v_max",
+        "voltage_min_v_min",
+        "voltage_min_v_max",
+        "voltage_max_v_min",
+        "voltage_max_v_max",
+        "voltage_tol_minus_pct_min",
+        "voltage_tol_minus_pct_max",
+        "voltage_tol_plus_pct_min",
+        "voltage_tol_plus_pct_max",
+        "length_mm_min",
+        "length_mm_max",
+        "width_mm_min",
+        "width_mm_max",
+        "height_mm_min",
+        "height_mm_max",
+        "warranty_years_min",
+        "warranty_years_max",
+        "limit",
+        "offset",
+        "fuzzy",
+    },
+    "corp_db.category_mountings": {
+        "kind",
+        "category",
+        "series",
+        "mounting_type",
+        "query",
+        "fuzzy",
+    },
+    "corp_db.lamp_mounting_compatibility": {
+        "kind",
+        "category",
+        "series",
+        "mounting_type",
+        "query",
+        "fuzzy",
+    },
+}
+ROUTE_REQUIRED_ARGUMENTS = {
+    "corp_db.portfolio_lookup": {"query"},
+    "corp_db.portfolio_by_sphere": {"sphere"},
+    "corp_db.sphere_curated_categories": {"sphere"},
+    "corp_db.sphere_categories": {"sphere"},
+}
 
 
 class RouteCatalogUnavailable(RuntimeError):
@@ -256,6 +416,77 @@ def _source_from_executor(executor: str) -> str:
     return "doc_search" if executor == "doc_search" else "corp_db"
 
 
+def _canonical_series_property_schema() -> dict[str, Any]:
+    return {"type": "string", "enum": canonical_series_names()}
+
+
+def _canonical_sphere_property_schema() -> dict[str, Any]:
+    return {"type": "string", "enum": canonical_sphere_names()}
+
+
+def _canonical_mounting_type_property_schema() -> dict[str, Any]:
+    return {"type": "string", "enum": canonical_mounting_type_names()}
+
+
+def _scoped_category_property_schema(sphere_name: str) -> dict[str, Any]:
+    values = curated_category_names_for_sphere(sphere_name)
+    if values:
+        return {"type": "string", "enum": values}
+    return {"type": "string"}
+
+
+def _retain_argument_properties(route_id: str, properties: dict[str, Any]) -> dict[str, Any]:
+    allowed = ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS.get(route_id)
+    if not allowed:
+        return properties
+    return {
+        key: value
+        for key, value in properties.items()
+        if key in allowed
+    }
+
+
+def _required_route_argument_keys(route_id: str, schema: dict[str, Any]) -> list[str]:
+    required = set(schema.get("required") or [])
+    required.update(ROUTE_REQUIRED_ARGUMENTS.get(route_id, set()))
+    return [key for key in schema.get("properties", {}) if key in required]
+
+
+def _apply_runtime_argument_overrides(route: dict[str, Any], *, sphere_context: dict[str, Any] | None = None) -> None:
+    route_id = str(route.get("route_id") or "").strip()
+    executor = str(route.get("executor") or route.get("tool_name") or "").strip()
+    executor_args_template = dict(route.get("executor_args_template") or {})
+    route["argument_schema"] = default_argument_schema(
+        executor=executor,
+        executor_args_template=executor_args_template,
+        locked_args=executor_args_template,
+    )
+    route["argument_schema"]["properties"] = _retain_argument_properties(
+        route_id,
+        dict(route["argument_schema"].get("properties") or {}),
+    )
+    if route_id in SPHERE_AWARE_ROUTE_IDS and "sphere" in route["argument_schema"]["properties"]:
+        route["argument_schema"]["properties"]["sphere"] = _canonical_sphere_property_schema()
+    if route_id in MOUNTING_TYPE_AWARE_ROUTE_IDS and "mounting_type" in route["argument_schema"]["properties"]:
+        route["argument_schema"]["properties"]["mounting_type"] = _canonical_mounting_type_property_schema()
+    if route_id in SERIES_AWARE_ROUTE_IDS:
+        route["argument_schema"]["properties"]["series"] = _canonical_series_property_schema()
+    scoped_sphere_name = str((sphere_context or {}).get("sphere_name") or "").strip()
+    if scoped_sphere_name and route_id in CATEGORY_AWARE_ROUTE_IDS and "category" in route["argument_schema"]["properties"]:
+        route["argument_schema"]["properties"]["category"] = _scoped_category_property_schema(scoped_sphere_name)
+    route["argument_schema"]["required"] = _required_route_argument_keys(route_id, route["argument_schema"])
+    hints = dict(route.get("argument_hints") or {})
+    if route_id in SPHERE_AWARE_ROUTE_IDS and "sphere" in route["argument_schema"]["properties"]:
+        hints["sphere"] = "Choose one canonical application sphere when the user clearly asks by segment or environment."
+    if route_id in MOUNTING_TYPE_AWARE_ROUTE_IDS and "mounting_type" in route["argument_schema"]["properties"]:
+        hints["mounting_type"] = "Choose one canonical mounting type when the user explicitly names a mounting option."
+    if route_id in SERIES_AWARE_ROUTE_IDS:
+        hints["series"] = "Choose one canonical business series when the user asks at model-family level."
+    if scoped_sphere_name and route_id in CATEGORY_AWARE_ROUTE_IDS and "category" in route["argument_schema"]["properties"]:
+        hints["category"] = f"Choose one curated category from the active sphere context: {scoped_sphere_name}."
+    route["argument_hints"] = hints
+
+
 def _infer_route_kind(route: dict[str, Any]) -> str:
     route_kind = str(route.get("route_kind") or "").strip()
     if route_kind in {"corp_table", "corp_script", "doc_domain"}:
@@ -327,6 +558,12 @@ def _normalize_route_card(
     normalized["observability_labels"].setdefault("route_kind", route_kind)
     normalized["observability_labels"].setdefault("authority", authority)
     normalized["observability_labels"].setdefault("source", normalized["source"])
+    for field_name in ROUTE_CONTRACT_FIELDS:
+        if field_name in route:
+            normalized[field_name] = route[field_name]
+    for field_name in ("hidden", "selector_visible"):
+        if field_name in route:
+            normalized[field_name] = route[field_name]
     for override_key in (
         "overrides_route_ids",
         "override_route_ids",
@@ -348,7 +585,7 @@ def _normalize_route_card(
 
 
 def bootstrap_route_cards() -> list[dict[str, Any]]:
-    return [
+    routes = [
         {
             "route_id": "corp_kb.company_common",
             "route_family": "corp_kb.company_common",
@@ -500,7 +737,10 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "route_kind": "corp_table",
             "authority": "primary",
             "title": "Lamps by category",
-            "summary": "Structured route for category pages and lamp lists inside a product category.",
+            "summary": (
+                "Structured route for category pages and lamp lists. Exact display-category names may resolve "
+                "through the category tree to executable leaf category ids before lamp retrieval."
+            ),
             "topics": ["catalog", "category", "lamp"],
             "keywords": [
                 "категория",
@@ -517,18 +757,54 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "executor": "corp_db_search",
             "executor_args_template": {"kind": "category_lamps", "fuzzy": True},
             "argument_hints": {
-                "category": "Extract the product category name as a free string.",
-                "query": "Keep the original category phrase for fuzzy resolution.",
+                "category": "Extract the product category name as a free string. Exact display-category names may be expanded to executable leaf categories.",
+                "query": "Keep the original category phrase for fuzzy resolution when the input is already a leaf-like catalog category.",
             },
             "observability_labels": {"scope": "category_lamps"},
+        },
+        {
+            "route_id": "corp_db.sphere_curated_categories",
+            "route_family": "corp_db.sphere_curated_categories",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Curated Categories By Application Sphere",
+            "summary": (
+                "Structured route for user-facing application questions that returns curated display categories "
+                "for a resolved sphere. Use this for sphere-to-category answers; runtime expands family categories "
+                "to executable leaf category ids only in downstream search flows."
+            ),
+            "topics": ["catalog", "sphere", "category", "application"],
+            "keywords": [
+                "сфера применения",
+                "область применения",
+                "категории для",
+                "для стадиона",
+                "для склада",
+                "для аэропорта",
+            ],
+            "patterns": [
+                "какие категории подходят для",
+                "категории для сферы",
+                "светильники для сферы",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "sphere_curated_categories", "fuzzy": True},
+            "argument_hints": {
+                "sphere": "Extract the application sphere as a free string and resolve it to curated display categories.",
+                "query": "Use the user wording when the sphere requires fuzzy or alias-based resolution.",
+            },
+            "observability_labels": {"scope": "sphere_curated_categories"},
         },
         {
             "route_id": "corp_db.sphere_categories",
             "route_family": "corp_db.sphere_categories",
             "route_kind": "corp_table",
-            "authority": "primary",
-            "title": "Categories by application sphere",
-            "summary": "Structured route for application spheres and the product categories connected to them.",
+            "authority": "secondary",
+            "title": "Imported Categories By Application Sphere",
+            "summary": (
+                "Compatibility route for full imported sphere-category linkage. Prefer the curated sphere route for "
+                "user-facing application questions; keep this only for diagnostics or full linkage inspection."
+            ),
             "topics": ["catalog", "sphere", "category", "application"],
             "keywords": [
                 "сфера применения",
@@ -546,10 +822,11 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "executor": "corp_db_search",
             "executor_args_template": {"kind": "sphere_categories", "fuzzy": True},
             "argument_hints": {
-                "sphere": "Extract the application sphere as a free string.",
-                "query": "Use the user wording when the sphere requires fuzzy resolution.",
+                "sphere": "Extract the application sphere as a free string when full imported linkage is explicitly needed.",
+                "query": "Use the user wording when the sphere requires fuzzy resolution for diagnostic lookup.",
             },
             "observability_labels": {"scope": "sphere_categories"},
+            "selector_visible": False,
         },
         {
             "route_id": "corp_db.lamp_filters",
@@ -647,39 +924,29 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "route_id": "corp_db.portfolio_lookup",
             "route_family": "corp_db.portfolio_lookup",
             "route_kind": "corp_table",
-            "authority": "primary",
+            "authority": "secondary",
             "title": "Portfolio object lookup",
             "summary": (
-                "Named portfolio object, realized project, customer, reference, or implementation lookup. "
-                "Use this when the user names a concrete object or asks about completed projects, including "
-                "RZhD/RЖД, logistics centers, terminals, warehouses, bridges, plants, and Белый Раст."
+                "Named portfolio object lookup for concrete customer, object, terminal, warehouse, bridge, "
+                "plant, or project names. Use this when the user asks about a specific realized object such "
+                "as Белый Раст rather than a broad project segment."
             ),
             "topics": ["portfolio", "projects", "objects", "references", "realized_projects"],
             "keywords": [
                 "портфолио",
-                "реализованные проекты",
-                "реализованные объекты",
-                "объекты",
-                "проект",
-                "проекты",
                 "референсы",
                 "кейс",
                 "кейсы",
-                "ржд",
-                "железнодорожные объекты",
                 "логистический центр",
                 "терминально-логистический центр",
                 "терминал",
-                "склад",
                 "белый раст",
             ],
             "patterns": [
-                "какие объекты были реализованы",
-                "список объектов",
-                "список проектов",
                 "расскажи подробнее про объект",
                 "расскажи подробнее про проект",
-                "реализованные проекты для",
+                "расскажи про объект",
+                "покажи проект",
                 "терминально-логистический центр",
             ],
             "executor": "corp_db_search",
@@ -700,14 +967,19 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "route_id": "corp_db.portfolio_by_sphere",
             "route_family": "corp_db.portfolio_by_sphere",
             "route_kind": "corp_script",
-            "authority": "secondary",
+            "authority": "primary",
             "title": "Portfolio by sphere",
-            "summary": "Examples of completed projects, portfolio objects, and implementation references by application area.",
+            "summary": (
+                "Preferred broad portfolio route for completed projects, object examples, and implementation "
+                "references by sphere, customer segment, or environment."
+            ),
             "topics": ["portfolio", "projects"],
             "keywords": [
                 "портфолио",
                 "проект",
                 "объект",
+                "реализованные проекты",
+                "реализованные объекты",
                 "пример проекта",
                 "пример объекта",
                 "примеры реализации",
@@ -722,11 +994,20 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "логистический центр",
                 "белый раст",
             ],
-            "patterns": ["пример проекта", "пример объекта", "из портфолио", "портфолио по"],
+            "patterns": [
+                "какие объекты были реализованы",
+                "список объектов",
+                "список проектов",
+                "реализованные проекты для",
+                "пример проекта",
+                "пример объекта",
+                "из портфолио",
+                "портфолио по",
+            ],
             "executor": "corp_db_search",
             "executor_args_template": {"kind": "portfolio_by_sphere", "fuzzy": True},
             "argument_hints": {
-                "sphere": "Extract a broad sphere or customer segment such as РЖД, склад, логистический центр, стадион.",
+                "sphere": "Choose the canonical broad sphere or customer segment such as РЖД, складские помещения, логистический центр, стадион.",
                 "query": "Keep the original wording when the sphere is ambiguous.",
             },
             "fallback_route_ids": ["corp_db.portfolio_lookup", "corp_db.portfolio_examples_by_lamp"],
@@ -794,6 +1075,9 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "executor_args_template": {"kind": "application_recommendation"},
         },
     ]
+    for route in routes:
+        _apply_runtime_argument_overrides(route)
+    return routes
 
 
 def default_corp_db_route_cards() -> list[dict[str, Any]]:
@@ -1021,6 +1305,7 @@ def _covered_corp_db_domains(routes: list[dict[str, Any]]) -> set[str]:
         "lamp_filters": {"lamp", "category", "mounting_type"},
         "category_lamps": {"category", "lamp"},
         "category_mountings": {"category_mounting", "category", "mounting_type"},
+        "sphere_curated_categories": {"sphere", "category"},
         "sphere_categories": {"sphere", "category"},
         "portfolio_by_sphere": {"portfolio", "sphere"},
         "portfolio_examples_by_lamp": {"portfolio", "sphere", "lamp", "category"},
@@ -1395,6 +1680,7 @@ def _route_intent_family(route: dict[str, Any]) -> str:
         "corp_db.catalog_lookup",
         "corp_db.sku_lookup",
         "corp_db.category_lamps",
+        "corp_db.sphere_curated_categories",
         "corp_db.sphere_categories",
         "corp_db.lamp_filters",
         "corp_db.category_mountings",
@@ -1479,7 +1765,7 @@ def _preferred_route_ids_for_intent(query: str, intent_family: str) -> list[str]
     if intent_family == "document_lookup":
         return []
     if intent_family == "catalog_lookup":
-        return ["corp_db.catalog_lookup", "corp_db.sku_lookup", "corp_db.category_lamps", "corp_db.sphere_categories"]
+        return ["corp_db.catalog_lookup", "corp_db.sku_lookup", "corp_db.category_lamps", "corp_db.sphere_curated_categories"]
     if intent_family == "company_fact":
         if _intent_contains(query_text, ("luxnet", "люкснет")):
             return ["corp_kb.luxnet", "corp_kb.company_common"]
@@ -1627,11 +1913,13 @@ def select_route_card(query: str, *, explicit_document_request: bool | None = No
     return select_route(query, explicit_document_request=explicit_document_request).get("selected")
 
 
-def _compact_selector_route_card(route: dict[str, Any]) -> dict[str, Any]:
-    schema = route.get("argument_schema") if isinstance(route.get("argument_schema"), dict) else {}
+def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    route_payload = dict(route)
+    _apply_runtime_argument_overrides(route_payload, sphere_context=sphere_context)
+    schema = route_payload.get("argument_schema") if isinstance(route_payload.get("argument_schema"), dict) else {}
     properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
-    locked_keys = set((route.get("locked_args") or {}).keys()) if isinstance(route.get("locked_args"), dict) else set()
-    template_keys = set((route.get("executor_args_template") or {}).keys()) if isinstance(route.get("executor_args_template"), dict) else set()
+    locked_keys = set((route_payload.get("locked_args") or {}).keys()) if isinstance(route_payload.get("locked_args"), dict) else set()
+    template_keys = set((route_payload.get("executor_args_template") or {}).keys()) if isinstance(route_payload.get("executor_args_template"), dict) else set()
     required_keys = set(schema.get("required") or [])
     compact_schema = {
         "type": "object",
@@ -1643,7 +1931,19 @@ def _compact_selector_route_card(route: dict[str, Any]) -> dict[str, Any]:
             if key in required_keys
             or key in locked_keys
             or key in template_keys
-            or key in {"query", "name", "etm", "oracl", "category", "sphere", "mounting_type", "preferred_document_ids", "topic_facets", "source_files"}
+            or key in {
+                "query",
+                "name",
+                "etm",
+                "oracl",
+                "category",
+                "series",
+                "sphere",
+                "mounting_type",
+                "preferred_document_ids",
+                "topic_facets",
+                "source_files",
+            }
             or key.endswith("_min")
             or key.endswith("_max")
         },
@@ -1661,10 +1961,10 @@ def _compact_selector_route_card(route: dict[str, Any]) -> dict[str, Any]:
         "executor": str(route.get("executor") or route.get("tool_name") or ""),
         "source": str(route.get("source") or ""),
         "tool_name": str(route.get("tool_name") or route.get("executor") or ""),
-        "executor_args_template": dict(route.get("executor_args_template") or {}),
-        "locked_args": dict(route.get("locked_args") or {}),
+        "executor_args_template": dict(route_payload.get("executor_args_template") or {}),
+        "locked_args": dict(route_payload.get("locked_args") or {}),
         "argument_schema": compact_schema,
-        "argument_hints": dict(route.get("argument_hints") or {}),
+        "argument_hints": dict(route_payload.get("argument_hints") or {}),
         "evidence_policy": dict(route.get("evidence_policy") or {}),
         "fallback_route_ids": list(route.get("fallback_route_ids") or [])[:6],
         "document_selectors": list(route.get("document_selectors") or [])[:8],
@@ -1672,7 +1972,12 @@ def _compact_selector_route_card(route: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_route_selector_payload(query: str, *, limit: int = SELECTOR_ROUTE_LIMIT) -> dict[str, Any]:
+def build_route_selector_payload(
+    query: str,
+    *,
+    limit: int = SELECTOR_ROUTE_LIMIT,
+    sphere_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     catalog = load_routing_index()
     routes = _visible_catalog_routes(catalog)
     explicit_document_request = _is_explicit_document_request(query)
@@ -1686,11 +1991,12 @@ def build_route_selector_payload(query: str, *, limit: int = SELECTOR_ROUTE_LIMI
         candidate_mode = "intent_then_catalog_order"
     return {
         "query": query,
+        "resolved_sphere_context": dict(sphere_context or {}),
         "catalog_version": str(catalog.get("catalog_version") or ""),
         "catalog_origin": str(catalog.get("manifest_origin") or ""),
         "schema_version": int(catalog.get("schema_version") or 0),
         "route_count": int(catalog.get("route_count") or len(routes)),
         "candidate_mode": candidate_mode,
         "candidate_route_ids": [str(route.get("route_id") or "") for route in candidates],
-        "routes": [_compact_selector_route_card(route) for route in candidates],
+        "routes": [_compact_selector_route_card(route, sphere_context=sphere_context) for route in candidates],
     }

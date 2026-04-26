@@ -28,6 +28,7 @@ TOOLS = {
                         "category_lamps",
                         "portfolio_by_sphere",
                         "portfolio_examples_by_lamp",
+                        "sphere_curated_categories",
                         "sphere_categories",
                         "lamp_filters",
                         "category_mountings",
@@ -67,8 +68,18 @@ TOOLS = {
                 "name": {"type": "string", "description": "Exact lamp name (kind=lamp_exact / portfolio_examples_by_lamp)"},
                 "etm": {"type": "string", "description": "ETM code (kind=sku_by_code; provide exactly one of etm/oracl)"},
                 "oracl": {"type": "string", "description": "ORACL code (kind=sku_by_code; provide exactly one of etm/oracl)"},
-                "category": {"type": "string", "description": "Category name (kind=category_lamps)"},
-                "sphere": {"type": "string", "description": "Sphere name (kind=portfolio_by_sphere / sphere_categories)"},
+                "category": {
+                    "type": "string",
+                    "description": "Category name. In kind=category_lamps, exact display-category names may expand to executable leaf categories.",
+                },
+                "series": {
+                    "type": "string",
+                    "description": "Canonical business series or broad model family, e.g. LAD LED R500 or NL VEGA.",
+                },
+                "sphere": {
+                    "type": "string",
+                    "description": "Sphere name (kind=portfolio_by_sphere / sphere_curated_categories / sphere_categories)",
+                },
                 "mounting_type": {"type": "string", "description": "Mounting type name/mark or lamp mounting filter"},
                 "beam_pattern": {"type": "string", "description": "Beam pattern / light distribution filter, e.g. 30° or Ш"},
                 "climate_execution": {"type": "string", "description": "Climate execution filter, e.g. УХЛ1 or УХЛ 4 / 3.1"},

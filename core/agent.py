@@ -11,12 +11,14 @@ from typing import Optional, Any
 from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
+from documents.argument_catalogs import canonical_sphere_names, curated_category_names_for_sphere
 from documents.route_schema import validate_selector_output
 from documents.routing import build_route_selector_payload, select_route
 from documents.routing_policy import (
     APPLICATION_RECOMMENDATION_KEYWORDS,
     COMPANY_COMMON_FACET_KEYWORDS,
     COMPANY_FACT_KEYWORDS,
+    KB_ROUTE_SPECS,
     company_common_topic_facets as _company_common_topic_facets,
     company_fact_intent_type as _company_fact_intent_type,
     contact_doc_search_query as _contact_doc_search_query,
@@ -325,12 +327,7 @@ def _is_successful_application_recommendation(args: dict, tool_output: str, mess
 
 def _is_successful_portfolio_by_sphere(args: dict, tool_output: str, message: str) -> bool:
     kind = str(args.get("kind") or "")
-    profile = str(args.get("profile") or "")
-    if kind == "hybrid_search" and profile == "entity_resolver":
-        entity_types = args.get("entity_types")
-        if not isinstance(entity_types, list) or not any(str(item) in {"portfolio", "sphere"} for item in entity_types):
-            return False
-    elif kind != "portfolio_by_sphere":
+    if kind != "portfolio_by_sphere":
         return False
     payload = _parse_json_object(tool_output)
     if payload.get("status") != "success":
@@ -387,7 +384,7 @@ def _is_application_fallback_attempt(name: str, args: dict) -> bool:
     if name != "corp_db_search":
         return False
     kind = str(args.get("kind") or "")
-    return kind in {"hybrid_search", "category_lamps", "sphere_categories", "portfolio_by_sphere", "lamp_filters"}
+    return kind in {"hybrid_search", "category_lamps", "sphere_curated_categories", "sphere_categories", "portfolio_by_sphere", "lamp_filters"}
 
 
 def _is_portfolio_fallback_attempt(name: str, args: dict) -> bool:
@@ -396,7 +393,14 @@ def _is_portfolio_fallback_attempt(name: str, args: dict) -> bool:
     if name != "corp_db_search":
         return False
     kind = str(args.get("kind") or "")
-    return kind in {"hybrid_search", "application_recommendation", "category_lamps", "sphere_categories", "portfolio_by_sphere"}
+    return kind in {
+        "hybrid_search",
+        "application_recommendation",
+        "category_lamps",
+        "sphere_curated_categories",
+        "sphere_categories",
+        "portfolio_by_sphere",
+    }
 
 
 def _is_document_fallback_attempt(name: str, args: dict) -> bool:
@@ -504,6 +508,13 @@ def _route_evidence_status(
     payload = _parse_json_object(tool_result.output or "")
     if payload.get("status") == "empty":
         return "empty"
+    if str(args.get("kind") or "") == "hybrid_search" and str(args.get("profile") or "") == "entity_resolver":
+        entity_types = args.get("entity_types")
+        if isinstance(entity_types, list) and any(str(item) in {"portfolio", "sphere"} for item in entity_types):
+            results = payload.get("results")
+            if payload.get("status") == "success" and isinstance(results, list) and results:
+                return "intermediate"
+            return "weak"
     if payload.get("status") == "needs_clarification":
         return "sufficient"
     results = payload.get("results")
@@ -529,10 +540,35 @@ def _route_execution_args(route_hint: dict[str, Any], query: str) -> dict[str, A
 
 def _portfolio_lookup_fallback_call(message: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
     normalized = _routing_message_text(message)
+    broad_query = any(
+        marker in normalized
+        for marker in (
+            "какие объекты",
+            "какие проекты",
+            "реализованные объекты",
+            "реализованные проекты",
+            "список объектов",
+            "список проектов",
+            "из портфолио",
+            "для ржд",
+            "для склада",
+            "для промышлен",
+            "для спортив",
+        )
+    )
     if "ржд" in normalized:
         args = {
             "kind": "portfolio_by_sphere",
             "sphere": "РЖД",
+            "query": message,
+            "fuzzy": True,
+            "limit": 10,
+        }
+        route_id = "corp_db.portfolio_by_sphere"
+    elif broad_query:
+        args = {
+            "kind": "portfolio_by_sphere",
+            "sphere": message,
             "query": message,
             "fuzzy": True,
             "limit": 10,
@@ -613,16 +649,18 @@ async def _try_controlled_portfolio_fallback(
     tool_ctx: ToolContext,
     evidence_status: str,
 ) -> str:
-    if evidence_status not in {"empty", "weak"}:
+    if evidence_status not in {"empty", "weak", "intermediate"}:
         return ""
     if not _is_portfolio_lookup_intent(message):
         return ""
-    if not _selected_company_common_route(route_hint, routing_state):
-        return ""
+    route_args = dict((route_hint or {}).get("tool_args") or {})
+    selected_route_id = str((route_hint or {}).get("route_id") or routing_state.get("route_id") or "")
+    if str(route_args.get("kind") or "") == "portfolio_by_sphere" or selected_route_id == "corp_db.portfolio_by_sphere":
+        return _portfolio_bounded_failure_response(route_args, message)
 
     name, args, fallback_route_hint = _portfolio_lookup_fallback_call(message)
     if _is_duplicate_retrieval_attempt(name, args, routing_state):
-        return ""
+        return _portfolio_bounded_failure_response(args, message)
 
     fallback_route_id = str(fallback_route_hint.get("route_id") or "")
     fallback_ids = routing_state.get("retrieval_fallback_route_ids")
@@ -660,7 +698,7 @@ async def _try_controlled_portfolio_fallback(
         routing_state["retrieval_phase"] = "open"
         routing_state["retrieval_close_reason"] = ""
         _update_routing_observability(routing_state)
-        return ""
+        return _portfolio_bounded_failure_response(args, message)
 
     routing_state["intent"] = "portfolio_lookup"
     routing_state["route_id"] = fallback_route_id
@@ -772,16 +810,24 @@ def _has_high_level_retrieval_hint(state: dict[str, Any]) -> bool:
 
 def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = "") -> None:
     execution_mode = normalize_execution_mode(state.get("execution_mode"))
+    effective_route_id = str(state.get("route_id") or "")
+    knowledge_route_id = str(state.get("knowledge_route_id") or "")
+    effective_candidate_route_ids = list(state.get("candidate_route_ids") or [])
+    if knowledge_route_id:
+        effective_route_id = knowledge_route_id
+        if knowledge_route_id not in effective_candidate_route_ids:
+            effective_candidate_route_ids = [knowledge_route_id, *effective_candidate_route_ids]
+    effective_route_family = str(state.get("retrieval_route_family") or effective_route_id)
     meta = run_meta_get()
     if isinstance(meta, dict):
         meta["execution_mode"] = execution_mode
         meta["retrieval_intent"] = str(state.get("intent") or "")
         meta["retrieval_selected_source"] = str(state.get("selected_source") or "unknown")
-        meta["retrieval_route_id"] = str(state.get("route_id") or "")
+        meta["retrieval_route_id"] = effective_route_id
         meta["retrieval_route_source"] = str(state.get("route_source") or "")
         meta["retrieval_selected_route_kind"] = str(state.get("selected_route_kind") or "")
-        meta["retrieval_candidate_route_ids"] = list(state.get("candidate_route_ids") or [])
-        meta["retrieval_route_family"] = str(state.get("retrieval_route_family") or "")
+        meta["retrieval_candidate_route_ids"] = effective_candidate_route_ids
+        meta["retrieval_route_family"] = effective_route_family
         meta["retrieval_phase"] = str(state.get("retrieval_phase") or "")
         meta["retrieval_evidence_status"] = str(state.get("retrieval_evidence_status") or "")
         meta["retrieval_retry_count"] = int(state.get("retrieval_retry_count") or 0)
@@ -1278,7 +1324,8 @@ def _build_deterministic_fallback_call(
     if intent == "document_lookup":
         return ("doc_search", {"query": message, "top": 5})
     if intent == "portfolio_lookup":
-        return ("corp_db_search", {"kind": "portfolio_by_sphere", "query": message, "fuzzy": True})
+        name, args, _ = _portfolio_lookup_fallback_call(message)
+        return name, args
     if intent == "application_recommendation":
         return ("corp_db_search", {"kind": "application_recommendation", "query": message})
     return None
@@ -1996,6 +2043,18 @@ def clean_response(text: str) -> str:
 
 
 ROUTE_SELECTOR_UNAVAILABLE_MESSAGE = "Извините, сервис сейчас временно недоступен. Попробуйте повторить запрос немного позже."
+SPHERE_CONTEXT_FOLLOW_UP_MARKERS = (
+    "этой категории",
+    "эта категория",
+    "эту категорию",
+    "из этой категории",
+    "из этого списка",
+    "этого списка",
+    "эти категории",
+    "для этой сферы",
+    "в этой сфере",
+)
+SPHERE_CONTEXT_TTL_TURNS = 2
 
 
 def _route_selector_enabled() -> bool:
@@ -2045,9 +2104,173 @@ def _record_route_selector_unavailable(error: str) -> None:
     )
 
 
-async def _select_route_with_llm(routing_message: str) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+def _next_session_turn_id(session: Session) -> int:
+    turn_id = int(getattr(session, "turn_index", 0) or 0) + 1
+    setattr(session, "turn_index", turn_id)
+    return turn_id
+
+
+def _get_session_sphere_context(session: Session) -> dict[str, Any] | None:
+    context = getattr(session, "resolved_sphere_context", None)
+    return dict(context) if isinstance(context, dict) else None
+
+
+def _clear_session_sphere_context(session: Session) -> None:
+    setattr(session, "resolved_sphere_context", None)
+
+
+def _set_session_sphere_context(session: Session, context: dict[str, Any]) -> None:
+    setattr(session, "resolved_sphere_context", dict(context))
+
+
+def _message_named_canonical_sphere(message: str) -> str:
+    normalized = _routing_message_text(message)
+    for sphere_name in canonical_sphere_names():
+        if _normalize_routing_text(sphere_name) in normalized:
+            return sphere_name
+    return ""
+
+
+def _is_local_sphere_follow_up(message: str) -> bool:
+    return _text_has_any(_routing_message_text(message), SPHERE_CONTEXT_FOLLOW_UP_MARKERS)
+
+
+def _prepare_selector_sphere_context(session: Session, routing_message: str, turn_id: int) -> dict[str, Any] | None:
+    context = _get_session_sphere_context(session)
+    if not context:
+        return None
+
+    source_turn_id = int(context.get("source_turn_id") or 0)
+    if source_turn_id and (turn_id - source_turn_id) > SPHERE_CONTEXT_TTL_TURNS:
+        _clear_session_sphere_context(session)
+        return None
+
+    named_sphere = _message_named_canonical_sphere(routing_message)
+    if named_sphere and named_sphere != str(context.get("sphere_name") or ""):
+        _clear_session_sphere_context(session)
+        return None
+
+    if _is_document_lookup_intent(routing_message) or _is_company_fact_intent(routing_message):
+        _clear_session_sphere_context(session)
+        return None
+
+    if not _is_local_sphere_follow_up(routing_message):
+        _clear_session_sphere_context(session)
+        return None
+
+    category_names = list(context.get("category_names") or [])
+    if not category_names:
+        category_names = curated_category_names_for_sphere(str(context.get("sphere_name") or ""))
+        context["category_names"] = category_names
+    context["last_used_turn_id"] = turn_id
+    _set_session_sphere_context(session, context)
+    return context
+
+
+def _resolved_sphere_context_from_tool(
+    *,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    tool_result: ToolResult,
+    route_hint: dict[str, Any] | None,
+    turn_id: int,
+) -> dict[str, Any] | None:
+    if tool_name != "corp_db_search" or not tool_result.success:
+        return None
+
+    payload = _parse_json_object(tool_result.output or "")
+    kind = str(tool_args.get("kind") or payload.get("kind") or "")
+    sphere_name = ""
+    sphere_id: int | None = None
+    confidence = 0.0
+    category_names: list[str] = []
+
+    if kind == "sphere_curated_categories":
+        resolved = payload.get("resolved_sphere") if isinstance(payload.get("resolved_sphere"), dict) else {}
+        if resolved.get("sphere_id") is not None:
+            sphere_id = int(resolved.get("sphere_id"))
+        sphere_name = str(resolved.get("sphere_name") or tool_args.get("sphere") or "").strip()
+        confidence = float(resolved.get("confidence") or 0.95)
+        results = payload.get("results") if isinstance(payload.get("results"), list) else []
+        if sphere_id is None:
+            for row in results:
+                if isinstance(row, dict) and row.get("sphere_id") is not None:
+                    sphere_id = int(row.get("sphere_id"))
+                    break
+        if not sphere_name:
+            for row in results:
+                if isinstance(row, dict) and str(row.get("sphere_name") or "").strip():
+                    sphere_name = str(row.get("sphere_name") or "").strip()
+                    break
+        category_names = [
+            str(row.get("category_name") or "").strip()
+            for row in results
+            if isinstance(row, dict) and str(row.get("category_name") or "").strip()
+        ]
+    elif kind == "application_recommendation":
+        if str(payload.get("status") or "") not in {"success", "needs_clarification"}:
+            return None
+        resolved = payload.get("resolved_application") if isinstance(payload.get("resolved_application"), dict) else {}
+        if resolved.get("sphere_id") is not None:
+            sphere_id = int(resolved.get("sphere_id"))
+        sphere_name = str(resolved.get("sphere_name") or tool_args.get("sphere") or "").strip()
+        confidence = float(resolved.get("confidence") or 0.9)
+        categories = payload.get("categories") if isinstance(payload.get("categories"), list) else []
+        category_names = [
+            str(row.get("category_name") or "").strip()
+            for row in categories
+            if isinstance(row, dict) and str(row.get("category_name") or "").strip()
+        ]
+    elif kind == "portfolio_by_sphere":
+        if str(payload.get("status") or "") != "success":
+            return None
+        results = payload.get("results") if isinstance(payload.get("results"), list) else []
+        if not results:
+            return None
+        first_row = results[0] if isinstance(results[0], dict) else {}
+        if first_row.get("sphere_id") is not None:
+            sphere_id = int(first_row.get("sphere_id"))
+        sphere_name = str(first_row.get("sphere_name") or tool_args.get("sphere") or "").strip()
+        confidence = 0.9
+        category_names = curated_category_names_for_sphere(sphere_name)
+    else:
+        return None
+
+    if not sphere_name or confidence < 0.75:
+        return None
+
+    return {
+        "sphere_id": sphere_id,
+        "sphere_name": sphere_name,
+        "category_names": list(dict.fromkeys(category_names)),
+        "source_route_id": str((route_hint or {}).get("route_id") or ""),
+        "source_turn_id": turn_id,
+        "last_used_turn_id": turn_id,
+        "confidence": confidence,
+        "confirmed": confidence >= 0.85,
+    }
+
+
+def _portfolio_bounded_failure_response(args: dict[str, Any], message: str) -> str:
+    sphere_name = str(args.get("sphere") or "").strip()
+    if sphere_name and _normalize_routing_text(sphere_name) != _normalize_routing_text(message):
+        return (
+            f"Не удалось подтвердить реализованные объекты в портфолио для направления «{sphere_name}». "
+            "Уточните другую сферу или назовите конкретный объект."
+        )
+    return (
+        "Не удалось однозначно определить сферу для поиска по портфолио. "
+        "Уточните сферу применения или назовите конкретный реализованный объект."
+    )
+
+
+async def _select_route_with_llm(
+    routing_message: str,
+    *,
+    sphere_context: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
     selector_started = perf_counter()
-    selector_payload = build_route_selector_payload(routing_message)
+    selector_payload = build_route_selector_payload(routing_message, sphere_context=sphere_context)
     candidate_routes = list(selector_payload.get("routes") or [])
     if not candidate_routes:
         raise RuntimeError("route selector has no candidate routes")
@@ -2172,6 +2395,7 @@ async def run_agent(
     
     # Check if user is admin (bypasses some security patterns)
     is_admin = (user_id == _get_admin_id())
+    current_turn_id = _next_session_turn_id(session)
     
     agent_logger.info(
         f"Agent run: user={user_id}, chat={chat_id}, source={source}, admin={is_admin}, execution_mode={execution_mode}"
@@ -2224,10 +2448,14 @@ async def run_agent(
         workspace_info += f"\nGoogle: {google_email} (authorized, use as user_google_email for Google Workspace tools)"
     
     routing_message = _routing_query_text(message) or str(message or "")
+    selector_sphere_context = _prepare_selector_sphere_context(session, routing_message, current_turn_id)
     explicit_document_request = _is_document_lookup_intent(routing_message)
     if _route_selector_enabled():
         try:
-            route_selection, route_hint, secondary_route_candidates = await _select_route_with_llm(routing_message)
+            route_selection, route_hint, secondary_route_candidates = await _select_route_with_llm(
+                routing_message,
+                sphere_context=selector_sphere_context,
+            )
         except Exception as exc:
             agent_logger.error(f"Route selector unavailable or invalid: {exc}")
             _record_route_selector_unavailable(str(exc))
@@ -2297,6 +2525,16 @@ async def run_agent(
     candidate_route_ids = list(route_hint.get("candidate_route_ids") or route_selection.get("candidate_route_ids") or []) if route_hint else []
     if not candidate_route_ids and route_hint and route_hint.get("route_id"):
         candidate_route_ids = [str(route_hint.get("route_id"))]
+    canonical_route_id = str(route_hint.get("route_id") or "") if route_hint else ""
+    if company_fact_intent_type and not authoritative_route_id:
+        authoritative_route_id = "corp_kb.company_common"
+        source_file_scope = list(KB_ROUTE_SPECS[authoritative_route_id]["source_files"])
+        if not topic_facets:
+            topic_facets = _company_common_topic_facets(routing_message)
+    if authoritative_route_id:
+        canonical_route_id = authoritative_route_id
+        if authoritative_route_id not in candidate_route_ids:
+            candidate_route_ids = [authoritative_route_id, *candidate_route_ids]
     selector_meta = route_selection.get("selector") if isinstance(route_selection.get("selector"), dict) else {}
     selector_latency_ms = float(selector_meta.get("latency_ms") or route_hint.get("selector_latency_ms") or 0.0) if route_hint else 0.0
     routing_catalog_version = str(
@@ -2344,7 +2582,7 @@ async def run_agent(
         "execution_mode": execution_mode,
         "intent": intent_family,
         "selected_source": "unknown",
-        "route_id": str(route_hint.get("route_id") or "") if route_hint else "",
+        "route_id": canonical_route_id,
         "route_source": str(route_hint.get("source") or "") if route_hint else "",
         "route_tool_name": str(route_hint.get("tool_name") or "") if route_hint else "",
         "route_shortlist": [dict(route_hint)] + [dict(item) for item in secondary_route_candidates[:3]] if route_hint else [],
@@ -2417,6 +2655,15 @@ async def run_agent(
                 )
                 if primary_result.success:
                     _record_tool_output_contract(primary_tool_name, primary_result, routing_state)
+                    sphere_context_update = _resolved_sphere_context_from_tool(
+                        tool_name=primary_tool_name,
+                        tool_args=primary_args,
+                        tool_result=primary_result,
+                        route_hint=route_hint,
+                        turn_id=current_turn_id,
+                    )
+                    if sphere_context_update:
+                        _set_session_sphere_context(session, sphere_context_update)
                 evidence_status = _route_evidence_status(
                     primary_tool_name,
                     primary_args,
@@ -2648,6 +2895,15 @@ async def run_agent(
                         if document_id and not routing_state.get("document_id"):
                             routing_state["document_id"] = document_id
                             _update_routing_observability(routing_state)
+                    sphere_context_update = _resolved_sphere_context_from_tool(
+                        tool_name=name,
+                        tool_args=args,
+                        tool_result=tool_result,
+                        route_hint=route_hint,
+                        turn_id=current_turn_id,
+                    )
+                    if sphere_context_update:
+                        _set_session_sphere_context(session, sphere_context_update)
 
                 if name == "doc_search" and _is_doc_domain_route(routing_state):
                     evidence_status = _doc_domain_evidence_status(tool_result, args=args, state=routing_state)

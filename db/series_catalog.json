@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "source_file": "docs/knowledge_base/common_information_about_company.md",
+  "series": [
+    {
+      "name": "LAD LED R500",
+      "knowledge_base_label": "LAD LED R500",
+      "category_families": [
+        "LAD LED R500 периметральное",
+        "LAD LED R500 РЖД",
+        "LAD LED R500 А",
+        "LAD LED R500 12/24/36V",
+        "LAD LED R500 G"
+      ]
+    },
+    {
+      "name": "LAD LED R700",
+      "knowledge_base_label": "LAD LED R700",
+      "category_families": [
+        "LAD LED R700 PROM",
+        "LAD LED R700 ST",
+        "LAD LED R700 HT"
+      ]
+    },
+    {
+      "name": "LAD LED R500 2Ex",
+      "knowledge_base_label": "LAD LED R500 2Ex",
+      "category_families": [
+        "LAD LED R500 2Ex",
+        "LAD LED R500 12/24/36V 2Ex"
+      ]
+    },
+    {
+      "name": "LAD LED R320 Ex",
+      "knowledge_base_label": "LAD LED R320 Ex",
+      "category_families": [
+        "LAD LED R320 Ex",
+        "LAD LED R320 36V Ex"
+      ]
+    },
+    {
+      "name": "LAD LED LINE",
+      "knowledge_base_label": "LAD LED LINE",
+      "category_families": [
+        "LAD LED LINE-OZ"
+      ]
+    },
+    {
+      "name": "NL Nova",
+      "knowledge_base_label": "NL Nova",
+      "category_families": []
+    },
+    {
+      "name": "NL VEGA",
+      "knowledge_base_label": "NL Vega",
+      "category_families": []
+    }
+  ]
+}

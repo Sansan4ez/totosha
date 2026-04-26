@@ -450,6 +450,7 @@ class CorpDbSearchRequest(BaseModel):
         "category_lamps",
         "portfolio_by_sphere",
         "portfolio_examples_by_lamp",
+        "sphere_curated_categories",
         "sphere_categories",
         "lamp_filters",
         "category_mountings",
@@ -470,6 +471,7 @@ class CorpDbSearchRequest(BaseModel):
     etm: Optional[str] = None
     oracl: Optional[str] = None
     category: Optional[str] = None
+    series: Optional[str] = None
     sphere: Optional[str] = None
     mounting_type: Optional[str] = None
     beam_pattern: Optional[str] = None
@@ -1197,14 +1199,21 @@ async def _fetch_application_reference_data(conn: asyncpg.Connection) -> dict[st
             SELECT
                 s.sphere_id,
                 s.name AS sphere_name,
+                sc.position,
                 c.category_id,
                 c.name AS category_name,
                 c.url,
-                c.image_url
+                c.image_url,
+                c.parent_category_id,
+                EXISTS (
+                    SELECT 1
+                    FROM corp.categories child
+                    WHERE child.parent_category_id = c.category_id
+                ) AS has_children
             FROM corp.spheres s
-            JOIN corp.sphere_categories sc ON sc.sphere_id = s.sphere_id
+            JOIN corp.sphere_curated_categories sc ON sc.sphere_id = s.sphere_id
             JOIN corp.categories c ON c.category_id = sc.category_id
-            ORDER BY s.sphere_id, c.name
+            ORDER BY s.sphere_id, sc.position, c.name
             """
         )
     ]
@@ -1380,10 +1389,56 @@ def _application_resolution_candidates(
 def _resolve_application(query: str, reference: dict[str, Any]) -> dict[str, Any]:
     candidates = _application_resolution_candidates(query, reference)
     normalized_query = _normalize_application_text(query)
+    if " или " in f" {normalized_query} ":
+        explicit_candidates = []
+        for candidate in candidates:
+            explicit_score = max(float(candidate["direct_score"]), float(candidate["synonym_score"]))
+            if explicit_score <= 0:
+                continue
+            sphere_row = candidate["sphere_row"] or {}
+            explicit_candidates.append(
+                {
+                    "application_key": candidate["application_key"],
+                    "sphere_id": sphere_row.get("sphere_id"),
+                    "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[candidate["application_key"]]["sphere_name"],
+                    "score": round(explicit_score, 3),
+                }
+            )
+        explicit_candidates.sort(key=lambda item: (-float(item["score"]), str(item["application_key"])))
+        if len(explicit_candidates) >= 2:
+            return {
+                "status": "ambiguous",
+                "confidence": round(float(explicit_candidates[0]["score"]) / 10.0, 3),
+                "resolution_strategy": "ambiguity",
+                "alias_version": APPLICATION_ALIAS_VERSION,
+                "candidates": explicit_candidates[:3],
+            }
 
     direct = [candidate for candidate in candidates if candidate["direct_score"] > 0]
     if direct:
         direct.sort(key=lambda item: (-item["direct_score"], item["application_key"]))
+        if " или " in f" {normalized_query} " and len(direct) >= 2:
+            top_score = float(direct[0]["direct_score"])
+            second_score = float(direct[1]["direct_score"])
+            if top_score <= second_score + 1.0:
+                ambiguity_candidates = []
+                for candidate in direct[:3]:
+                    sphere_row = candidate["sphere_row"] or {}
+                    ambiguity_candidates.append(
+                        {
+                            "application_key": candidate["application_key"],
+                            "sphere_id": sphere_row.get("sphere_id"),
+                            "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[candidate["application_key"]]["sphere_name"],
+                            "score": round(candidate["direct_score"], 3),
+                        }
+                    )
+                return {
+                    "status": "ambiguous",
+                    "confidence": round(ambiguity_candidates[0]["score"] / 10.0, 3),
+                    "resolution_strategy": "ambiguity",
+                    "alias_version": APPLICATION_ALIAS_VERSION,
+                    "candidates": ambiguity_candidates,
+                }
         if len(direct) == 1 or direct[0]["direct_score"] >= direct[1]["direct_score"] + 1.5:
             winner = direct[0]
             sphere_row = winner["sphere_row"] or {}
@@ -1502,6 +1557,55 @@ def _resolve_application(query: str, reference: dict[str, Any]) -> dict[str, Any
 
 def _resolve_portfolio_sphere_query(query: str, reference: dict[str, Any]) -> str:
     query_terms = {term for term in _application_terms(query) if term and term not in APPLICATION_NOISE_TERMS}
+    catalog_ranked: list[tuple[float, str]] = []
+    for sphere_row in reference.get("spheres", []):
+        if not isinstance(sphere_row, dict):
+            continue
+        sphere_name = str(sphere_row.get("name") or "").strip()
+        if not sphere_name:
+            continue
+
+        score = 0.0
+        direct_score, _ = _direct_application_score(query, sphere_name)
+        score += direct_score
+
+        sphere_terms = {
+            term
+            for term in _application_terms(sphere_name)
+            if term and term not in APPLICATION_NOISE_TERMS
+        }
+        prefix_hits = {
+            sphere_term
+            for sphere_term in sphere_terms
+            for query_term in query_terms
+            if min(len(sphere_term), len(query_term)) >= 5
+            and (
+                sphere_term.startswith(query_term)
+                or query_term.startswith(sphere_term)
+                or sphere_term[:8] == query_term[:8]
+            )
+        }
+        if prefix_hits:
+            score += 2.5 + (0.75 * len(prefix_hits))
+
+        related_score, _ = _related_application_score(
+            query,
+            sphere_row=sphere_row,
+            categories=reference.get("categories_by_sphere", {}).get(int(sphere_row.get("sphere_id") or 0), []),
+            portfolio_rows=reference.get("portfolio_by_sphere", {}).get(int(sphere_row.get("sphere_id") or 0), []),
+        )
+        score += related_score
+        if score > 0:
+            catalog_ranked.append((score, sphere_name))
+
+    catalog_ranked.sort(key=lambda item: (-item[0], item[1]))
+    if catalog_ranked:
+        top_score, sphere_name = catalog_ranked[0]
+        second_score = catalog_ranked[1][0] if len(catalog_ranked) > 1 else -1.0
+        if len(catalog_ranked) == 1 or top_score >= second_score + 1.0:
+            return sphere_name
+
+    query_terms = {term for term in _application_terms(query) if term and term not in APPLICATION_NOISE_TERMS}
     ranked: list[tuple[float, str]] = []
     for application_key, config in APPLICATION_PROFILES.items():
         score = 0.0
@@ -1532,127 +1636,181 @@ def _resolve_portfolio_sphere_query(query: str, reference: dict[str, Any]) -> st
     return str(sphere_row.get("name") or APPLICATION_PROFILES[application_key]["sphere_name"]).strip()
 
 
-def _application_category_search_terms(*values: str) -> list[str]:
-    terms: list[str] = []
+def _ordered_unique_ints(values: list[int]) -> list[int]:
+    ordered: list[int] = []
+    seen: set[int] = set()
     for value in values:
-        normalized = _normalize_ws(value)
-        if normalized and normalized not in terms:
-            terms.append(normalized)
-        for token in _application_terms(value):
-            if len(token) < 4 or token in {"lad", "led", "svetilniki", "светильники"}:
-                continue
-            if token.endswith("ые") or token.endswith("ий") or token.endswith("ая"):
-                token = token[:-2]
-            if token and token not in terms:
-                terms.append(token)
-    return terms
+        item = int(value)
+        if item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
+
+
+async def _fetch_curated_sphere_categories(
+    conn: asyncpg.Connection,
+    *,
+    sphere_id: int,
+) -> list[dict[str, Any]]:
+    return [
+        dict(row)
+        for row in await conn.fetch(
+            """
+            /* curated_sphere_categories */
+            SELECT
+                sc.sphere_id,
+                sc.position,
+                c.category_id,
+                c.name AS category_name,
+                c.url,
+                c.image_url,
+                c.parent_category_id,
+                EXISTS (
+                    SELECT 1
+                    FROM corp.categories child
+                    WHERE child.parent_category_id = c.category_id
+                ) AS has_children
+            FROM corp.sphere_curated_categories sc
+            JOIN corp.categories c ON c.category_id = sc.category_id
+            WHERE sc.sphere_id = $1
+            ORDER BY sc.position, c.name
+            """,
+            sphere_id,
+        )
+    ]
+
+
+async def _expand_display_category_ids_to_executable(
+    conn: asyncpg.Connection,
+    *,
+    category_ids: list[int],
+) -> dict[int, list[int]]:
+    root_ids = _ordered_unique_ints(category_ids)
+    if not root_ids:
+        return {}
+
+    rows = await conn.fetch(
+        """
+        /* display_category_executable_expansion */
+        WITH RECURSIVE category_tree AS (
+            SELECT c.category_id AS root_category_id, c.category_id
+            FROM corp.categories c
+            WHERE c.category_id = ANY($1::bigint[])
+            UNION ALL
+            SELECT ct.root_category_id, child.category_id
+            FROM category_tree ct
+            JOIN corp.categories child ON child.parent_category_id = ct.category_id
+        )
+        SELECT
+            ct.root_category_id,
+            ct.category_id,
+            NOT EXISTS (
+                SELECT 1
+                FROM corp.categories child
+                WHERE child.parent_category_id = ct.category_id
+            ) AS is_leaf
+        FROM category_tree ct
+        ORDER BY ct.root_category_id, ct.category_id
+        """,
+        root_ids,
+    )
+
+    executable_by_root: dict[int, list[int]] = {root_id: [] for root_id in root_ids}
+    for row in rows:
+        if not bool(row["is_leaf"]):
+            continue
+        executable_by_root[int(row["root_category_id"])].append(int(row["category_id"]))
+
+    for root_id in root_ids:
+        leaf_ids = _ordered_unique_ints(executable_by_root.get(root_id, []))
+        executable_by_root[root_id] = leaf_ids or [root_id]
+    return executable_by_root
+
+
+async def _enrich_display_categories_with_executables(
+    conn: asyncpg.Connection,
+    categories: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    executable_by_root = await _expand_display_category_ids_to_executable(
+        conn,
+        category_ids=[int(row["category_id"]) for row in categories if row.get("category_id") is not None],
+    )
+    enriched: list[dict[str, Any]] = []
+    for row in categories:
+        category_id = int(row["category_id"])
+        payload = dict(row)
+        payload["category_id"] = category_id
+        payload["is_leaf"] = not bool(row.get("has_children"))
+        payload["executable_category_ids"] = executable_by_root.get(category_id, [category_id])
+        enriched.append(payload)
+    return enriched
+
+
+async def _resolve_exact_display_categories(
+    conn: asyncpg.Connection,
+    *,
+    category: str,
+) -> list[dict[str, Any]]:
+    return [
+        dict(row)
+        for row in await conn.fetch(
+            """
+            /* exact_display_category_lookup */
+            SELECT
+                c.category_id,
+                c.name AS category_name,
+                c.url,
+                c.image_url,
+                c.parent_category_id,
+                EXISTS (
+                    SELECT 1
+                    FROM corp.categories child
+                    WHERE child.parent_category_id = c.category_id
+                ) AS has_children
+            FROM corp.categories c
+            WHERE lower(c.name) = lower($1)
+            ORDER BY c.category_id
+            """,
+            category,
+        )
+    ]
 
 
 async def _resolve_application_categories(
     conn: asyncpg.Connection,
     *,
-    application_key: str,
     sphere_id: int | None,
-    limit_categories: int,
+    application_key: str | None = None,
 ) -> list[dict[str, Any]]:
-    config = APPLICATION_PROFILES[application_key]
-    parent_rows: list[dict[str, Any]] = []
-    if sphere_id is not None:
-        parent_rows = [
-            dict(row)
-            for row in await conn.fetch(
-                """
-                /* application_parent_categories */
-                SELECT
-                    c.category_id,
-                    c.name AS category_name,
-                    c.url,
-                    c.image_url
-                FROM corp.sphere_categories sc
-                JOIN corp.categories c ON c.category_id = sc.category_id
-                WHERE sc.sphere_id = $1
-                ORDER BY c.name
-                """,
-                sphere_id,
-            )
-        ]
+    if sphere_id is None:
+        return []
+    curated_rows = await _fetch_curated_sphere_categories(conn, sphere_id=int(sphere_id))
+    if curated_rows:
+        return await _enrich_display_categories_with_executables(conn, curated_rows)
+    if not application_key:
+        return []
 
-    search_terms: list[str] = []
-    for row in parent_rows:
-        search_terms.extend(_application_category_search_terms(str(row["category_name"])))
-    for raw_term in config["category_queries"]:
-        search_terms.extend(_application_category_search_terms(str(raw_term)))
-
-    deduped_terms: list[str] = []
-    for term in search_terms:
-        if term not in deduped_terms:
-            deduped_terms.append(term)
-
-    categories_by_id: dict[int, dict[str, Any]] = {}
-    for term in deduped_terms[:12]:
-        rows = await conn.fetch(
-            """
-            /* application_leaf_categories */
-            SELECT
-                l.category_id,
-                l.category_name,
-                count(*)::int AS lamp_count,
-                min(c.url) AS url,
-                coalesce(min(c.image_url), min(l.image_url)) AS image_url
-            FROM corp.v_catalog_lamps_agent l
-            LEFT JOIN corp.categories c ON c.category_id = l.category_id
-            WHERE coalesce(l.category_name, '') ILIKE ('%' || $1 || '%')
-            GROUP BY l.category_id, l.category_name
-            ORDER BY
-                CASE
-                    WHEN lower(coalesce(l.category_name, '')) = lower($1) THEN 0
-                    WHEN lower(coalesce(l.category_name, '')) LIKE (lower($1) || '%') THEN 1
-                    ELSE 2
-                END,
-                count(*) DESC,
-                l.category_name
-            LIMIT $2
-            """,
-            term,
-            max(limit_categories, 4),
-        )
-        for row in rows:
+    category_queries = APPLICATION_PROFILES.get(application_key, {}).get("category_queries") or ()
+    fallback_rows: list[dict[str, Any]] = []
+    seen_category_ids: set[int] = set()
+    for category_query in category_queries:
+        exact_rows = await _resolve_exact_display_categories(conn, category=str(category_query))
+        for row in exact_rows:
             category_id = int(row["category_id"])
-            match_strategy = "contains"
-            if str(row["category_name"]).lower() == term.lower():
-                match_strategy = "exact"
-            elif str(row["category_name"]).lower().startswith(term.lower()):
-                match_strategy = "prefix"
-            current = categories_by_id.get(category_id)
-            payload = {
-                "category_id": category_id,
-                "category_name": row["category_name"],
-                "url": row.get("url"),
-                "image_url": row.get("image_url"),
-                "lamp_count": int(row["lamp_count"]),
-                "match_strategy": match_strategy,
-                "matched_term": term,
-            }
-            if current is None or (
-                _application_match_rank(payload["match_strategy"]),
-                -payload["lamp_count"],
-                payload["category_name"],
-            ) < (
-                _application_match_rank(current["match_strategy"]),
-                -current["lamp_count"],
-                current["category_name"],
-            ):
-                categories_by_id[category_id] = payload
-
-    ordered = sorted(
-        categories_by_id.values(),
-        key=lambda row: (
-            0 if row["match_strategy"] == "exact" else 1 if row["match_strategy"] == "prefix" else 2,
-            -int(row["lamp_count"]),
-            str(row["category_name"]),
-        ),
-    )
-    return ordered[:limit_categories]
+            if category_id in seen_category_ids:
+                continue
+            seen_category_ids.add(category_id)
+            fallback_rows.append(
+                {
+                    **row,
+                    "sphere_id": int(sphere_id),
+                    "position": len(fallback_rows) + 1,
+                }
+            )
+    if not fallback_rows:
+        return []
+    return await _enrich_display_categories_with_executables(conn, fallback_rows)
 
 
 def _application_requested_explosion_protection(req: CorpDbSearchRequest, query: str) -> bool:
@@ -1725,8 +1883,13 @@ def _application_score_lamp(
             score += 1.0
         if temp_min <= -50:
             score += 2.0
-        if _application_text_contains_any(category_name, ("r700", "r500", "r500 g")):
-            score += 2.0
+        if _application_text_contains_any(category_name, ("r700", "lzd")):
+            score += 2.5
+            reasons.append("серия ближе к тяжёлым промышленным и карьерным сценариям")
+        elif _application_text_contains_any(category_name, ("r500",)):
+            score += 1.5
+        if _application_text_contains_any(category_name, ("r500 g",)):
+            score -= 1.5
         if is_explosion_protected and not wants_ex:
             score -= 2.0
         if power < 80 or _application_text_contains_any(category_name, ("line", "nova", "vega")):
@@ -1842,13 +2005,30 @@ def _application_recommendation_reason(reasons: list[str], application_key: str)
     return fallback.get(application_key, "подходит для выбранной сферы применения")
 
 
-def _application_match_rank(match_strategy: str) -> int:
-    if match_strategy == "exact":
-        return 0
-    if match_strategy == "prefix":
-        return 1
-    return 2
-
+async def _fetch_category_lamps_by_ids(
+    conn: asyncpg.Connection,
+    *,
+    category_ids: list[int],
+    req: CorpDbSearchRequest,
+    limit: int,
+    offset: int,
+) -> list[asyncpg.Record]:
+    conditions, args, _ = _build_lamp_conditions(req, alias="l", param_offset=1)
+    return await conn.fetch(
+        f"""
+        /* category_lamps_by_ids */
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
+        WHERE l.category_id = ANY($1::bigint[])
+          AND {' AND '.join(conditions)}
+        ORDER BY l.name
+        LIMIT ${len(args) + 2} OFFSET ${len(args) + 3}
+        """,
+        category_ids,
+        *args,
+        limit,
+        offset,
+    )
 
 
 def _normalize_dimension_filter(text: str) -> str:
@@ -2472,6 +2652,30 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
 
     primary_strategy = "lamp_filters" if direct_filter_rows and not rows else "primary"
 
+    if source_file_scope or topic_facets:
+        return _success(
+            "hybrid_search",
+            query=query,
+            filters=_hybrid_response_filters(
+                profile_name=profile_name,
+                entity_types=entity_types,
+                explicit_lamp_filters=explicit_lamp_filters,
+                search_strategy=primary_strategy,
+                knowledge_route_id=knowledge_route_id,
+                source_file_scope=source_file_scope,
+                topic_facets=topic_facets,
+            ),
+            results=primary_rows,
+            debug={
+                "strategy": primary_strategy,
+                "reason": "authoritative_scope_primary_only",
+                "semantic_enabled": False,
+                "fuzzy_enabled": fuzzy_enabled,
+            }
+            if req.include_debug
+            else None,
+        )
+
     if primary_rows and not should_run_filter_fallback and not should_run_semantic and not should_run_token_fallback:
         return _success(
             "hybrid_search",
@@ -2736,6 +2940,35 @@ async def _sku_by_code(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit
 
 async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     category = _req_str(req.category, "category")
+    exact_display_categories = await _resolve_exact_display_categories(conn, category=category)
+    if exact_display_categories:
+        display_categories = await _enrich_display_categories_with_executables(conn, exact_display_categories)
+        executable_category_ids = _ordered_unique_ints(
+            [
+                executable_id
+                for row in display_categories
+                for executable_id in row.get("executable_category_ids", [row["category_id"]])
+            ]
+        )
+        executable_req = _request_like(req, category=None)
+        rows = await _fetch_category_lamps_by_ids(
+            conn,
+            category_ids=executable_category_ids,
+            req=executable_req,
+            limit=limit,
+            offset=offset,
+        )
+        return _success(
+            "category_lamps",
+            query=category,
+            filters={
+                "category_query_semantics": "display_category_to_executable",
+                "display_category_ids": [row["category_id"] for row in display_categories],
+                "executable_category_ids": executable_category_ids,
+            },
+            results=[_serialize_lamp_row(row) for row in rows],
+        )
+
     rows = await conn.fetch(
         """
         SELECT l.*
@@ -2755,6 +2988,7 @@ async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, li
     return _success(
         "category_lamps",
         query=category,
+        filters={"category_query_semantics": "executable_category_name"},
         results=[_serialize_lamp_row(row) for row in rows],
     )
 
@@ -3041,9 +3275,8 @@ async def _application_recommendation(
     ):
         categories = await _resolve_application_categories(
             conn,
-            application_key=str(resolved_application["application_key"]),
             sphere_id=int(sphere_id) if sphere_id is not None else None,
-            limit_categories=category_limit,
+            application_key=str(resolved_application.get("application_key") or "") or None,
         )
 
     if not categories:
@@ -3063,7 +3296,14 @@ async def _application_recommendation(
         )
         return response
 
-    category_ids = [int(row["category_id"]) for row in categories]
+    display_categories = categories[:category_limit]
+    category_ids = _ordered_unique_ints(
+        [
+            executable_id
+            for row in categories
+            for executable_id in row.get("executable_category_ids", [row["category_id"]])
+        ]
+    )
     fetch_limit = max(lamp_limit * 6, 12)
     recommended_lamps: list[dict[str, Any]] = []
     async with _observe_search_phase(
@@ -3140,7 +3380,7 @@ async def _application_recommendation(
     final_status = "success" if recommended_lamps else "empty"
     final_filters = {
         **filters,
-        "category_count": len(categories),
+        "category_count": len(display_categories),
         "lamp_count": len(recommended_lamps),
         "portfolio_count": len(portfolio_examples),
     }
@@ -3157,7 +3397,7 @@ async def _application_recommendation(
             status=final_status,
             filters=final_filters,
             resolved_application=resolved_application,
-            categories=categories,
+            categories=display_categories,
             recommended_lamps=recommended_lamps,
             portfolio_examples=portfolio_examples,
             follow_up_question=follow_up_question,
@@ -3169,11 +3409,67 @@ async def _application_recommendation(
         application_key=str(resolved_application.get("application_key")),
         sphere_name=str(resolved_application.get("sphere_name")),
         resolution_strategy=str(resolved_application.get("resolution_strategy")),
-        category_count=len(categories),
+        category_count=len(display_categories),
         lamp_count=len(recommended_lamps),
         portfolio_count=len(portfolio_examples),
     )
     return response
+
+
+async def _sphere_curated_categories(conn: asyncpg.Connection, req: CorpDbSearchRequest) -> dict[str, Any]:
+    sphere = _req_str(req.sphere, "sphere")
+
+    async def _fetch_rows(*, sphere_query: str, fuzzy: bool) -> list[dict[str, Any]]:
+        rows = await conn.fetch(
+            """
+            /* sphere_curated_categories */
+            SELECT
+                s.sphere_id,
+                s.name AS sphere_name,
+                sc.position,
+                c.category_id,
+                c.name AS category_name,
+                c.url,
+                c.image_url,
+                c.parent_category_id,
+                EXISTS (
+                    SELECT 1
+                    FROM corp.categories child
+                    WHERE child.parent_category_id = c.category_id
+                ) AS has_children
+            FROM corp.spheres s
+            JOIN corp.sphere_curated_categories sc ON sc.sphere_id = s.sphere_id
+            JOIN corp.categories c ON c.category_id = sc.category_id
+            WHERE CASE
+                WHEN $1 THEN s.name ILIKE ('%' || $2 || '%')
+                ELSE lower(s.name) = lower($2)
+            END
+            ORDER BY s.name, sc.position, c.name
+            """,
+            fuzzy,
+            sphere_query,
+        )
+        payload = [dict(row) for row in rows]
+        if not payload:
+            return []
+        return await _enrich_display_categories_with_executables(conn, payload)
+
+    rows = await _fetch_rows(sphere_query=sphere, fuzzy=bool(req.fuzzy))
+    if not rows:
+        reference = await _fetch_application_reference_data(conn)
+        resolved_sphere_name = _resolve_portfolio_sphere_query(sphere, reference)
+        if not resolved_sphere_name:
+            resolved_application = _resolve_application(sphere, reference)
+            resolved_sphere_name = str(resolved_application.get("sphere_name") or "").strip()
+        if resolved_sphere_name:
+            rows = await _fetch_rows(sphere_query=resolved_sphere_name, fuzzy=False)
+
+    return _success(
+        "sphere_curated_categories",
+        query=sphere,
+        filters={"category_query_semantics": "curated_display_categories"},
+        results=rows,
+    )
 
 
 async def _sphere_categories(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
@@ -3205,9 +3501,10 @@ async def _sphere_categories(conn: asyncpg.Connection, req: CorpDbSearchRequest,
 
 async def _category_mountings(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     category = (req.category or "").strip() or None
+    series = (req.series or "").strip() or None
     mounting_type = (req.mounting_type or "").strip() or None
-    if not category and not mounting_type:
-        raise HTTPException(400, "Provide category and/or mounting_type")
+    if not category and not series and not mounting_type:
+        raise HTTPException(400, "Provide category, series, and/or mounting_type")
 
     conditions = []
     args: list[Any] = []
@@ -3215,6 +3512,9 @@ async def _category_mountings(conn: asyncpg.Connection, req: CorpDbSearchRequest
     if category:
         args.append(category)
         conditions.append(f"c.name ILIKE ('%' || ${len(args)} || '%')")
+    if series:
+        args.append(series)
+        conditions.append(f"cm.series ILIKE ('%' || ${len(args)} || '%')")
     if mounting_type:
         args.append(mounting_type)
         conditions.append(f"(mt.name ILIKE ('%' || ${len(args)} || '%') OR mt.mark ILIKE ('%' || ${len(args)} || '%'))")
@@ -3236,7 +3536,7 @@ async def _category_mountings(conn: asyncpg.Connection, req: CorpDbSearchRequest
     )
     return _success(
         "category_mountings",
-        filters={"category": category, "mounting_type": mounting_type},
+        filters={"category": category, "series": series, "mounting_type": mounting_type},
         results=[dict(row) for row in rows],
     )
 
@@ -3300,6 +3600,8 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
                 result = await _sku_by_code(conn, req, limit, offset)
             elif req.kind == "application_recommendation":
                 result = await _application_recommendation(conn, req, limit, offset)
+            elif req.kind == "sphere_curated_categories":
+                result = await _sphere_curated_categories(conn, req)
             elif req.kind == "category_lamps":
                 result = await _category_lamps(conn, req, limit, offset)
             elif req.kind == "portfolio_by_sphere":

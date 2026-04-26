@@ -216,6 +216,13 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(rzd_args["kind"], "portfolio_by_sphere")
         self.assertEqual(rzd_args["sphere"], "РЖД")
 
+        _, industrial_args, industrial_route_hint = _MODULE._portfolio_lookup_fallback_call(
+            "Какие реализованные объекты есть для промышленных объектов?"
+        )
+        self.assertEqual(industrial_route_hint["route_id"], "corp_db.portfolio_by_sphere")
+        self.assertEqual(industrial_args["kind"], "portfolio_by_sphere")
+        self.assertIn("промышленных объектов", industrial_args["sphere"].lower())
+
         fallback = _MODULE._build_deterministic_fallback_call(
             "Расскажи про Белый Раст",
             {
@@ -227,6 +234,89 @@ class RoutingGuardrailTests(unittest.TestCase):
         )
         self.assertIsNotNone(fallback)
         self.assertEqual(fallback[1]["profile"], "entity_resolver")
+
+    def test_portfolio_entity_resolver_is_intermediate_evidence(self):
+        tool_result = _ToolResult(
+            True,
+            output=json.dumps(
+                {
+                    "status": "success",
+                    "results": [{"entity_type": "portfolio", "title": "Освещение терминала"}],
+                },
+                ensure_ascii=False,
+            ),
+            metadata={},
+        )
+        status = _MODULE._route_evidence_status(
+            "corp_db_search",
+            {
+                "kind": "hybrid_search",
+                "profile": "entity_resolver",
+                "entity_types": ["portfolio", "sphere"],
+                "query": "какие объекты были реализованы для ржд",
+            },
+            tool_result,
+            "какие объекты были реализованы для ржд",
+            {},
+        )
+        self.assertEqual(status, "intermediate")
+
+    def test_sphere_context_scopes_follow_up_and_clears_on_unrelated_query(self):
+        session = types.SimpleNamespace(
+            resolved_sphere_context={
+                "sphere_id": 3,
+                "sphere_name": "Складские помещения",
+                "category_names": ["LAD LED R500", "LAD LED LINE-OZ"],
+                "source_turn_id": 1,
+                "confirmed": True,
+            },
+            turn_index=1,
+        )
+        scoped = _MODULE._prepare_selector_sphere_context(session, "Покажи модели из этой категории", 2)
+        self.assertIsNotNone(scoped)
+        self.assertEqual(scoped["sphere_name"], "Складские помещения")
+
+        unrelated = _MODULE._prepare_selector_sphere_context(session, "Расскажи о компании", 3)
+        self.assertIsNone(unrelated)
+        self.assertIsNone(getattr(session, "resolved_sphere_context", None))
+
+        session = types.SimpleNamespace(
+            resolved_sphere_context={
+                "sphere_id": 3,
+                "sphere_name": "Складские помещения",
+                "category_names": ["LAD LED R500", "LAD LED LINE-OZ"],
+                "source_turn_id": 1,
+                "confirmed": True,
+            },
+            turn_index=1,
+        )
+        sku_query = _MODULE._prepare_selector_sphere_context(session, "Найди SKU NL VEGA", 2)
+        self.assertIsNone(sku_query)
+        self.assertIsNone(getattr(session, "resolved_sphere_context", None))
+
+    def test_resolved_sphere_context_captures_sphere_id(self):
+        tool_result = _ToolResult(
+            True,
+            output=json.dumps(
+                {
+                    "status": "success",
+                    "kind": "portfolio_by_sphere",
+                    "results": [{"sphere_id": 5, "sphere_name": "РЖД", "name": "Освещение инфраструктуры РЖД"}],
+                },
+                ensure_ascii=False,
+            ),
+            metadata={},
+        )
+        context = _MODULE._resolved_sphere_context_from_tool(
+            tool_name="corp_db_search",
+            tool_args={"kind": "portfolio_by_sphere", "sphere": "РЖД"},
+            tool_result=tool_result,
+            route_hint={"route_id": "corp_db.portfolio_by_sphere"},
+            turn_id=4,
+        )
+        self.assertIsNotNone(context)
+        self.assertEqual(context["sphere_id"], 5)
+        self.assertEqual(context["sphere_name"], "РЖД")
 
     def test_portfolio_entity_payload_renders_projects(self):
         output = json.dumps(

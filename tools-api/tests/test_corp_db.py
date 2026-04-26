@@ -252,6 +252,20 @@ class QueryCaptureConn:
 
     async def fetch(self, query, *args):
         self.queries.append((str(query), args))
+        sql = str(query)
+        if "FROM corp.category_mountings cm" in sql:
+            return [
+                {
+                    "category_mounting_id": 1,
+                    "series": "NL VEGA",
+                    "is_default": True,
+                    "category_id": 170,
+                    "category_name": "NL VEGA",
+                    "mounting_type_id": 2,
+                    "mounting_type_name": "Потолочное",
+                    "mark": "P",
+                }
+            ]
         return []
 
 
@@ -380,7 +394,7 @@ class EmptyLampPortfolioConn:
 
 class ApplicationRecommendationConn:
     def __init__(self):
-        self.last_leaf_terms: list[str] = []
+        self.last_executable_roots: list[int] = []
 
     @staticmethod
     def _sphere_rows():
@@ -396,16 +410,116 @@ class ApplicationRecommendationConn:
     @staticmethod
     def _reference_categories():
         return [
-            {"sphere_id": 6, "sphere_name": "Спортивное и освещение высокой мощности", "category_id": 169, "category_name": "LAD LED R500 SPORT", "url": "https://ladzavod.ru/catalog/sport", "image_url": "https://ladzavod.ru/img/r500-sport.png"},
-            {"sphere_id": 6, "sphere_name": "Спортивное и освещение высокой мощности", "category_id": 37, "category_name": "LAD LED R500", "url": "https://ladzavod.ru/catalog/r500", "image_url": "https://ladzavod.ru/img/r500-parent.png"},
-            {"sphere_id": 3, "sphere_name": "Складские помещения", "category_id": 39, "category_name": "LAD LED LINE-OZ", "url": "https://ladzavod.ru/catalog/line-oz", "image_url": "https://ladzavod.ru/img/line-oz.png"},
-            {"sphere_id": 3, "sphere_name": "Складские помещения", "category_id": 37, "category_name": "LAD LED R500", "url": "https://ladzavod.ru/catalog/r500", "image_url": "https://ladzavod.ru/img/r500-parent.png"},
-            {"sphere_id": 8, "sphere_name": "Офисное, торговое, ЖКХ и АБК освещение", "category_id": 14, "category_name": "NL Nova", "url": "https://ladzavod.ru/catalog/nl-nova", "image_url": "https://ladzavod.ru/img/nova.png"},
-            {"sphere_id": 8, "sphere_name": "Офисное, торговое, ЖКХ и АБК освещение", "category_id": 170, "category_name": "NL VEGA", "url": "https://ladzavod.ru/catalog/nl-vega", "image_url": "https://ladzavod.ru/img/vega.png"},
-            {"sphere_id": 7, "sphere_name": "Наружное, уличное и дорожное освещение", "category_id": 79, "category_name": "LAD LED R500 G", "url": "https://ladzavod.ru/catalog/r500-g", "image_url": "https://ladzavod.ru/img/r500-g.png"},
-            {"sphere_id": 7, "sphere_name": "Наружное, уличное и дорожное освещение", "category_id": 161, "category_name": "Консольные светильники", "url": "https://ladzavod.ru/catalog/konsolnye-svetilniki", "image_url": "https://ladzavod.ru/img/console.png"},
-            {"sphere_id": 11, "sphere_name": "Светильники специального назначения", "category_id": 166, "category_name": "Специальное освещение", "url": "https://ladzavod.ru/catalog/specialnoe-osveshchenie", "image_url": "https://ladzavod.ru/img/special.png"},
-            {"sphere_id": 11, "sphere_name": "Светильники специального назначения", "category_id": 164, "category_name": "АЗС", "url": "https://ladzavod.ru/catalog/azs", "image_url": "https://ladzavod.ru/img/azs.png"},
+            {
+                "sphere_id": 6,
+                "sphere_name": "Спортивное и освещение высокой мощности",
+                "position": 1,
+                "category_id": 169,
+                "category_name": "LAD LED R500 SPORT",
+                "url": "https://ladzavod.ru/catalog/sport",
+                "image_url": "https://ladzavod.ru/img/r500-sport.png",
+                "parent_category_id": None,
+                "has_children": False,
+            },
+            {
+                "sphere_id": 6,
+                "sphere_name": "Спортивное и освещение высокой мощности",
+                "position": 2,
+                "category_id": 37,
+                "category_name": "LAD LED R500",
+                "url": "https://ladzavod.ru/catalog/r500",
+                "image_url": "https://ladzavod.ru/img/r500-parent.png",
+                "parent_category_id": None,
+                "has_children": True,
+            },
+            {
+                "sphere_id": 3,
+                "sphere_name": "Складские помещения",
+                "position": 1,
+                "category_id": 39,
+                "category_name": "LAD LED LINE-OZ",
+                "url": "https://ladzavod.ru/catalog/line-oz",
+                "image_url": "https://ladzavod.ru/img/line-oz.png",
+                "parent_category_id": None,
+                "has_children": False,
+            },
+            {
+                "sphere_id": 3,
+                "sphere_name": "Складские помещения",
+                "position": 2,
+                "category_id": 37,
+                "category_name": "LAD LED R500",
+                "url": "https://ladzavod.ru/catalog/r500",
+                "image_url": "https://ladzavod.ru/img/r500-parent.png",
+                "parent_category_id": None,
+                "has_children": True,
+            },
+            {
+                "sphere_id": 8,
+                "sphere_name": "Офисное, торговое, ЖКХ и АБК освещение",
+                "position": 1,
+                "category_id": 14,
+                "category_name": "NL Nova",
+                "url": "https://ladzavod.ru/catalog/nl-nova",
+                "image_url": "https://ladzavod.ru/img/nova.png",
+                "parent_category_id": None,
+                "has_children": False,
+            },
+            {
+                "sphere_id": 8,
+                "sphere_name": "Офисное, торговое, ЖКХ и АБК освещение",
+                "position": 2,
+                "category_id": 170,
+                "category_name": "NL VEGA",
+                "url": "https://ladzavod.ru/catalog/nl-vega",
+                "image_url": "https://ladzavod.ru/img/vega.png",
+                "parent_category_id": None,
+                "has_children": False,
+            },
+            {
+                "sphere_id": 7,
+                "sphere_name": "Наружное, уличное и дорожное освещение",
+                "position": 1,
+                "category_id": 79,
+                "category_name": "LAD LED R500 G",
+                "url": "https://ladzavod.ru/catalog/r500-g",
+                "image_url": "https://ladzavod.ru/img/r500-g.png",
+                "parent_category_id": 161,
+                "has_children": False,
+            },
+            {
+                "sphere_id": 7,
+                "sphere_name": "Наружное, уличное и дорожное освещение",
+                "position": 2,
+                "category_id": 161,
+                "category_name": "Консольные светильники",
+                "url": "https://ladzavod.ru/catalog/konsolnye-svetilniki",
+                "image_url": "https://ladzavod.ru/img/console.png",
+                "parent_category_id": None,
+                "has_children": True,
+            },
+            {
+                "sphere_id": 11,
+                "sphere_name": "Светильники специального назначения",
+                "position": 1,
+                "category_id": 166,
+                "category_name": "Специальное освещение",
+                "url": "https://ladzavod.ru/catalog/specialnoe-osveshchenie",
+                "image_url": "https://ladzavod.ru/img/special.png",
+                "parent_category_id": None,
+                "has_children": True,
+            },
+            {
+                "sphere_id": 11,
+                "sphere_name": "Светильники специального назначения",
+                "position": 2,
+                "category_id": 164,
+                "category_name": "АЗС",
+                "url": "https://ladzavod.ru/catalog/azs",
+                "image_url": "https://ladzavod.ru/img/azs.png",
+                "parent_category_id": None,
+                "has_children": False,
+            },
         ]
 
     @staticmethod
@@ -418,42 +532,73 @@ class ApplicationRecommendationConn:
             {"portfolio_id": 505, "sphere_id": 11, "sphere_name": "Светильники специального назначения", "name": "Освещение АЗС", "group_name": "АЗС", "url": "https://ladzavod.ru/portfolio/azs", "image_url": "https://ladzavod.ru/img/azs-portfolio.png"},
         ]
 
+    @classmethod
+    def _category_by_id(cls) -> dict[int, dict]:
+        by_id = {row["category_id"]: dict(row) for row in cls._reference_categories()}
+        by_id.update(
+            {
+                68: {
+                    "category_id": 68,
+                    "category_name": "LAD LED R500-9 LZD",
+                    "url": "https://ladzavod.ru/catalog/r500-9-lzd",
+                    "image_url": "https://ladzavod.ru/img/r500-9.png",
+                    "parent_category_id": 37,
+                    "has_children": False,
+                },
+                69: {
+                    "category_id": 69,
+                    "category_name": "LAD LED R500-12 LZD",
+                    "url": "https://ladzavod.ru/catalog/r500-12-lzd",
+                    "image_url": "https://ladzavod.ru/img/r500-12.png",
+                    "parent_category_id": 37,
+                    "has_children": False,
+                },
+                87: {
+                    "category_id": 87,
+                    "category_name": "LAD LED R700-10 ST",
+                    "url": "https://ladzavod.ru/catalog/r700-10-st",
+                    "image_url": "https://ladzavod.ru/img/r700-10.png",
+                    "parent_category_id": None,
+                    "has_children": False,
+                },
+                18: {
+                    "category_id": 18,
+                    "category_name": "LAD LED R320 Ex",
+                    "url": "https://ladzavod.ru/catalog/r320-ex",
+                    "image_url": "https://ladzavod.ru/img/r320-ex.png",
+                    "parent_category_id": 166,
+                    "has_children": False,
+                },
+                119: {
+                    "category_id": 119,
+                    "category_name": "LAD LED R500 2Ex",
+                    "url": "https://ladzavod.ru/catalog/lad-led-r500-2ex",
+                    "image_url": "https://ladzavod.ru/img/r500-2ex.png",
+                    "parent_category_id": 166,
+                    "has_children": False,
+                },
+            }
+        )
+        return by_id
+
     @staticmethod
-    def _leaf_categories(term: str):
-        mapping = {
-            "LAD LED R500": [
-                {"category_id": 68, "category_name": "LAD LED R500-9 LZD", "lamp_count": 4, "url": "https://ladzavod.ru/catalog/r500-9-lzd", "image_url": "https://ladzavod.ru/img/r500-9.png"},
-                {"category_id": 69, "category_name": "LAD LED R500-12 LZD", "lamp_count": 3, "url": "https://ladzavod.ru/catalog/r500-12-lzd", "image_url": "https://ladzavod.ru/img/r500-12.png"},
-            ],
-            "LAD LED R700": [
-                {"category_id": 87, "category_name": "LAD LED R700-10 ST", "lamp_count": 2, "url": "https://ladzavod.ru/catalog/r700-10-st", "image_url": "https://ladzavod.ru/img/r700-10.png"},
-            ],
-            "LAD LED LINE-OZ": [
-                {"category_id": 39, "category_name": "LAD LED LINE-OZ", "lamp_count": 5, "url": "https://ladzavod.ru/catalog/lad-led-line-oz", "image_url": "https://ladzavod.ru/img/line-oz.png"},
-            ],
-            "NL Nova": [
-                {"category_id": 14, "category_name": "NL Nova120", "lamp_count": 3, "url": "https://ladzavod.ru/catalog/nl-nova120", "image_url": "https://ladzavod.ru/img/nova120.png"},
-            ],
-            "NL VEGA": [
-                {"category_id": 170, "category_name": "NL VEGA", "lamp_count": 2, "url": "https://ladzavod.ru/catalog/nl-vega", "image_url": "https://ladzavod.ru/img/vega.png"},
-            ],
-            "LAD LED R500 G": [
-                {"category_id": 79, "category_name": "LAD LED R500 G", "lamp_count": 2, "url": "https://ladzavod.ru/catalog/lad-led-r500-g", "image_url": "https://ladzavod.ru/img/r500-g.png"},
-            ],
-            "Специальное освещение": [
-                {"category_id": 166, "category_name": "Специальное освещение", "lamp_count": 2, "url": "https://ladzavod.ru/catalog/specialnoe-osveshchenie", "image_url": "https://ladzavod.ru/img/special.png"},
-            ],
-            "АЗС": [
-                {"category_id": 164, "category_name": "АЗС", "lamp_count": 1, "url": "https://ladzavod.ru/catalog/azs", "image_url": "https://ladzavod.ru/img/azs.png"},
-            ],
-            "LAD LED R320 Ex": [
-                {"category_id": 18, "category_name": "LAD LED R320 Ex", "lamp_count": 1, "url": "https://ladzavod.ru/catalog/r320-ex", "image_url": "https://ladzavod.ru/img/r320-ex.png"},
-            ],
-            "LAD LED R500 2Ex": [
-                {"category_id": 119, "category_name": "LAD LED R500 2Ex", "lamp_count": 1, "url": "https://ladzavod.ru/catalog/lad-led-r500-2ex", "image_url": "https://ladzavod.ru/img/r500-2ex.png"},
-            ],
+    def _executable_tree():
+        return {
+            14: [14],
+            39: [39],
+            68: [68],
+            69: [69],
+            79: [79],
+            87: [87],
+            119: [119],
+            161: [79],
+            164: [164],
+            166: [18, 119],
+            169: [169],
+            170: [170],
+            37: [68, 69],
+            18: [18],
         }
-        return mapping.get(term, [])
 
     @staticmethod
     def _lamp_row(
@@ -528,13 +673,33 @@ class ApplicationRecommendationConn:
             return self._reference_categories()
         if "application_reference_portfolio" in sql:
             return self._portfolio_rows()
-        if "application_parent_categories" in sql:
+        if "curated_sphere_categories" in sql:
             sphere_id = args[0]
             return [row for row in self._reference_categories() if row["sphere_id"] == sphere_id]
-        if "application_leaf_categories" in sql:
-            term = args[0]
-            self.last_leaf_terms.append(term)
-            return self._leaf_categories(term)
+        if "sphere_curated_categories" in sql:
+            fuzzy, sphere_query = args
+            sphere_query = sphere_query.lower()
+            matched_spheres = {
+                row["sphere_id"]
+                for row in self._sphere_rows()
+                if sphere_query in row["name"].lower() or (fuzzy and ("склад" in sphere_query and row["sphere_id"] == 3))
+            }
+            return [row for row in self._reference_categories() if row["sphere_id"] in matched_spheres]
+        if "display_category_executable_expansion" in sql:
+            category_ids = [int(value) for value in args[0]]
+            self.last_executable_roots = category_ids
+            rows = []
+            tree = self._executable_tree()
+            for root_id in category_ids:
+                rows.append({"root_category_id": root_id, "category_id": root_id, "is_leaf": len(tree.get(root_id, [root_id])) == 1 and tree.get(root_id, [root_id])[0] == root_id})
+                for child_id in tree.get(root_id, []):
+                    if child_id == root_id:
+                        continue
+                    rows.append({"root_category_id": root_id, "category_id": child_id, "is_leaf": True})
+            return rows
+        if "exact_display_category_lookup" in sql:
+            category = str(args[0]).lower()
+            return [row for row in self._category_by_id().values() if str(row["category_name"]).lower() == category]
         if "application_lamps" in sql:
             category_ids = set(args[0])
             rows = []
@@ -559,9 +724,66 @@ class ApplicationRecommendationConn:
             if 119 in category_ids:
                 rows.append(self._lamp_row(6103, name="LAD LED R500 2Ex-120", category_id=119, category_name="LAD LED R500 2Ex", power_w=120, luminous_flux_lm=15800, ip="IP67", mounting_type="Лира", beam_pattern="60°", image_url="https://ladzavod.ru/img/r500-2ex-120.png", url="https://ladzavod.ru/catalog/lad-led-r500-2ex/r500-2ex-120", is_explosion_protected=True))
             return rows
+        if "category_lamps_by_ids" in sql:
+            rows = await self.fetch("/* application_lamps */", args[0])
+            return sorted(rows, key=lambda row: row["name"])
         if "application_portfolio" in sql:
             sphere_id = args[0]
             return [row for row in self._portfolio_rows() if row["sphere_id"] == sphere_id]
+        return []
+
+
+class PortfolioSphereResolutionConn:
+    @staticmethod
+    def _sphere_rows():
+        return [
+            {"sphere_id": 1, "name": "Промышленное освещение", "url": "https://ladzavod.ru/catalog/prom"},
+            {"sphere_id": 5, "name": "РЖД", "url": "https://ladzavod.ru/catalog/rzd"},
+        ]
+
+    @staticmethod
+    def _portfolio_rows():
+        return [
+            {
+                "portfolio_id": 701,
+                "sphere_id": 1,
+                "sphere_name": "Промышленное освещение",
+                "name": "Освещение производственного цеха",
+                "group_name": "Промышленность",
+                "url": "https://ladzavod.ru/portfolio/prom",
+                "image_url": "https://ladzavod.ru/img/prom.png",
+            },
+            {
+                "portfolio_id": 702,
+                "sphere_id": 5,
+                "sphere_name": "РЖД",
+                "name": "Освещение инфраструктуры РЖД",
+                "group_name": "РЖД",
+                "url": "https://ladzavod.ru/portfolio/rzd",
+                "image_url": "https://ladzavod.ru/img/rzd.png",
+            },
+        ]
+
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "application_reference_spheres" in sql:
+            return self._sphere_rows()
+        if "application_reference_categories" in sql:
+            return []
+        if "application_reference_portfolio" in sql:
+            return self._portfolio_rows()
+        if "FROM corp.portfolio p" in sql and "JOIN corp.spheres s" in sql:
+            fuzzy, sphere_query, limit, offset = args
+            normalized_query = str(sphere_query).lower()
+            rows = []
+            for row in self._portfolio_rows():
+                sphere_name = str(row["sphere_name"]).lower()
+                if fuzzy:
+                    if normalized_query in sphere_name:
+                        rows.append(dict(row))
+                elif normalized_query == sphere_name:
+                    rows.append(dict(row))
+            return rows[offset : offset + limit]
         return []
 
 
@@ -714,11 +936,87 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "application_recommendation")
         self.assertEqual(payload["resolved_application"]["application_key"], "sports_high_power")
         self.assertEqual(payload["resolved_application"]["resolution_strategy"], "synonym_map")
-        self.assertEqual(payload["categories"][0]["image_url"], "https://ladzavod.ru/img/r500-9.png")
+        self.assertEqual(payload["categories"][0]["category_name"], "LAD LED R500 SPORT")
+        self.assertEqual(payload["categories"][0]["image_url"], "https://ladzavod.ru/img/r500-sport.png")
+        self.assertEqual(payload["categories"][1]["executable_category_ids"], [68, 69])
         self.assertEqual(payload["recommended_lamps"][0]["name"], "LAD LED R500-12-30-6-850LZD")
         self.assertIn("стадионного света", payload["recommended_lamps"][0]["recommendation_reason"])
         self.assertEqual(payload["portfolio_examples"][0]["url"], "https://ladzavod.ru/portfolio/stadium")
         self.assertIn("Уточните высоту установки", payload["follow_up_question"])
+
+    def test_sphere_curated_categories_returns_configured_display_order(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "sphere_curated_categories", "sphere": "склад", "fuzzy": True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["kind"], "sphere_curated_categories")
+        self.assertEqual([row["category_name"] for row in payload["results"]], ["LAD LED LINE-OZ", "LAD LED R500"])
+        self.assertEqual(payload["results"][1]["executable_category_ids"], [68, 69])
+        self.assertFalse(payload["results"][1]["is_leaf"])
+
+    def test_portfolio_by_sphere_resolves_rzd_from_catalog_before_profiles(self):
+        conn = PortfolioSphereResolutionConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "portfolio_by_sphere", "sphere": "ржд", "query": "какие объекты были реализованы для ржд", "fuzzy": True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["results"][0]["sphere_name"], "РЖД")
+
+    def test_portfolio_by_sphere_resolves_industrial_wording_from_catalog(self):
+        conn = PortfolioSphereResolutionConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "portfolio_by_sphere",
+                    "sphere": "промышленные объекты",
+                    "query": "какие реализованные объекты есть для промышленных объектов",
+                    "fuzzy": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["results"][0]["sphere_name"], "Промышленное освещение")
+
+    def test_category_lamps_expands_exact_display_category_to_leaf_ids(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "category_lamps", "category": "LAD LED R500"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["filters"]["category_query_semantics"], "display_category_to_executable")
+        self.assertEqual(payload["filters"]["executable_category_ids"], [68, 69])
+        self.assertEqual([row["category_id"] for row in payload["results"]], [69, 68])
 
     def test_application_recommendation_normalizes_quarry_typo(self):
         conn = ApplicationRecommendationConn()
@@ -1034,6 +1332,26 @@ class CorpDbRouteTests(unittest.TestCase):
         _, args = conn.queries[0]
         self.assertEqual(len(args), 8)
         self.assertEqual(args[7], ["kb_chunk"])
+
+    def test_category_mountings_accepts_series_filter(self):
+        conn = QueryCaptureConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "category_mountings", "series": "NL VEGA"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["filters"]["series"], "NL VEGA")
+        self.assertEqual(len(conn.queries), 1)
+        sql, args = conn.queries[0]
+        self.assertIn("cm.series ILIKE", sql)
+        self.assertEqual(args[:-2], ("NL VEGA",))
 
     def test_hybrid_search_filters_rows_by_kb_route_scope_after_query(self):
         with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(KbRouteScopeConn()))):

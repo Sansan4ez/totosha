@@ -60,7 +60,7 @@ services:
     ports:
       - "127.0.0.1:8317:8317"
     volumes:
-      - ../CLIProxyAPI-fork/config.yaml:/CLIProxyAPI/config.yaml:ro
+      - ../CLIProxyAPI-fork/config.yaml:/CLIProxyAPI/config.yaml
       - ../CLIProxyAPI-fork/auths:/CLIProxyAPI/auths
       - ../CLIProxyAPI-fork/static:/CLIProxyAPI/static
       - ../CLIProxyAPI-fork/logs:/CLIProxyAPI/logs
@@ -113,7 +113,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 25s
+      start_period: 90s
     deploy:
       resources:
         limits:
@@ -367,6 +367,8 @@ services:
     volumes:
       - ./workspace:/workspace
       - ./workspace/_shared:/data  # Skills, shared data, and admin config
+      - ./db:/db:ro
+      - ./docs:/docs:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - google-workspace-creds:/data/google_creds  # Share Google credentials with MCP
     networks:
