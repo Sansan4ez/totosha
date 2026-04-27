@@ -110,6 +110,7 @@ docker compose --profile userbot up -d --build
 ```bash
 docker compose ps
 python3 scripts/doctor.py
+docker logs corp-db-migrator --tail 100
 
 docker logs core --tail 100
 docker logs bot --tail 100
@@ -118,6 +119,7 @@ docker logs google-workspace-mcp --tail 100
 ```
 
 Если `doctor.py` показывает критические проблемы — исправить до боевого запуска.
+Для существующих `corp-db` volume `corp-db-migrator` автоматически применяет live-upgrade RFC-026; если он упал или `doctor.py` показывает drift, выполнить `docker compose up -d --build corp-db corp-db-migrator tools-api` и перепроверить.
 
 ## 10. Доступ к админке через SSH tunnel
 

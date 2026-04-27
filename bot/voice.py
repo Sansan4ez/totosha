@@ -9,6 +9,7 @@ from config import ASR_URL, ASR_TIMEOUT, ASR_LANGUAGE
 
 _CHATGPT_CHALLENGE_RETRY_DELAYS = (0.3, 0.9)
 _CHATGPT_CHALLENGE_MARKERS = (
+    "upstream_challenge",
     "challenge-platform",
     "enable javascript and cookies to continue",
     "__cf_chl",

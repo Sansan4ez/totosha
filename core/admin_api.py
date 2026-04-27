@@ -1606,7 +1606,18 @@ async def _test_asr_connection(config: dict) -> dict:
                     "status": "ready",
                     "url": _resolve_chatgpt_asr_endpoint(url),
                     "api_type": "chatgpt",
-                    "note": "ChatGPT /transcribe endpoint configured"
+                    "backend_mode": "chatgpt_compat",
+                    "note": "ChatGPT-compatible /transcribe route is configured via the CLIProxyAPI fork compatibility path.",
+                    "operator_note": "If voice failures occur, verify CLIProxyAPI /v0/management/transcribe-health and /v0/management/auth-files to distinguish a working compatibility path from upstream challenge blocking.",
+                    "operator_visibility": {
+                        "transcribe_health": "CLIProxyAPI /v0/management/transcribe-health",
+                        "credential_details": "CLIProxyAPI /v0/management/auth-files",
+                    },
+                    "fork_contract": {
+                        "branch": "feature/chatgpt-transcribe-endpoint",
+                        "checkout": "../CLIProxyAPI-fork",
+                    },
+                    "recommended_default": "Prefer openai or faster-whisper as the stable production default; keep chatgpt-compat as compatibility or fallback only.",
                 }
             if api_type == "openai":
                 endpoint = _resolve_openai_asr_endpoint(url)

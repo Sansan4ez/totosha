@@ -53,6 +53,15 @@ class VoiceTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "upstream_auth")
 
+    def test_raise_asr_http_error_classifies_structured_upstream_challenge(self):
+        with self.assertRaises(_MODULE.ASRTranscriptionError) as ctx:
+            _MODULE._raise_asr_http_error(
+                403,
+                '{"error":{"message":"chatgpt transcribe upstream returned challenge HTML","code":"upstream_challenge"}}',
+            )
+
+        self.assertEqual(ctx.exception.code, "upstream_challenge")
+
     def test_chatgpt_retry_retries_only_on_upstream_challenge(self):
         calls = {"count": 0}
 
