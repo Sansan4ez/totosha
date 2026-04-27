@@ -292,6 +292,85 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(sent["source_files"], ["about_Luxnet.md"])
         self.assertEqual(sent["topic_facets"], ["definition"])
 
+    def test_tool_strips_application_limits_from_non_application_kinds(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {"status": "success", "kind": "hybrid_search", "results": []}
+
+        aiohttp_stub = _aiohttp_stub_for_payload(payload)
+        with patch.object(_MODULE, "aiohttp", aiohttp_stub):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {
+                        "kind": "hybrid_search",
+                        "query": "что порекомендуешь для ржд",
+                        "limit_categories": 0,
+                        "limit_lamps": 0,
+                        "limit_portfolio": 0,
+                    },
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        sent = aiohttp_stub._state.last_session.last_post_kwargs["json"]
+        self.assertEqual(sent["kind"], "hybrid_search")
+        self.assertNotIn("limit_categories", sent)
+        self.assertNotIn("limit_lamps", sent)
+        self.assertNotIn("limit_portfolio", sent)
+
+    def test_tool_normalizes_application_recommendation_limits_and_drops_unrelated_args(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {"status": "success", "kind": "application_recommendation", "results": []}
+
+        aiohttp_stub = _aiohttp_stub_for_payload(payload)
+        with patch.object(_MODULE, "aiohttp", aiohttp_stub):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {
+                        "kind": "application_recommendation",
+                        "query": "что порекомендуешь для ржд",
+                        "profile": "entity_resolver",
+                        "limit_categories": 0,
+                        "limit_lamps": 2,
+                        "limit_portfolio": -1,
+                    },
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        sent = aiohttp_stub._state.last_session.last_post_kwargs["json"]
+        self.assertEqual(
+            sent,
+            {
+                "kind": "application_recommendation",
+                "query": "что порекомендуешь для ржд",
+                "limit_lamps": 2,
+            },
+        )
+
+    def test_tool_drops_route_card_ids_from_knowledge_route_id(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {"status": "success", "kind": "hybrid_search", "results": []}
+
+        aiohttp_stub = _aiohttp_stub_for_payload(payload)
+        with patch.object(_MODULE, "aiohttp", aiohttp_stub):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {
+                        "kind": "hybrid_search",
+                        "profile": "entity_resolver",
+                        "knowledge_route_id": "corp_db.catalog_lookup",
+                        "query": "какие серии светильников",
+                    },
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        sent = aiohttp_stub._state.last_session.last_post_kwargs["json"]
+        self.assertNotIn("knowledge_route_id", sent)
+
     def test_tool_returns_error_when_payload_status_is_error(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
         payload = {

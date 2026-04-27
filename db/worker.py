@@ -13,8 +13,9 @@ from opentelemetry import trace
 from pgvector.asyncpg import register_vector
 
 from catalog_loader import seed_json_sources
-from common import DEFAULT_KB_MANIFEST, DEFAULT_SOURCES_DIR, DEFAULT_WIKI_DIR, get_rw_dsn
+from common import DEFAULT_KB_MANIFEST, DEFAULT_SOURCES_DIR, DEFAULT_WIKI_DIR, get_admin_dsn, get_rw_dsn
 from kb_loader import seed_knowledge_chunks
+from live_migration import ensure_rfc026_schema
 from observability import setup_observability
 from search_docs import build_search_docs, validate_search_docs
 
@@ -28,9 +29,9 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
     await conn.execute(f"SET statement_timeout = {timeout_ms}")
 
 
-async def get_pool() -> asyncpg.Pool:
+async def get_pool(dsn: str | None = None) -> asyncpg.Pool:
     return await asyncpg.create_pool(
-        get_rw_dsn(),
+        dsn or get_rw_dsn(),
         min_size=1,
         max_size=4,
         init=_init_connection,
@@ -47,6 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-embeddings", action="store_true", help="Build rows without vector embeddings")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("ensure-rfc026", help="Apply idempotent RFC-026 schema/data upgrades for live corp-db volumes")
     subparsers.add_parser("seed-json", help="Load canonical JSON sources into normalized tables")
     subparsers.add_parser("seed-kb", help="Load promoted wiki subset into knowledge_chunks")
     subparsers.add_parser("build-search-docs", help="Rebuild corp_search_docs from normalized tables and validate KB routes")
@@ -57,7 +59,7 @@ def parse_args() -> argparse.Namespace:
 
 async def main() -> None:
     args = parse_args()
-    pool = await get_pool()
+    pool = await get_pool(get_admin_dsn() if args.command == "ensure-rfc026" else None)
     try:
         tracer = trace.get_tracer("corp-db-worker")
         with tracer.start_as_current_span(f"corp-db-worker.{args.command}") as span:
@@ -69,7 +71,12 @@ async def main() -> None:
             async with pool.acquire() as conn:
                 result: dict[str, object]
                 embeddings_enabled = not args.skip_embeddings
-                if args.command == "seed-json":
+                if args.command == "ensure-rfc026":
+                    result = {
+                        "command": "ensure-rfc026",
+                        "counts": await ensure_rfc026_schema(conn, args.sources_dir),
+                    }
+                elif args.command == "seed-json":
                     result = {
                         "command": "seed-json",
                         "counts": await seed_json_sources(conn, args.sources_dir),

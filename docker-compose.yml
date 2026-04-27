@@ -86,6 +86,8 @@ services:
         condition: service_healthy
       corp-db:
         condition: service_healthy
+      corp-db-migrator:
+        condition: service_completed_successfully
     # Uncomment to expose port (set TOOLS_API_PORT in .env):
     # ports:
     #   - "${TOOLS_API_PORT:-8100}:8100"
@@ -149,6 +151,35 @@ services:
         limits:
           cpus: '1.0'
           memory: 1G
+
+  # ============ CORP DB MIGRATOR - idempotent live schema/data upgrades ============
+  corp-db-migrator:
+    build:
+      context: ./db
+      dockerfile: worker.Dockerfile
+    container_name: corp-db-migrator
+    restart: "no"
+    depends_on:
+      corp-db:
+        condition: service_healthy
+    command: ["--sources-dir", "/db", "ensure-rfc026"]
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - CORP_DB_NAME=${CORP_DB_NAME:-corp_pg_db}
+      - CORP_DB_ADMIN_USER=${CORP_DB_ADMIN_USER:-postgres}
+      - CORP_DB_ADMIN_HOST=corp-db
+      - OTEL_SERVICE_NAME=corp-db-migrator
+    secrets:
+      - postgres_password
+    volumes:
+      - ./db:/db:ro
+    networks:
+      - agent-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
   # ============ CORP DB WORKER - Operator-only rebuild flow ============
   corp-db-worker:

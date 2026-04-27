@@ -76,6 +76,7 @@ CORRELATION_FIELDS = (
     "retrieval_phase",
     "retrieval_evidence_status",
     "retrieval_close_reason",
+    "application_recovery_outcome",
     "route_selector_status",
     "routing_catalog_version",
     "routing_guardrail_hits",
@@ -97,6 +98,7 @@ CORRELATION_FIELD_DEFAULTS = {
     "retrieval_phase": "-",
     "retrieval_evidence_status": "-",
     "retrieval_close_reason": "-",
+    "application_recovery_outcome": "-",
     "route_selector_status": "-",
     "routing_catalog_version": "-",
     "routing_guardrail_hits": "0",
@@ -118,6 +120,7 @@ SPAN_ATTRIBUTE_NAMES = {
     "retrieval_phase": "retrieval_phase",
     "retrieval_evidence_status": "retrieval_evidence_status",
     "retrieval_close_reason": "retrieval_close_reason",
+    "application_recovery_outcome": "application_recovery_outcome",
     "route_selector_status": "route_selector_status",
     "routing_catalog_version": "routing_catalog_version",
     "routing_guardrail_hits": "routing_guardrail_hits",
@@ -242,6 +245,33 @@ TOOL_EXECUTION_DURATION_MS = Histogram(
     ),
     registry=REGISTRY,
     buckets=LATENCY_BUCKETS_MS,
+)
+LLM_CONTEXT_PRETRIM_CHARS = Histogram(
+    "llm_context_pretrim_characters",
+    "Estimated LLM context size before trimming, grouped by call stage.",
+    labelnames=("service", "purpose", "hard_stop"),
+    registry=REGISTRY,
+    buckets=(256, 512, 1024, 2048, 4096, 8192, 12000, 16000, 24000, 32000, 40000, 50000, 65000, 80000),
+)
+LLM_CONTEXT_POSTTRIM_CHARS = Histogram(
+    "llm_context_posttrim_characters",
+    "Estimated LLM context size after trimming, grouped by call stage.",
+    labelnames=("service", "purpose", "hard_stop"),
+    registry=REGISTRY,
+    buckets=(256, 512, 1024, 2048, 4096, 8192, 12000, 16000, 24000, 32000, 40000, 50000, 65000, 80000),
+)
+LLM_CONTEXT_REMOVED_MESSAGES = Histogram(
+    "llm_context_removed_messages",
+    "Number of messages removed while fitting context to budget.",
+    labelnames=("service", "purpose", "hard_stop"),
+    registry=REGISTRY,
+    buckets=(0, 1, 2, 3, 5, 8, 13, 21, 34),
+)
+LLM_CONTEXT_TRIM_HARD_STOPS_TOTAL = Counter(
+    "llm_context_trim_hard_stops_total",
+    "Count of LLM requests that could not be brought under the context budget.",
+    labelnames=("service", "purpose"),
+    registry=REGISTRY,
 )
 
 
@@ -384,6 +414,24 @@ def observe_tool_execution(tool_name: str, tool_status: str, duration_ms: float)
     )
     TOOL_EXECUTIONS_TOTAL.labels(*labels).inc()
     TOOL_EXECUTION_DURATION_MS.labels(*labels).observe(duration_ms)
+
+
+def observe_context_trim(
+    *,
+    purpose: str,
+    pre_chars: int,
+    post_chars: int,
+    removed_messages: int,
+    hard_stop: bool,
+) -> None:
+    purpose_label = (purpose or "agent_loop").strip() or "agent_loop"
+    hard_stop_label = "true" if hard_stop else "false"
+    labels = (ACTIVE_SERVICE_NAME, purpose_label, hard_stop_label)
+    LLM_CONTEXT_PRETRIM_CHARS.labels(*labels).observe(max(0, int(pre_chars)))
+    LLM_CONTEXT_POSTTRIM_CHARS.labels(*labels).observe(max(0, int(post_chars)))
+    LLM_CONTEXT_REMOVED_MESSAGES.labels(*labels).observe(max(0, int(removed_messages)))
+    if hard_stop:
+        LLM_CONTEXT_TRIM_HARD_STOPS_TOTAL.labels(ACTIVE_SERVICE_NAME, purpose_label).inc()
 
 
 def observe_chat_request(request_source: str, status: str, duration_ms: float) -> None:

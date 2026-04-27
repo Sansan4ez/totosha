@@ -14,6 +14,8 @@ import json
 import stat
 import socket
 import argparse
+import shutil
+import subprocess
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
@@ -77,6 +79,7 @@ Checking 5 layers of protection:
         self.check_workspace_permissions()
         self.check_access_mode()
         self.check_resource_limits()
+        self.check_corp_db_rfc026_schema()
         
         print("=" * 60)
         self.print_summary()
@@ -410,6 +413,204 @@ Checking 5 layers of protection:
         self.check("sandbox_timeout", has_timeout,
                   "Command timeout configured" if has_timeout else "No command timeout!",
                   "medium")
+
+    def check_corp_db_rfc026_schema(self):
+        """Check live corp-db RFC-026 schema/data drift."""
+        print(f"\n{BLUE}[10/10] Checking corp-db RFC-026 schema...{RESET}")
+
+        expected_counts = self._expected_rfc026_counts()
+        if expected_counts is None:
+            self.check(
+                "corp_db_rfc026_sources",
+                False,
+                "db/categories.json or db/spheres.json missing",
+                "high",
+                "Restore canonical corp-db source files in db/",
+            )
+            return
+
+        if shutil.which("docker") is None:
+            self.check(
+                "corp_db_rfc026_schema",
+                False,
+                "docker CLI not available; skipped live corp-db RFC-026 verification",
+                "medium",
+                "Run doctor on the Docker host to verify live corp-db schema drift",
+            )
+            return
+
+        compose_ps = self._run_docker_compose(["ps", "-q", "corp-db"])
+        if compose_ps.returncode != 0:
+            self.check(
+                "corp_db_rfc026_schema",
+                False,
+                f"docker compose ps failed: {compose_ps.stderr.strip() or compose_ps.stdout.strip()}",
+                "high",
+                "Fix docker compose access, then rerun doctor",
+            )
+            return
+
+        if not compose_ps.stdout.strip():
+            self.check(
+                "corp_db_rfc026_schema",
+                False,
+                "corp-db container is not running; skipped live RFC-026 verification",
+                "medium",
+                "Start corp-db and rerun doctor",
+            )
+            return
+
+        query = """
+        SELECT json_build_object(
+            'sphere_curated_categories_table',
+            to_regclass('corp.sphere_curated_categories') IS NOT NULL,
+            'categories_parent_category_id_column',
+            EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'corp'
+                  AND table_name = 'categories'
+                  AND column_name = 'parent_category_id'
+            ),
+            'categories_parent_fk',
+            EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'categories_parent_category_id_fkey'
+                  AND conrelid = 'corp.categories'::regclass
+            ),
+            'idx_categories_parent_category_id',
+            to_regclass('corp.idx_categories_parent_category_id') IS NOT NULL,
+            'idx_sphere_curated_categories_category_id',
+            to_regclass('corp.idx_sphere_curated_categories_category_id') IS NOT NULL,
+            'idx_sphere_curated_categories_sphere_position',
+            to_regclass('corp.idx_sphere_curated_categories_sphere_position') IS NOT NULL,
+            'curated_rows',
+            CASE
+                WHEN to_regclass('corp.sphere_curated_categories') IS NULL THEN NULL
+                ELSE (SELECT count(*) FROM corp.sphere_curated_categories)
+            END,
+            'parent_links',
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'corp'
+                      AND table_name = 'categories'
+                      AND column_name = 'parent_category_id'
+                ) THEN (SELECT count(*) FROM corp.categories WHERE parent_category_id IS NOT NULL)
+                ELSE NULL
+            END
+        )::text;
+        """
+        query_result = self._run_docker_compose(
+            [
+                "exec",
+                "-T",
+                "corp-db",
+                "psql",
+                "-U",
+                os.getenv("CORP_DB_ADMIN_USER", "postgres"),
+                "-d",
+                os.getenv("CORP_DB_NAME", "corp_pg_db"),
+                "-Atqc",
+                query,
+            ]
+        )
+        if query_result.returncode != 0:
+            self.check(
+                "corp_db_rfc026_schema",
+                False,
+                f"failed to query corp-db RFC-026 schema: {query_result.stderr.strip() or query_result.stdout.strip()}",
+                "high",
+                "Inspect corp-db logs and rerun the corp-db migrator",
+            )
+            return
+
+        try:
+            payload = json.loads(query_result.stdout.strip())
+        except json.JSONDecodeError as exc:
+            self.check(
+                "corp_db_rfc026_schema",
+                False,
+                f"invalid corp-db RFC-026 schema payload: {exc}",
+                "high",
+                "Inspect doctor query output and corp-db logs",
+            )
+            return
+
+        missing_objects = []
+        object_checks = {
+            "sphere_curated_categories_table": "corp.sphere_curated_categories",
+            "categories_parent_category_id_column": "corp.categories.parent_category_id",
+            "categories_parent_fk": "categories_parent_category_id_fkey",
+            "idx_categories_parent_category_id": "idx_categories_parent_category_id",
+            "idx_sphere_curated_categories_category_id": "idx_sphere_curated_categories_category_id",
+            "idx_sphere_curated_categories_sphere_position": "idx_sphere_curated_categories_sphere_position",
+        }
+        for key, label in object_checks.items():
+            if not payload.get(key):
+                missing_objects.append(label)
+
+        self.check(
+            "corp_db_rfc026_schema_objects",
+            not missing_objects,
+            "RFC-026 schema objects present"
+            if not missing_objects
+            else f"Missing RFC-026 schema objects: {', '.join(missing_objects)}",
+            "critical" if missing_objects else "low",
+            "Run `docker compose up -d --build corp-db corp-db-migrator tools-api` to apply the live migration",
+        )
+
+        curated_rows = payload.get("curated_rows")
+        expected_curated_rows = expected_counts["curated_rows"]
+        self.check(
+            "corp_db_rfc026_curated_seed",
+            curated_rows == expected_curated_rows,
+            f"curated sphere/category rows: {curated_rows}/{expected_curated_rows}",
+            "high" if curated_rows != expected_curated_rows else "low",
+            "Rerun `docker compose up -d corp-db-migrator` or inspect db/spheres.json drift",
+        )
+
+        parent_links = payload.get("parent_links")
+        expected_parent_links = expected_counts["parent_links"]
+        self.check(
+            "corp_db_rfc026_parent_links",
+            parent_links is not None and parent_links >= expected_parent_links,
+            f"category parent links: {parent_links}/{expected_parent_links}",
+            "high" if parent_links is None or parent_links < expected_parent_links else "low",
+            "Rerun `docker compose up -d corp-db-migrator` or inspect db/categories.json drift",
+        )
+
+    def _expected_rfc026_counts(self) -> Optional[dict[str, int]]:
+        categories_path = self.root / "db" / "categories.json"
+        spheres_path = self.root / "db" / "spheres.json"
+        if not categories_path.exists() or not spheres_path.exists():
+            return None
+
+        categories_payload = json.loads(categories_path.read_text(encoding="utf-8"))
+        spheres_payload = json.loads(spheres_path.read_text(encoding="utf-8"))
+
+        return {
+            "parent_links": sum(
+                1
+                for row in categories_payload.get("categories", [])
+                if isinstance(row, dict) and row.get("parent") and row["parent"].get("id") is not None
+            ),
+            "curated_rows": sum(
+                len(row.get("curatedCategoryIds", []))
+                for row in spheres_payload.get("spheres", [])
+                if isinstance(row, dict)
+            ),
+        }
+
+    def _run_docker_compose(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["docker", "compose", *args],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        )
     
     def print_summary(self):
         """Print summary of all checks"""

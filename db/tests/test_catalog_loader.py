@@ -28,8 +28,8 @@ class FakeConn:
         self.execute_calls = []
         self.executemany_calls = []
 
-    async def execute(self, query):
-        self.execute_calls.append(str(query))
+    async def execute(self, query, *args):
+        self.execute_calls.append((str(query), list(args)))
         return "OK"
 
     async def executemany(self, query, args):
@@ -129,7 +129,7 @@ class CatalogLoaderTests(unittest.TestCase):
             ):
                 stats = asyncio.run(seed_json_sources(conn, base))
 
-        self.assertIn("corp.sphere_curated_categories", conn.execute_calls[0])
+        self.assertIn("corp.sphere_curated_categories", conn.execute_calls[0][0])
         self.assertEqual(stats["category_parent_links"], 1)
         self.assertEqual(stats["sphere_categories"], 1)
         self.assertEqual(stats["sphere_curated_categories"], 1)

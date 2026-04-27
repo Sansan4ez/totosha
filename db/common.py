@@ -6,6 +6,7 @@ import os
 import re
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
+from urllib.parse import quote
 from urllib.parse import unquote, urlparse
 
 
@@ -16,6 +17,7 @@ DEFAULT_SOURCES_DIR = Path(os.getenv("CORP_DB_SOURCES_DIR", "/data/corp_pg_db/so
 DEFAULT_WIKI_DIR = Path(os.getenv("CORP_DB_WIKI_DIR", "/data/skills/corp-wiki-md-search/wiki"))
 DEFAULT_KB_MANIFEST = Path(os.getenv("CORP_DB_KB_MANIFEST", "/app/knowledge_base_manifest.yaml"))
 DEFAULT_RW_DSN_SECRET = Path("/run/secrets/corp_db_rw_dsn")
+DEFAULT_ADMIN_PASSWORD_SECRET = Path("/run/secrets/postgres_password")
 DEFAULT_PROXY_URL = os.getenv("PROXY_URL", "http://proxy:3200/v1").rstrip("/")
 
 WS_RE = re.compile(r"\s+")
@@ -37,6 +39,18 @@ def get_rw_dsn() -> str:
     if not dsn:
         raise RuntimeError("CORP_DB_RW_DSN is not configured")
     return dsn
+
+
+def get_admin_dsn() -> str:
+    password = read_secret_or_env(DEFAULT_ADMIN_PASSWORD_SECRET, "POSTGRES_PASSWORD")
+    if not password:
+        raise RuntimeError("postgres admin password is not configured")
+
+    user = os.getenv("CORP_DB_ADMIN_USER", "postgres").strip() or "postgres"
+    host = os.getenv("CORP_DB_ADMIN_HOST", "corp-db").strip() or "corp-db"
+    port = os.getenv("CORP_DB_PORT", "5432").strip() or "5432"
+    dbname = os.getenv("CORP_DB_NAME", "corp_pg_db").strip() or "corp_pg_db"
+    return f"postgresql://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}/{quote(dbname, safe='')}"
 
 
 def normalize_ws(value: object | None) -> str:

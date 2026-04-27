@@ -5,6 +5,7 @@ import os
 import json
 import re
 import aiohttp
+from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter
 from typing import Optional, Any
@@ -43,6 +44,11 @@ from observability import (
     record_span_event,
     update_correlation_context,
 )
+try:
+    from observability import observe_context_trim
+except Exception:
+    def observe_context_trim(**kwargs):
+        return None
 from run_meta import run_meta_append_artifact, run_meta_get, run_meta_update_llm
 from tool_output_policy import (
     EXECUTION_MODE_RUNTIME,
@@ -65,6 +71,17 @@ TOOLS_CACHE_TTL = 60  # seconds
 _userbot_available_cache = None
 _userbot_check_time = 0
 USERBOT_CHECK_TTL = 30  # seconds
+
+
+@dataclass
+class ContextBudgetResult:
+    messages: list[dict[str, Any]]
+    pre_chars: int
+    post_chars: int
+    removed_messages: int = 0
+    truncated_messages: int = 0
+    hard_stop: bool = False
+    reason: str = ""
 
 EXPLICIT_WIKI_KEYWORDS = (
     "wiki", "вики", "согласно wiki", "согласно вики", "найди в wiki", "найди в вики",
@@ -319,10 +336,7 @@ def _is_successful_application_recommendation(args: dict, tool_output: str, mess
     status = str(payload.get("status") or "")
     if status not in {"success", "needs_clarification"}:
         return False
-    if _is_application_recommendation_intent(message):
-        return True
-    query = _normalize_routing_text(args.get("query"))
-    return _text_has_any(query, APPLICATION_RECOMMENDATION_KEYWORDS)
+    return True
 
 
 def _is_successful_portfolio_by_sphere(args: dict, tool_output: str, message: str) -> bool:
@@ -619,7 +633,7 @@ async def _finalize_with_scoped_evidence(
             ),
         }
     )
-    result = await call_llm(finalizer_messages, [])
+    result = await call_llm(finalizer_messages, [], purpose="finalizer")
     if "error" in result:
         raise RuntimeError(str(result.get("error") or "finalizer LLM error"))
     choices = result.get("choices") or []
@@ -854,6 +868,7 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["finalizer_mode"] = str(state.get("finalizer_mode") or "")
         meta["retrieval_explicit_wiki_request"] = bool(state.get("explicit_wiki_request"))
         meta["routing_guardrail_hits"] = int(state.get("guardrail_activations", 0))
+        meta["application_recovery_outcome"] = str(state.get("application_recovery_outcome") or "")
         meta["company_fact_intent_type"] = str(state.get("company_fact_intent_type") or "")
         meta["company_fact_payload_relevant"] = bool(state.get("company_fact_payload_relevant"))
         meta["company_fact_finalizer_mode"] = str(state.get("company_fact_finalizer_mode") or "")
@@ -878,6 +893,7 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         retrieval_phase=str(state.get("retrieval_phase") or ""),
         retrieval_evidence_status=str(state.get("retrieval_evidence_status") or ""),
         retrieval_close_reason=str(state.get("retrieval_close_reason") or ""),
+        application_recovery_outcome=str(state.get("application_recovery_outcome") or ""),
         route_selector_status=str(state.get("route_selector_status") or ""),
         routing_catalog_version=str(state.get("routing_catalog_version") or ""),
         routing_guardrail_hits=int(state.get("guardrail_activations", 0)),
@@ -901,6 +917,7 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         span.set_attribute("retrieval.evidence_status", str(state.get("retrieval_evidence_status") or ""))
         span.set_attribute("retrieval.retry_count", int(state.get("retrieval_retry_count") or 0))
         span.set_attribute("retrieval.close_reason", str(state.get("retrieval_close_reason") or ""))
+        span.set_attribute("application.recovery_outcome", str(state.get("application_recovery_outcome") or ""))
         validated_arg_keys = state.get("retrieval_validated_arg_keys")
         if isinstance(validated_arg_keys, list):
             span.set_attribute("retrieval.validated_arg_keys", ",".join(str(item) for item in validated_arg_keys))
@@ -1650,12 +1667,63 @@ def estimate_context_size(messages: list) -> int:
     return sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
 
 
-def _llm_max_attempts() -> int:
-    """Maximum number of attempts for transient LLM failures."""
+def _int_env(name: str, default: int, *, minimum: int = 0) -> int:
     try:
-        return max(1, int(os.getenv("LLM_MAX_ATTEMPTS", "3")))
+        return max(minimum, int(os.getenv(name, str(default))))
     except ValueError:
-        return 3
+        return default
+
+
+def _float_env(name: str, default: float, *, minimum: float = 0.0) -> float:
+    try:
+        return max(minimum, float(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+def _max_context_chars() -> int:
+    return _int_env("MAX_CONTEXT_CHARS", 40000, minimum=1024)
+
+
+def _llm_max_attempts(purpose: str = "agent_loop") -> int:
+    """Maximum number of attempts for transient LLM failures."""
+    base_attempts = _int_env("LLM_MAX_ATTEMPTS", 3, minimum=1)
+    env_keys = {
+        "agent_loop": "LLM_AGENT_LOOP_MAX_ATTEMPTS",
+        "route_selector": "LLM_ROUTE_SELECTOR_MAX_ATTEMPTS",
+        "route_selector_repair": "LLM_ROUTE_SELECTOR_REPAIR_MAX_ATTEMPTS",
+        "finalizer": "LLM_FINALIZER_MAX_ATTEMPTS",
+    }
+    defaults = {
+        "agent_loop": base_attempts,
+        "route_selector": min(base_attempts, 2),
+        "route_selector_repair": 1,
+        "finalizer": min(base_attempts, 2),
+    }
+    env_name = env_keys.get(purpose)
+    if not env_name:
+        return base_attempts
+    return _int_env(env_name, defaults.get(purpose, base_attempts), minimum=1)
+
+
+def _llm_request_timeout_s(purpose: str = "agent_loop") -> float:
+    base_timeout = _float_env("LLM_TIMEOUT_S", 120.0, minimum=1.0)
+    env_keys = {
+        "agent_loop": "LLM_AGENT_LOOP_TIMEOUT_S",
+        "route_selector": "LLM_ROUTE_SELECTOR_TIMEOUT_S",
+        "route_selector_repair": "LLM_ROUTE_SELECTOR_REPAIR_TIMEOUT_S",
+        "finalizer": "LLM_FINALIZER_TIMEOUT_S",
+    }
+    defaults = {
+        "agent_loop": base_timeout,
+        "route_selector": min(base_timeout, 20.0),
+        "route_selector_repair": min(base_timeout, 15.0),
+        "finalizer": min(base_timeout, 20.0),
+    }
+    env_name = env_keys.get(purpose)
+    if not env_name:
+        return base_timeout
+    return _float_env(env_name, defaults.get(purpose, base_timeout), minimum=1.0)
 
 
 def _llm_retry_delay(attempt: int) -> float:
@@ -1665,6 +1733,352 @@ def _llm_retry_delay(attempt: int) -> float:
     except ValueError:
         base_delay = 0.75
     return max(0.0, base_delay * max(1, attempt))
+
+
+def _context_trim_marker(label: str) -> str:
+    return f"[{label} trimmed for context budget]"
+
+
+def _context_tool_call_ids(message: dict[str, Any]) -> list[str]:
+    ids: list[str] = []
+    tool_calls = message.get("tool_calls") or []
+    if not isinstance(tool_calls, list):
+        return ids
+    for item in tool_calls:
+        if not isinstance(item, dict):
+            continue
+        call_id = str(item.get("id") or "").strip()
+        if call_id:
+            ids.append(call_id)
+    return ids
+
+
+def _context_message_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group history into removal-safe blocks.
+
+    Assistant messages with tool_calls and the contiguous tool replies that
+    satisfy them are removed as one atomic block. Partial compaction is only
+    allowed later at the individual message-content level, never by deleting
+    just one side of a tool exchange.
+    """
+    entries = [{"key": idx, "message": dict(message)} for idx, message in enumerate(messages)]
+    blocks: list[dict[str, Any]] = []
+    idx = 0
+    while idx < len(entries):
+        entry = entries[idx]
+        message = entry["message"]
+        role = str(message.get("role") or "")
+        if role == "assistant" and message.get("tool_calls"):
+            block_entries = [entry]
+            idx += 1
+            while idx < len(entries) and str(entries[idx]["message"].get("role") or "") == "tool":
+                block_entries.append(entries[idx])
+                idx += 1
+            blocks.append(
+                {
+                    "kind": "tool_exchange" if len(block_entries) > 1 else "tool_call_orphan",
+                    "entries": block_entries,
+                }
+            )
+            continue
+        if role == "tool":
+            block_entries = [entry]
+            idx += 1
+            while idx < len(entries) and str(entries[idx]["message"].get("role") or "") == "tool":
+                block_entries.append(entries[idx])
+                idx += 1
+            blocks.append({"kind": "orphan_tool", "entries": block_entries})
+            continue
+        blocks.append({"kind": role or "context", "entries": [entry]})
+        idx += 1
+    return blocks
+
+
+def _flatten_context_blocks(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [entry["message"] for block in blocks for entry in block["entries"]]
+
+
+def _context_block_is_protected(block: dict[str, Any], protected_keys: set[int]) -> bool:
+    return any(entry["key"] in protected_keys for entry in block["entries"])
+
+
+def _context_drop_priority(block: dict[str, Any]) -> int:
+    kind = str(block.get("kind") or "")
+    if kind in {"tool_exchange", "tool_call_orphan", "orphan_tool"}:
+        return 0
+    if kind == "assistant":
+        return 2
+    if kind == "user":
+        return 3
+    if kind == "system":
+        return 99
+    return 4
+
+
+def _context_truncation_priority(entry_key: int, message: dict[str, Any], protected_keys: set[int]) -> int:
+    role = str(message.get("role") or "")
+    if role == "system":
+        return 99
+    if role == "tool":
+        return 0 if entry_key not in protected_keys else 1
+    if role == "assistant" and message.get("tool_calls"):
+        return 99
+    if role == "assistant":
+        return 3
+    if role == "user":
+        return 99
+    return 98
+
+
+def _context_messages_have_valid_tool_flow(messages: list[dict[str, Any]]) -> bool:
+    idx = 0
+    while idx < len(messages):
+        message = messages[idx]
+        role = str(message.get("role") or "")
+        if role == "assistant" and message.get("tool_calls"):
+            expected_ids = _context_tool_call_ids(message)
+            if not expected_ids:
+                return False
+            expected = set(expected_ids)
+            seen: set[str] = set()
+            idx += 1
+            while idx < len(messages) and str(messages[idx].get("role") or "") == "tool":
+                tool_call_id = str(messages[idx].get("tool_call_id") or "").strip()
+                if not tool_call_id or tool_call_id not in expected or tool_call_id in seen:
+                    return False
+                seen.add(tool_call_id)
+                idx += 1
+            if seen != expected:
+                return False
+            continue
+        if role == "tool":
+            return False
+        idx += 1
+    return True
+
+
+def _context_label(message: dict[str, Any]) -> str:
+    role = str(message.get("role") or "")
+    if role == "tool":
+        return "tool output"
+    if role == "assistant":
+        return "assistant context"
+    if role == "user":
+        return "user message"
+    return "context"
+
+
+def _compact_context_content(content: str, keep_chars: int, label: str) -> str:
+    marker = _context_trim_marker(label)
+    if not content:
+        return marker
+    if keep_chars <= 0:
+        return marker
+    if len(content) <= keep_chars:
+        return content
+    if keep_chars <= len(marker) + 8:
+        return marker
+    body_budget = keep_chars - len(marker) - 2
+    if body_budget <= 16:
+        return marker
+    head = min(len(content), max(16, int(body_budget * 0.65)))
+    tail = max(0, body_budget - head)
+    if tail == 0:
+        return f"{content[:body_budget]}\n{marker}"
+    return f"{content[:head]}\n{marker}\n{content[-tail:]}"
+
+
+def _truncate_message_to_size(message: dict[str, Any], max_message_chars: int, *, label: str) -> dict[str, Any] | None:
+    if max_message_chars <= 0:
+        return None
+    content = message.get("content")
+    text = content if isinstance(content, str) else str(content or "")
+    if not text:
+        return None
+    base_message = dict(message)
+    base_message["content"] = text
+    if estimate_context_size([base_message]) <= max_message_chars:
+        return base_message
+
+    low = 0
+    high = len(text)
+    best: dict[str, Any] | None = None
+    while low <= high:
+        keep_chars = (low + high) // 2
+        candidate = dict(base_message)
+        candidate["content"] = _compact_context_content(text, keep_chars, label)
+        candidate_size = estimate_context_size([candidate])
+        if candidate_size <= max_message_chars:
+            best = candidate
+            low = keep_chars + 1
+        else:
+            high = keep_chars - 1
+
+    if best is not None:
+        return best
+
+    fallback = dict(base_message)
+    fallback["content"] = _context_trim_marker(label)
+    if estimate_context_size([fallback]) <= max_message_chars:
+        return fallback
+    return None
+
+
+def _protected_context_keys(messages: list[dict[str, Any]]) -> set[int]:
+    protected: set[int] = set()
+    if not messages:
+        return protected
+    if str(messages[0].get("role") or "") == "system":
+        protected.add(0)
+    protected.add(len(messages) - 1)
+
+    for idx in range(len(messages) - 1, -1, -1):
+        if str(messages[idx].get("role") or "") == "user":
+            protected.add(idx)
+            break
+
+    if str(messages[-1].get("role") or "") == "tool":
+        for idx in range(len(messages) - 2, -1, -1):
+            role = str(messages[idx].get("role") or "")
+            if role == "assistant" and messages[idx].get("tool_calls"):
+                protected.add(idx)
+                break
+            if role != "tool":
+                break
+    return protected
+
+
+def _update_context_trim_meta(result: ContextBudgetResult, *, purpose: str) -> None:
+    meta = run_meta_get()
+    if not isinstance(meta, dict):
+        return
+    meta["context_trim_events"] = int(meta.get("context_trim_events", 0)) + 1
+    meta["context_trim_pre_chars_max"] = max(int(meta.get("context_trim_pre_chars_max", 0)), int(result.pre_chars))
+    meta["context_trim_post_chars_max"] = max(int(meta.get("context_trim_post_chars_max", 0)), int(result.post_chars))
+    meta["context_trim_removed_messages_total"] = int(meta.get("context_trim_removed_messages_total", 0)) + int(result.removed_messages)
+    meta["context_trim_truncated_messages_total"] = int(meta.get("context_trim_truncated_messages_total", 0)) + int(result.truncated_messages)
+    meta["context_trim_hard_stops"] = int(meta.get("context_trim_hard_stops", 0)) + (1 if result.hard_stop else 0)
+    meta["context_trim_last_stage"] = str(purpose or "agent_loop")
+    meta["context_trim_last_pre_chars"] = int(result.pre_chars)
+    meta["context_trim_last_post_chars"] = int(result.post_chars)
+    meta["context_trim_last_removed_messages"] = int(result.removed_messages)
+    meta["context_trim_last_truncated_messages"] = int(result.truncated_messages)
+    meta["context_trim_last_hard_stop"] = bool(result.hard_stop)
+    meta["context_trim_last_reason"] = str(result.reason or "")
+
+
+def _record_context_trim(result: ContextBudgetResult, *, purpose: str) -> None:
+    observe_context_trim(
+        purpose=purpose,
+        pre_chars=result.pre_chars,
+        post_chars=result.post_chars,
+        removed_messages=result.removed_messages,
+        hard_stop=result.hard_stop,
+    )
+    _update_context_trim_meta(result, purpose=purpose)
+    span = trace.get_current_span()
+    try:
+        span.set_attribute("llm.context_trim.stage", str(purpose or "agent_loop"))
+        span.set_attribute("llm.context_trim.pre_chars", int(result.pre_chars))
+        span.set_attribute("llm.context_trim.post_chars", int(result.post_chars))
+        span.set_attribute("llm.context_trim.removed_messages", int(result.removed_messages))
+        span.set_attribute("llm.context_trim.truncated_messages", int(result.truncated_messages))
+        span.set_attribute("llm.context_trim.hard_stop", bool(result.hard_stop))
+        span.set_attribute("llm.context_trim.reason", str(result.reason or ""))
+    except Exception:
+        return None
+
+
+def enforce_context_budget(messages: list[dict[str, Any]], max_chars: int) -> ContextBudgetResult:
+    blocks = _context_message_blocks(messages)
+    pre_messages = _flatten_context_blocks(blocks)
+    pre_chars = estimate_context_size(pre_messages)
+    if pre_chars <= max_chars:
+        return ContextBudgetResult(
+            messages=pre_messages,
+            pre_chars=pre_chars,
+            post_chars=pre_chars,
+        )
+
+    protected_keys = _protected_context_keys(messages)
+    removed_messages = 0
+    truncated_keys: set[int] = set()
+    current_messages = _flatten_context_blocks(blocks)
+    current_size = estimate_context_size(current_messages)
+
+    while current_size > max_chars:
+        removable_blocks = [
+            block for block in blocks
+            if not _context_block_is_protected(block, protected_keys)
+        ]
+        if not removable_blocks:
+            break
+        removable_blocks.sort(key=lambda block: (_context_drop_priority(block), block["entries"][0]["key"]))
+        block_to_remove = removable_blocks[0]
+        blocks = [block for block in blocks if block is not block_to_remove]
+        removed_messages += len(block_to_remove["entries"])
+        current_messages = _flatten_context_blocks(blocks)
+        current_size = estimate_context_size(current_messages)
+
+    while current_size > max_chars:
+        truncatable_entries = [
+            entry
+            for block in blocks
+            for entry in block["entries"]
+            if _context_truncation_priority(entry["key"], entry["message"], protected_keys) < 99
+        ]
+        if not truncatable_entries:
+            break
+        truncatable_entries.sort(
+            key=lambda entry: (
+                _context_truncation_priority(entry["key"], entry["message"], protected_keys),
+                -estimate_context_size([entry["message"]]),
+                entry["key"],
+            )
+        )
+        changed = False
+        for entry in truncatable_entries:
+            current_message_size = estimate_context_size([entry["message"]])
+            if current_message_size <= 0:
+                continue
+            excess_chars = current_size - max_chars
+            target_message_size = max(32, current_message_size - excess_chars)
+            truncated = _truncate_message_to_size(
+                entry["message"],
+                target_message_size,
+                label=_context_label(entry["message"]),
+            )
+            if truncated is None:
+                continue
+            new_message_size = estimate_context_size([truncated])
+            if new_message_size >= current_message_size:
+                continue
+            entry["message"] = truncated
+            truncated_keys.add(entry["key"])
+            current_messages = _flatten_context_blocks(blocks)
+            current_size = estimate_context_size(current_messages)
+            changed = True
+            break
+        if not changed:
+            break
+
+    current_messages = _flatten_context_blocks(blocks)
+    tool_flow_valid = _context_messages_have_valid_tool_flow(current_messages)
+    hard_stop = current_size > max_chars or not tool_flow_valid
+    reason = ""
+    if hard_stop:
+        reason = "tool_protocol_invalid_after_trim" if not tool_flow_valid and current_size <= max_chars else "protected_context_exceeds_budget"
+    elif removed_messages or truncated_keys:
+        reason = "trimmed_to_budget"
+    return ContextBudgetResult(
+        messages=current_messages,
+        pre_chars=pre_chars,
+        post_chars=current_size,
+        removed_messages=removed_messages,
+        truncated_messages=len(truncated_keys),
+        hard_stop=hard_stop,
+        reason=reason,
+    )
 
 
 def _should_retry_llm_status(status: int, error_text: str) -> bool:
@@ -1719,28 +2133,47 @@ def get_search_model() -> str:
     return ""
 
 
-async def call_llm(messages: list, tools: list, model_override: str = "") -> dict:
+async def call_llm(messages: list, tools: list, model_override: str = "", *, purpose: str = "agent_loop") -> dict:
     """Call LLM via proxy. model_override allows using a different model (e.g. for search responses)."""
     if not CONFIG.proxy_url:
         return {"error": "No proxy configured"}
-    
-    # Check context size - MLX struggles with very large contexts
-    context_size = estimate_context_size(messages)
-    max_context = int(os.getenv("MAX_CONTEXT_CHARS", "40000"))
-    
-    if context_size > max_context:
-        agent_logger.warning(f"Context too large ({context_size} chars > {max_context}), trimming...")
-        # Keep system message and trim history
-        system_msg = messages[0] if messages and messages[0].get("role") == "system" else None
-        user_msg = messages[-1] if messages and messages[-1].get("role") == "user" else None
-        
-        if system_msg and user_msg:
-            # Keep only system + last few messages + user
-            middle = messages[1:-1]
-            while estimate_context_size([system_msg] + middle + [user_msg]) > max_context and len(middle) > 2:
-                middle.pop(0)
-            messages = [system_msg] + middle + [user_msg]
-            agent_logger.info(f"Trimmed context to {estimate_context_size(messages)} chars")
+
+    max_context = _max_context_chars()
+    trim_result = enforce_context_budget(messages, max_context)
+    if trim_result.pre_chars > max_context:
+        _record_context_trim(trim_result, purpose=purpose)
+        if trim_result.hard_stop:
+            agent_logger.error(
+                "Context trim hard stop stage=%s pre=%s post=%s budget=%s removed=%s truncated=%s reason=%s",
+                purpose,
+                trim_result.pre_chars,
+                trim_result.post_chars,
+                max_context,
+                trim_result.removed_messages,
+                trim_result.truncated_messages,
+                trim_result.reason or "unknown",
+            )
+            return {
+                "error": (
+                    f"Context exceeds MAX_CONTEXT_CHARS ({trim_result.pre_chars} > {max_context}) "
+                    "and cannot be trimmed safely"
+                )
+            }
+        agent_logger.warning(
+            "Context too large for stage=%s (%s chars > %s), trimming...",
+            purpose,
+            trim_result.pre_chars,
+            max_context,
+        )
+        agent_logger.info(
+            "Trimmed context stage=%s to %s chars (budget=%s removed=%s truncated=%s)",
+            purpose,
+            trim_result.post_chars,
+            max_context,
+            trim_result.removed_messages,
+            trim_result.truncated_messages,
+        )
+    messages = trim_result.messages
     
     # MLX doesn't support tool calling - use prompt-based approach
     use_tools = not is_mlx_model() and tools
@@ -1795,7 +2228,8 @@ async def call_llm(messages: list, tools: list, model_override: str = "") -> dic
     request_id = OBS_REQUEST_ID.get("-")
     headers = inject_trace_context(request_id=request_id)
     llm_started = perf_counter()
-    max_attempts = _llm_max_attempts()
+    max_attempts = _llm_max_attempts(purpose)
+    request_timeout_s = _llm_request_timeout_s(purpose)
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -1804,7 +2238,7 @@ async def call_llm(messages: list, tools: list, model_override: str = "") -> dic
                     f"{CONFIG.proxy_url}/v1/chat/completions",
                     json=request_body,
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=120)
+                    timeout=aiohttp.ClientTimeout(total=request_timeout_s)
                 ) as resp:
                     if resp.status != 200:
                         error = await resp.text()
@@ -2264,6 +2698,79 @@ def _portfolio_bounded_failure_response(args: dict[str, Any], message: str) -> s
     )
 
 
+def _application_recovery_outcome(name: str, args: dict[str, Any], tool_result: ToolResult) -> str:
+    if name != "corp_db_search" or str(args.get("kind") or "") != "application_recommendation":
+        return ""
+    if not tool_result.success:
+        return "stopped_after_primary_error"
+    payload = _parse_json_object(tool_result.output or "")
+    status = str(payload.get("status") or "").strip().lower()
+    if status in {"success", "needs_clarification"}:
+        return ""
+    if status == "error":
+        return "stopped_after_primary_error"
+    return "bounded_application_fallback"
+
+
+def _application_failure_subject(message: str, args: dict[str, Any], payload: dict[str, Any]) -> str:
+    resolved = payload.get("resolved_application") if isinstance(payload.get("resolved_application"), dict) else {}
+    sphere_name = str(
+        resolved.get("sphere_name")
+        or args.get("sphere")
+        or _message_named_canonical_sphere(message)
+        or ""
+    ).strip()
+    if sphere_name and _normalize_routing_text(sphere_name) != _normalize_routing_text(message):
+        return f"для сферы «{sphere_name}»"
+    return "по этому запросу"
+
+
+def _application_bounded_failure_response(message: str, args: dict[str, Any], tool_result: ToolResult) -> str:
+    payload = _parse_json_object(tool_result.output or "") if tool_result.success else {}
+    follow_up = str(payload.get("follow_up_question") or "").strip() if isinstance(payload, dict) else ""
+    if follow_up:
+        return follow_up
+    subject = _application_failure_subject(message, args, payload if isinstance(payload, dict) else {})
+    return (
+        f"Не удалось уверенно подобрать рекомендацию {subject}. "
+        "Уточните тип объекта, высоту установки или требования к защите."
+    )
+
+
+def _application_primary_error_response(message: str, args: dict[str, Any], tool_result: ToolResult) -> str:
+    payload = _parse_json_object(tool_result.output or "") if tool_result.success else {}
+    subject = _application_failure_subject(message, args, payload if isinstance(payload, dict) else {})
+    return (
+        f"Сейчас не удалось получить рекомендацию {subject}. "
+        "Повторите запрос позже или уточните условия применения."
+    )
+
+
+def _short_circuit_application_failure(
+    *,
+    name: str,
+    args: dict[str, Any],
+    tool_result: ToolResult,
+    message: str,
+    routing_state: dict[str, Any],
+) -> str:
+    outcome = _application_recovery_outcome(name, args, tool_result)
+    if not outcome:
+        return ""
+    payload = _parse_json_object(tool_result.output or "") if tool_result.success else {}
+    status = str(payload.get("status") or "").strip().lower() if isinstance(payload, dict) else ""
+    routing_state["application_recovery_outcome"] = outcome
+    routing_state["selected_source"] = "corp_db"
+    routing_state["retrieval_evidence_status"] = "error" if outcome == "stopped_after_primary_error" else (status or "empty")
+    routing_state["retrieval_phase"] = "closed"
+    routing_state["retrieval_close_reason"] = outcome
+    routing_state["finalizer_mode"] = "deterministic_error" if outcome == "stopped_after_primary_error" else "deterministic_fallback"
+    _update_routing_observability(routing_state)
+    if outcome == "stopped_after_primary_error":
+        return _application_primary_error_response(message, args, tool_result)
+    return _application_bounded_failure_response(message, args, tool_result)
+
+
 async def _select_route_with_llm(
     routing_message: str,
     *,
@@ -2275,7 +2782,7 @@ async def _select_route_with_llm(
     if not candidate_routes:
         raise RuntimeError("route selector has no candidate routes")
 
-    result = await call_llm(_build_route_selector_messages(selector_payload), [])
+    result = await call_llm(_build_route_selector_messages(selector_payload), [], purpose="route_selector")
     selector_model = str(result.get("model") or get_model())
     if "error" in result:
         raise RuntimeError(str(result.get("error") or "route selector LLM error"))
@@ -2297,7 +2804,7 @@ async def _select_route_with_llm(
         repair_messages = _build_route_selector_messages(selector_payload)
         repair_messages.append({"role": "assistant", "content": content})
         repair_messages.append({"role": "user", "content": validation.repair_prompt})
-        repair_result = await call_llm(repair_messages, [])
+        repair_result = await call_llm(repair_messages, [], purpose="route_selector_repair")
         selector_model = str(repair_result.get("model") or selector_model)
         if "error" in repair_result:
             raise RuntimeError(str(repair_result.get("error") or "route selector repair LLM error"))
@@ -2484,7 +2991,12 @@ async def run_agent(
     messages.append({"role": "user", "content": message})
     
     # Trim if needed
-    messages = [messages[0]] + trim_history(messages[1:], CONFIG.max_context_messages, 50000)
+    context_headroom_chars = 2000
+    history_budget = max(
+        2000,
+        _max_context_chars() - estimate_context_size([messages[0], messages[-1]]) - context_headroom_chars,
+    )
+    messages = [messages[0]] + trim_history(messages[1:], CONFIG.max_context_messages, history_budget)
     
     tool_ctx = ToolContext(
         cwd=session.cwd,
@@ -2626,6 +3138,7 @@ async def run_agent(
         "corp_db_application_success": False,
         "corp_db_portfolio_success": False,
         "doc_search_document_success": False,
+        "application_recovery_outcome": "",
         "guardrail_activations": 0,
         "retrieval_tool_used": False,
         "company_fact_payload_relevant": False,
@@ -2674,6 +3187,15 @@ async def run_agent(
                 routing_state["retrieval_evidence_status"] = evidence_status
                 routing_state["selected_source"] = "doc_search" if primary_tool_name == "doc_search" else "corp_db"
                 routing_state["retrieval_close_reason"] = ""
+                short_circuit_response = _short_circuit_application_failure(
+                    name=primary_tool_name,
+                    args=primary_args,
+                    tool_result=primary_result,
+                    message=routing_message,
+                    routing_state=routing_state,
+                )
+                if short_circuit_response:
+                    return short_circuit_response
                 if evidence_status == "sufficient":
                     routing_state["retrieval_phase"] = "closed"
                     routing_state["retrieval_close_reason"] = "route_selector_payload_sufficient"
@@ -2721,7 +3243,7 @@ async def run_agent(
         search_model = get_search_model() if has_search_tool and iteration > 1 else ""
         
         # Call LLM (with search model override if applicable)
-        result = await call_llm(messages, tool_definitions, model_override=search_model)
+        result = await call_llm(messages, tool_definitions, model_override=search_model, purpose="agent_loop")
         
         if "error" in result:
             agent_logger.error(f"LLM error: {result['error']}")
@@ -3014,6 +3536,17 @@ async def run_agent(
                         iteration,
                         routing_state["intent"],
                     )
+
+                short_circuit_response = _short_circuit_application_failure(
+                    name=name,
+                    args=args,
+                    tool_result=tool_result,
+                    message=message,
+                    routing_state=routing_state,
+                )
+                if short_circuit_response:
+                    final_response = short_circuit_response
+                    break
 
                 # Dynamic tool loading: merge new definitions into active toolkit
                 if name == "load_tools" and tool_result.success and tool_result.metadata:

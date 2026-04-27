@@ -559,6 +559,18 @@ def _normalize_ws(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value)).strip()
 
 
+def _normalize_kb_knowledge_route_id(value: Any) -> str:
+    route_id = _normalize_ws(value)
+    if not route_id:
+        return ""
+    if route_id in KB_ROUTE_SPECS:
+        return route_id
+    if route_id.startswith("corp_db."):
+        logger.warning("Ignoring route-card id in knowledge_route_id: %s", route_id)
+        return ""
+    return route_id
+
+
 def _preview(text: str, limit: int = 220) -> str:
     normalized = _normalize_ws(text)
     if len(normalized) <= limit:
@@ -999,7 +1011,7 @@ def _dedupe_nonempty_strings(values: list[Any] | None) -> list[str]:
 
 
 def _resolve_kb_route_scope(req: CorpDbSearchRequest) -> tuple[str, list[str], list[str]]:
-    knowledge_route_id = _normalize_ws(req.knowledge_route_id)
+    knowledge_route_id = _normalize_kb_knowledge_route_id(req.knowledge_route_id)
     source_files = _dedupe_nonempty_strings(req.source_files)
     topic_facets = _dedupe_nonempty_strings(req.topic_facets)
     if knowledge_route_id:

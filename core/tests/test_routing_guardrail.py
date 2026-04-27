@@ -198,6 +198,36 @@ class RoutingGuardrailTests(unittest.TestCase):
         quality_route = quality_selection["selected"]
         self.assertEqual(quality_route["route_id"], "corp_kb.company_common")
 
+    def test_broad_series_question_uses_company_common_runtime_route(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Какие у вас есть серии светильников?",
+            corp_db_payload={
+                "status": "success",
+                "kind": "hybrid_search",
+                "results": [
+                    {
+                        "document_title": "Общая информация о компании ЛАДзавод светотехники",
+                        "heading": "Доступные серии освещения",
+                        "preview": "Серии: LAD LED R500, LAD LED R700, LAD LED LINE, NL Nova и NL VEGA.",
+                        "metadata": {"source_file": "common_information_about_company.md"},
+                    }
+                ],
+            },
+            corp_db_args={"kind": "hybrid_search", "query": "какие серии светильников есть"},
+            llm_responses_override=[
+                self._tool_call_response("corp_db_search", {"kind": "hybrid_search", "query": "какие серии светильников есть"}),
+                self._final_response("Есть серии LAD LED R500, LAD LED R700, LAD LED LINE, NL Nova и NL VEGA."),
+            ],
+        )
+
+        self.assertIn("LAD LED R500", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[1]["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(exec_mock.await_args_list[0].args[1]["topic_facets"], ["series"])
+        self.assertEqual(meta["retrieval_route_family"], "corp_kb.company_common")
+        self.assertEqual(meta["knowledge_route_id"], "corp_kb.company_common")
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+
     def test_portfolio_project_queries_use_portfolio_fallback_args(self):
         self.assertTrue(_MODULE._is_portfolio_lookup_intent("Расскажи про терминально-логистический центр Белый Раст"))
         self.assertFalse(_MODULE._is_portfolio_lookup_intent("Подбери освещение для спортивного объекта"))
@@ -364,9 +394,10 @@ class RoutingGuardrailTests(unittest.TestCase):
             ]
         }
 
-        async def fake_call_llm(messages, tool_definitions, model_override=""):
+        async def fake_call_llm(messages, tool_definitions, model_override="", purpose="agent_loop"):
             self.assertEqual(tool_definitions, [])
             self.assertIn("corp_kb.company_common", messages[-1]["content"])
+            self.assertEqual(purpose, "route_selector")
             return selector_response
 
         with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
@@ -393,6 +424,23 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("schema_version", route_selection)
         self.assertIn("corp_kb.company_common", route_selection["candidate_route_ids"])
         self.assertTrue(secondary)
+
+    def test_application_route_selector_schema_stays_within_bounded_args(self):
+        with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
+            clear=False,
+        ):
+            payload = _MODULE.build_route_selector_payload("Что порекомендуешь для РЖД?")
+
+        route = next(item for item in payload["routes"] if item["route_id"] == "corp_db.application_recommendation")
+        properties = route["argument_schema"]["properties"]
+
+        self.assertEqual(
+            set(properties),
+            {"kind", "query", "limit_categories", "limit_lamps", "limit_portfolio"},
+        )
+        self.assertEqual(route["argument_schema"]["required"], ["kind", "query"])
 
     def test_llm_route_selector_repairs_invalid_selector_args_once(self):
         invalid_response = {
@@ -704,7 +752,7 @@ class RoutingGuardrailTests(unittest.TestCase):
             llm_responses.append(self._final_response("Официальный сайт: https://ladzavod.ru"))
         llm_calls: list[list[dict]] = []
 
-        async def fake_call_llm(messages, tool_definitions, model_override=""):
+        async def fake_call_llm(messages, tool_definitions, model_override="", purpose="agent_loop"):
             llm_calls.append(messages)
             if not llm_responses:
                 raise AssertionError("unexpected extra call_llm invocation")
@@ -1640,6 +1688,102 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertNotIn("…", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["application_recovery_outcome"], "")
+
+    def test_application_replay_for_rzd_returns_healthy_recommendation(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Что порекомендуешь для РЖД?",
+            corp_db_args={"kind": "application_recommendation", "query": "Что порекомендуешь для РЖД?"},
+            corp_db_payload={
+                "status": "success",
+                "kind": "application_recommendation",
+                "resolved_application": {
+                    "application_key": "rzd",
+                    "sphere_name": "РЖД",
+                },
+                "recommended_lamps": [
+                    {
+                        "name": "LAD LED LINE",
+                        "url": "https://ladzavod.ru/catalog/line",
+                        "recommendation_reason": "подходит для инфраструктуры РЖД",
+                    }
+                ],
+                "follow_up_question": "Уточните высоту установки и требуемую степень защиты.",
+                "results": [{"name": "LAD LED LINE"}],
+            },
+            llm_responses_override=[
+                self._tool_call_response("corp_db_search", {"kind": "application_recommendation", "query": "Что порекомендуешь для РЖД?"}),
+                self._final_response("Для РЖД подойдёт LAD LED LINE. Уточните высоту установки и требуемую степень защиты."),
+            ],
+        )
+
+        self.assertIn("LAD LED LINE", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[1]["kind"], "application_recommendation")
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["application_recovery_outcome"], "")
+
+    def test_application_replay_for_rzd_stops_after_empty_without_hybrid_fallback(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Что порекомендуешь для РЖД?",
+            corp_db_args={"kind": "application_recommendation", "query": "Что порекомендуешь для РЖД?"},
+            corp_db_payload={
+                "status": "empty",
+                "kind": "application_recommendation",
+                "results": [],
+            },
+            llm_responses_override=[
+                self._tool_call_response("corp_db_search", {"kind": "application_recommendation", "query": "Что порекомендуешь для РЖД?"}),
+                self._tool_call_response(
+                    "corp_db_search",
+                    {
+                        "kind": "hybrid_search",
+                        "query": "Что порекомендуешь для РЖД?",
+                        "limit_categories": 0,
+                        "limit_lamps": 0,
+                        "limit_portfolio": 0,
+                    },
+                ),
+            ],
+        )
+
+        self.assertIn("уточните", response.lower())
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[1]["kind"], "application_recommendation")
+        self.assertEqual(meta["application_recovery_outcome"], "bounded_application_fallback")
+        self.assertEqual(meta["retrieval_close_reason"], "bounded_application_fallback")
+        self.assertEqual(meta["retrieval_evidence_status"], "empty")
+
+    def test_application_replay_for_rzd_records_primary_error_stop(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="Что порекомендуешь для РЖД?",
+            corp_db_args={"kind": "application_recommendation", "query": "Что порекомендуешь для РЖД?"},
+            corp_db_payload={
+                "status": "error",
+                "kind": "application_recommendation",
+                "message": "Корпоративная база временно недоступна",
+                "results": [],
+            },
+            llm_responses_override=[
+                self._tool_call_response("corp_db_search", {"kind": "application_recommendation", "query": "Что порекомендуешь для РЖД?"}),
+                self._tool_call_response(
+                    "corp_db_search",
+                    {
+                        "kind": "hybrid_search",
+                        "query": "Что порекомендуешь для РЖД?",
+                        "limit_categories": 0,
+                        "limit_lamps": 0,
+                        "limit_portfolio": 0,
+                    },
+                ),
+            ],
+        )
+
+        self.assertIn("повторите запрос позже", response.lower())
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(meta["application_recovery_outcome"], "stopped_after_primary_error")
+        self.assertEqual(meta["retrieval_close_reason"], "stopped_after_primary_error")
+        self.assertEqual(meta["retrieval_evidence_status"], "error")
 
     def test_document_lookup_runtime_answer_does_not_leak_compact_preview(self):
         response, exec_mock, meta = self._run_flow(

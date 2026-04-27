@@ -40,6 +40,22 @@ COMPANY_FACT_QUERY_HINTS = (
 BENCH_ARTIFACT_LIST_LIMIT = 5
 BENCH_ARTIFACT_STRING_LIMIT = 320
 COMPANY_FACT_RESULT_LIMIT = 5
+KB_KNOWLEDGE_ROUTE_PREFIX = "corp_kb."
+APPLICATION_LIMIT_KEYS = (
+    "limit_categories",
+    "limit_lamps",
+    "limit_portfolio",
+)
+KIND_SPECIFIC_ARG_ALLOWLISTS = {
+    "application_recommendation": {
+        "kind",
+        "query",
+        "include_debug",
+        "limit",
+        "offset",
+        *APPLICATION_LIMIT_KEYS,
+    },
+}
 
 
 def _timeout_budget_seconds() -> dict[str, float]:
@@ -81,6 +97,28 @@ def _get_tracer():
 
 def _normalize_text(value: object) -> str:
     return " ".join(str(value or "").lower().split())
+
+
+def _sanitize_corp_db_args(args: dict | None) -> dict:
+    sanitized = dict(args or {})
+    knowledge_route_id = str(sanitized.get("knowledge_route_id") or "").strip()
+    if knowledge_route_id and not knowledge_route_id.startswith(KB_KNOWLEDGE_ROUTE_PREFIX):
+        sanitized.pop("knowledge_route_id", None)
+    kind = str(sanitized.get("kind") or "").strip()
+    if kind != "application_recommendation":
+        for key in APPLICATION_LIMIT_KEYS:
+            sanitized.pop(key, None)
+    else:
+        allowed = KIND_SPECIFIC_ARG_ALLOWLISTS["application_recommendation"]
+        sanitized = {key: value for key, value in sanitized.items() if key in allowed}
+        for key in ("limit_categories", "limit_lamps"):
+            value = sanitized.get(key)
+            if not isinstance(value, int) or value < 1:
+                sanitized.pop(key, None)
+        value = sanitized.get("limit_portfolio")
+        if not isinstance(value, int) or value < 0:
+            sanitized.pop("limit_portfolio", None)
+    return sanitized
 
 
 def _truncate_text(value: object, limit: int) -> str:
@@ -186,6 +224,7 @@ def _payload_error_message(data: dict) -> str:
 async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
     tools_api_url = os.getenv("TOOLS_API_URL", "http://tools-api:8100")
     budget = _timeout_budget_seconds()
+    args = _sanitize_corp_db_args(args)
 
     request_id = OBS_REQUEST_ID.get("-")
     correlation_context = get_correlation_context()
@@ -228,6 +267,7 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
             "retrieval_phase",
             "retrieval_evidence_status",
             "retrieval_close_reason",
+            "application_recovery_outcome",
             "finalizer_mode",
         ):
             value = str(correlation_context.get(field) or "").strip()

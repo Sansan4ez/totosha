@@ -730,6 +730,54 @@ class RoutingCatalogTests(unittest.TestCase):
                         self.assertIn("corp_kb.company_common", selection["candidate_route_ids"])
                         self.assertNotEqual(selection["selected"]["route_id"], "doc_search.document_lookup")
 
+    def test_select_route_prefers_company_common_for_broad_series_questions(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                for query in (
+                    "какие у вас есть серии светильников?",
+                    "в общей базе есть описание всех серий",
+                ):
+                    with self.subTest(query=query):
+                        selection = select_route(query)
+                        payload = build_route_selector_payload(query, limit=5)
+
+                        self.assertEqual(selection["intent_family"], "catalog_lookup")
+                        self.assertEqual(selection["selected"]["route_id"], "corp_kb.company_common")
+                        self.assertEqual(selection["primary_candidate"]["route_id"], "corp_kb.company_common")
+                        self.assertEqual(payload["candidate_route_ids"][0], "corp_kb.company_common")
+
+    def test_select_route_prefers_curated_sphere_categories_for_broad_category_questions(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                selection = select_route("Какие категории подходят для склада?")
+                payload = build_route_selector_payload("Какие категории подходят для склада?", limit=5)
+
+        self.assertEqual(selection["intent_family"], "catalog_lookup")
+        self.assertEqual(selection["selected"]["route_id"], "corp_db.sphere_curated_categories")
+        self.assertEqual(payload["candidate_route_ids"][0], "corp_db.sphere_curated_categories")
+
+    def test_select_route_prefers_category_mountings_for_series_mounting_questions(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                selection = select_route("Какие крепления доступны у серии NL Nova?")
+                payload = build_route_selector_payload("Какие крепления доступны у серии NL Nova?", limit=5)
+
+        self.assertEqual(selection["intent_family"], "catalog_lookup")
+        self.assertEqual(selection["selected"]["route_id"], "corp_db.category_mountings")
+        self.assertEqual(payload["candidate_route_ids"][0], "corp_db.category_mountings")
+
     def test_default_corp_db_routes_cover_structured_domains(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             with patch.dict(

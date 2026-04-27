@@ -316,6 +316,7 @@ def lighting_norms_topic_facets(message: str) -> list[str]:
 
 def expand_company_fact_query(message: str) -> str:
     subtype = company_fact_intent_type(message)
+    facets = company_common_topic_facets(message)
     if subtype == "year_founded":
         return "Сколько лет компании ЛАДзавод светотехники? Если точный возраст не знаешь, назови год основания."
     if subtype == "website":
@@ -330,6 +331,8 @@ def expand_company_fact_query(message: str) -> str:
         return "сертификаты декларации экспертиза сертификация ЛАДзавод светотехники"
     if subtype == "quality":
         return "качество комплектующие надежность ЛАДзавод светотехники"
+    if "series" in facets:
+        return "серии светильников ЛАДзавод светотехники линейки модели описание серий"
     normalized = routing_message_text(message)
     if text_has_any(normalized, ("консультац", "расчет", "расчёт", "освещен", "освещён")):
         return "lad@ladled.ru 239-18-11 консультация расчет освещенности"

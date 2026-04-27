@@ -1196,6 +1196,19 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertIsNone(sanitized.power_w_min)
         self.assertIsNone(sanitized.voltage_kind)
 
+    def test_sanitize_filter_defaults_drops_route_card_knowledge_route_id(self):
+        from src.routes.corp_db import CorpDbSearchRequest, _sanitize_filter_defaults
+
+        req = CorpDbSearchRequest(
+            kind="hybrid_search",
+            profile="entity_resolver",
+            knowledge_route_id="corp_db.catalog_lookup",
+            query="какие серии светильников",
+        )
+        sanitized = _sanitize_filter_defaults(req)
+
+        self.assertIsNone(sanitized.knowledge_route_id)
+
     def test_build_lamp_conditions_normalizes_dimensions_and_voltage_kind(self):
         from src.routes.corp_db import CorpDbSearchRequest, _build_lamp_conditions
 

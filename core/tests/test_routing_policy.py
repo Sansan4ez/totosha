@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from documents.routing_policy import (  # noqa: E402
     company_common_topic_facets,
     company_fact_intent_type,
+    expand_company_fact_query,
     is_document_lookup_intent,
     is_portfolio_lookup_intent,
     rewrite_company_fact_search_args,
@@ -44,6 +45,13 @@ class RoutingPolicyTests(unittest.TestCase):
 
         self.assertEqual(routing_query_text(message), "Расскажи про Белый Раст")
         self.assertTrue(is_portfolio_lookup_intent(message))
+
+    def test_broad_series_questions_get_series_facet_and_expanded_query(self):
+        query = "Какие у вас есть серии светильников?"
+
+        self.assertEqual(company_fact_intent_type(query), "")
+        self.assertEqual(company_common_topic_facets(query), ["series"])
+        self.assertIn("серии светильников", expand_company_fact_query(query).lower())
 
 
 if __name__ == "__main__":

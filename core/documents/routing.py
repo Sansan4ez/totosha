@@ -95,6 +95,10 @@ ORCHESTRATION_KEYWORDS = (
 CATALOG_LOOKUP_KEYWORDS = (
     "модель",
     "серия",
+    "серии",
+    "серий",
+    "линейка",
+    "линейки",
     "артикул",
     "код",
     "sku",
@@ -111,6 +115,54 @@ CATALOG_LOOKUP_KEYWORDS = (
     "крепления",
     "монтаж",
     "тип крепления",
+)
+BROAD_SERIES_QUERY_CUES = (
+    "какие серии",
+    "какие у вас есть серии",
+    "какие есть серии",
+    "какие серии светильников",
+    "какие линейки",
+    "какие есть линейки",
+    "все серии",
+    "всех серий",
+    "описание всех серий",
+    "описание серий",
+    "серии светильников",
+    "линейки светильников",
+    "перечисли серии",
+    "список серий",
+)
+BROAD_SERIES_QUERY_EXCLUSIONS = (
+    "чем отличается",
+    "отличия между",
+    "сравни",
+    "сравнение",
+    "на каких сериях",
+    "в каких сериях",
+    "какие крепления",
+    "совместим",
+    "подходит крепление",
+    "закал",
+    "стекл",
+)
+SPHERE_CATEGORY_QUERY_CUES = (
+    "какие категории подходят",
+    "какие категории есть",
+    "категории для",
+    "категории по",
+    "категории в сфере",
+    "категории по сфере",
+    "категории для сферы",
+    "какие категории у",
+)
+MOUNTING_QUERY_CUES = (
+    "креплен",
+    "крепления",
+    "монтаж",
+    "тип крепления",
+    "типы креплений",
+    "совместим",
+    "совместимость",
 )
 ROUTE_MATCH_STOPWORDS = {
     "и",
@@ -222,6 +274,13 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "limit",
         "offset",
     },
+    "corp_db.application_recommendation": {
+        "kind",
+        "query",
+        "limit_categories",
+        "limit_lamps",
+        "limit_portfolio",
+    },
     "corp_db.sphere_curated_categories": {
         "kind",
         "sphere",
@@ -303,6 +362,7 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
     },
 }
 ROUTE_REQUIRED_ARGUMENTS = {
+    "corp_db.application_recommendation": {"query"},
     "corp_db.portfolio_lookup": {"query"},
     "corp_db.portfolio_by_sphere": {"sphere"},
     "corp_db.sphere_curated_categories": {"sphere"},
@@ -592,8 +652,8 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "route_kind": "corp_table",
             "authority": "primary",
             "title": "Company common knowledge base",
-            "summary": "Source-scoped company KB for contacts, website, legal details, address, service, warranty, and general company facts.",
-            "topics": ["company", "contacts", "legal", "certification", "quality"],
+            "summary": "Source-scoped company KB for contacts, website, legal details, address, service, warranty, canonical series overviews, and general company facts.",
+            "topics": ["company", "contacts", "legal", "certification", "quality", "series"],
             "keywords": [
                 "сайт",
                 "адрес",
@@ -618,6 +678,10 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "декларации",
                 "экспертиза",
                 "надежность",
+                "серии светильников",
+                "линейки светильников",
+                "описание серий",
+                "все серии",
             ],
             "patterns": [
                 "какие есть сертификаты",
@@ -634,6 +698,9 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "какие сертификаты",
                 "какая сертификация",
                 "какие комплектующие",
+                "какие у вас есть серии светильников",
+                "в общей базе есть описание всех серий",
+                "какие серии доступны",
             ],
             "executor": "corp_db_search",
             "executor_args_template": {
@@ -1671,6 +1738,31 @@ def _is_explicit_document_request(query: str) -> bool:
     )
 
 
+def _is_broad_series_query(query: str) -> bool:
+    query_text = _normalize(query)
+    if not query_text:
+        return False
+    if any(marker in query_text for marker in BROAD_SERIES_QUERY_EXCLUSIONS):
+        return False
+    return any(marker in query_text for marker in BROAD_SERIES_QUERY_CUES)
+
+
+def _is_sphere_category_query(query: str) -> bool:
+    query_text = _normalize(query)
+    if "категор" not in query_text:
+        return False
+    if any(marker in query_text for marker in SPHERE_CATEGORY_QUERY_CUES):
+        return True
+    return _intent_contains(query_text, APPLICATION_RECOMMENDATION_KEYWORDS)
+
+
+def _is_series_or_category_mounting_query(query: str) -> bool:
+    query_text = _normalize(query)
+    if not _intent_contains(query_text, MOUNTING_QUERY_CUES):
+        return False
+    return any(marker in query_text for marker in ("сер", "категор", "линейк", "модел"))
+
+
 def _route_intent_family(route: dict[str, Any]) -> str:
     route_id = str(route.get("route_id") or "")
     route_family = str(route.get("route_family") or "")
@@ -1706,6 +1798,8 @@ def _infer_intent_family(query: str, *, explicit_document_request: bool) -> str:
         return "document_lookup"
     if _intent_contains(query_text, PORTFOLIO_LOOKUP_KEYWORDS):
         return "portfolio_lookup"
+    if _is_sphere_category_query(query):
+        return "catalog_lookup"
     if _intent_contains(query_text, APPLICATION_RECOMMENDATION_KEYWORDS) or _intent_contains(query_text, ORCHESTRATION_KEYWORDS):
         return "application_recommendation"
     if _intent_contains(query_text, CATALOG_LOOKUP_KEYWORDS):
@@ -1765,6 +1859,12 @@ def _preferred_route_ids_for_intent(query: str, intent_family: str) -> list[str]
     if intent_family == "document_lookup":
         return []
     if intent_family == "catalog_lookup":
+        if _is_broad_series_query(query):
+            return ["corp_kb.company_common", "corp_db.catalog_lookup", "corp_db.category_lamps", "corp_db.sphere_curated_categories"]
+        if _is_sphere_category_query(query):
+            return ["corp_db.sphere_curated_categories", "corp_db.category_lamps", "corp_db.catalog_lookup", "corp_db.category_mountings"]
+        if _is_series_or_category_mounting_query(query):
+            return ["corp_db.category_mountings", "corp_db.lamp_mounting_compatibility", "corp_db.catalog_lookup", "corp_db.category_lamps"]
         return ["corp_db.catalog_lookup", "corp_db.sku_lookup", "corp_db.category_lamps", "corp_db.sphere_curated_categories"]
     if intent_family == "company_fact":
         if _intent_contains(query_text, ("luxnet", "люкснет")):
@@ -1940,6 +2040,9 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
                 "series",
                 "sphere",
                 "mounting_type",
+                "limit_categories",
+                "limit_lamps",
+                "limit_portfolio",
                 "preferred_document_ids",
                 "topic_facets",
                 "source_files",
