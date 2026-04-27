@@ -13,11 +13,46 @@ alerts:
 
   - id: OBS-ALERT-002
     execution: manual
-    title: Observability smoke failed
+    title: Observability and incident replay smoke failed
     severity: warning
     datasource: smoke-test
     expr: observability-harness smoke --repo-root .
     for: on-demand
-    summary: Shared smoke validation did not confirm traces, logs, and metrics.
-    impact: Runtime telemetry may be degraded even if the service responds.
+    summary: Shared smoke validation did not confirm traces, logs, metrics, RFC-026 schema drift checks, and incident replay paths.
+    impact: Key corp-db user paths can regress while services still report healthy container state.
+    runbook: docs/operations/observability-runbook.md
+
+  - id: OBS-ALERT-003
+    execution: vmalert
+    alert_name: ProxyUserPathHigh5xxRatio
+    title: Proxy user-path 5xx ratio high
+    severity: critical
+    datasource: VictoriaMetrics
+    expr: sum by (route) (rate(http_server_duration_milliseconds_count{service_name="proxy",route=~"/transcribe|/v1/.*",status=~"5.."}[10m])) / clamp_min(sum by (route) (rate(http_server_duration_milliseconds_count{service_name="proxy",route=~"/transcribe|/v1/.*"}[10m])), 0.001) > 0.05
+    for: 10m
+    summary: Proxy route {{ $labels.route }} is serving more than 5% 5xx responses over 10 minutes.
+    impact: Bot and model traffic can stay reachable while the real user path is erroring at the proxy boundary.
+    runbook: docs/operations/observability-runbook.md
+
+  - id: OBS-ALERT-004
+    execution: vmalert
+    alert_name: ProxyUserPathHighP95Latency
+    title: Proxy user-path p95 latency high
+    severity: warning
+    datasource: VictoriaMetrics
+    expr: histogram_quantile(0.95, sum by (le, route) (rate(http_server_duration_milliseconds_bucket{service_name="proxy",route=~"/transcribe|/v1/.*",status!~"5.."}[15m]))) > 2500
+    for: 15m
+    summary: Proxy route {{ $labels.route }} exceeded the 2.5s p95 latency budget over 15 minutes.
+    impact: Tail latency can breach the user-visible SLO before the route turns fully unavailable.
+    runbook: docs/operations/observability-runbook.md
+
+  - id: OBS-ALERT-005
+    execution: manual
+    title: ASR compatibility smoke failed
+    severity: warning
+    datasource: cli-proxy-api /transcribe
+    expr: CLIPROXY_MGMT_KEY=... python3 scripts/asr_compat_smoke.py
+    for: on-demand
+    summary: The `proxy -> cli-proxy-api /transcribe` compatibility path is failing or challenge/error-rate windows are out of bounds.
+    impact: Voice input may look alive at the container level while the real ASR path is degraded by upstream challenge behavior.
     runbook: docs/operations/observability-runbook.md

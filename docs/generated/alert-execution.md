@@ -12,3 +12,6 @@ This inventory cross-checks the minimum alert catalog against the executable `vm
 | --- | --- | --- | --- | --- | --- | --- |
 | `OBS-ALERT-001` | vmalert | yes | `ApiTelemetrySilence` | repo-harness-observability | `victoriametrics/alerts/vmalert-rules.yaml` | `docs/operations/observability-runbook.md` |
 | `OBS-ALERT-002` | manual | no | — | — | manual only | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-003` | vmalert | yes | `ProxyUserPathHigh5xxRatio` | repo-harness-observability | `victoriametrics/alerts/vmalert-rules.yaml` | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-004` | vmalert | yes | `ProxyUserPathHighP95Latency` | repo-harness-observability | `victoriametrics/alerts/vmalert-rules.yaml` | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-005` | manual | no | — | — | manual only | `docs/operations/observability-runbook.md` |

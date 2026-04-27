@@ -7,9 +7,12 @@ APP_HEALTH_URL="${APP_HEALTH_URL:-}"
 SERVICE_NAME="${SERVICE_NAME:-core}"
 CORE_PORT="${CORE_PORT:-4000}"
 SMOKE_CHAT_URL="${SMOKE_CHAT_URL:-http://127.0.0.1:${CORE_PORT}/api/chat}"
+SMOKE_TOOLS_API_URL="${SMOKE_TOOLS_API_URL:-http://127.0.0.1:8100}"
 SMOKE_USER_ID="${SMOKE_USER_ID:-5202705269}"
 SMOKE_CHAT_ID="${SMOKE_CHAT_ID:-5202705269}"
 SMOKE_REQUEST_TIMEOUT_SECONDS="${SMOKE_REQUEST_TIMEOUT_SECONDS:-180}"
+RUN_INCIDENT_REPLAY_SMOKE="${RUN_INCIDENT_REPLAY_SMOKE:-true}"
+RUN_ASR_COMPAT_SMOKE="${RUN_ASR_COMPAT_SMOKE:-false}"
 GRAFANA_PORT="${GRAFANA_PORT:-3003}"
 OTEL_COLLECTOR_HEALTH_PORT="${OTEL_COLLECTOR_HEALTH_PORT:-13133}"
 VICTORIAMETRICS_PORT="${VICTORIAMETRICS_PORT:-8428}"
@@ -259,6 +262,50 @@ PY
   done
 }
 
+run_incident_replay_smoke() {
+  local output=""
+  if output="$(
+    python3 "${ROOT_DIR}/../scripts/incident_replay_smoke.py" \
+      --core-url "${SMOKE_CHAT_URL%/api/chat}" \
+      --tools-api-url "${SMOKE_TOOLS_API_URL}" \
+      --timeout-s "${SMOKE_REQUEST_TIMEOUT_SECONDS}" \
+      --user-id "${SMOKE_USER_ID}" \
+      --chat-id "${SMOKE_CHAT_ID}" 2>&1
+  )"; then
+    log "[OK] incident replay smoke passed"
+  else
+    log "[FAIL] incident replay smoke failed"
+    while IFS= read -r line; do
+      log "incident_replay: ${line}"
+    done <<< "${output}"
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    log "incident_replay: ${line}"
+  done <<< "${output}"
+}
+
+run_asr_compat_smoke() {
+  local output=""
+  if output="$(
+    python3 "${ROOT_DIR}/../scripts/asr_compat_smoke.py" \
+      --timeout-s "${SMOKE_REQUEST_TIMEOUT_SECONDS}" 2>&1
+  )"; then
+    log "[OK] asr compatibility smoke passed"
+  else
+    log "[FAIL] asr compatibility smoke failed"
+    while IFS= read -r line; do
+      log "asr_compat: ${line}"
+    done <<< "${output}"
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    log "asr_compat: ${line}"
+  done <<< "${output}"
+}
+
 run_chat_request() {
   local request_id="$1"
   local message="$2"
@@ -404,6 +451,13 @@ if [[ "${SERVICE_NAME}" == "core" ]]; then
   wait_http_ok "${SMOKE_CHAT_URL%/api/chat}/health" "core health" "${SMOKE_HEALTH_TIMEOUT_SECONDS}"
   run_route_correlation_smoke "kb_route" "${KB_REQUEST_ID}" "${KB_QUERY}" "${KB_EXPECTED_ROUTE_ID}" "${KB_EXPECTED_ROUTE_KIND}" "${KB_EXPECTED_SOURCE}" "${KB_EXPECTED_TOOL}" "${KB_EXPECTED_DOCUMENT_ID}"
   run_route_correlation_smoke "document_route" "${DOC_REQUEST_ID}" "${DOC_QUERY}" "${DOC_EXPECTED_ROUTE_ID}" "${DOC_EXPECTED_ROUTE_KIND}" "${DOC_EXPECTED_SOURCE}" "${DOC_EXPECTED_TOOL}" "${DOC_EXPECTED_DOCUMENT_ID}"
+  if [[ "${RUN_INCIDENT_REPLAY_SMOKE}" == "true" ]]; then
+    run_incident_replay_smoke
+  fi
+fi
+
+if [[ "${RUN_ASR_COMPAT_SMOKE}" == "true" ]]; then
+  run_asr_compat_smoke
 fi
 
 curl -fsS "http://localhost:${VMALERT_PORT}/api/v1/alerts" >/dev/null

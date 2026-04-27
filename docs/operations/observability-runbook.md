@@ -47,6 +47,18 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d c
 Use the installed `observability-harness` skill to run smoke against `--repo-root .`.
 ```
 
+The shared smoke now includes the `totosha-pfit.7` replay layer on the `core` path:
+
+- `bench/golden/incident-pfit7.jsonl` direct-tool replays for the three incident questions
+- RFC-026 live schema drift checks from `scripts/doctor.py`
+- `/api/chat` route assertions for the broad series questions
+
+Run it directly when you need a focused post-remediation check:
+
+```bash
+python3 scripts/incident_replay_smoke.py
+```
+
 For RFC-020 correlation smoke on the local stack, the `core` service smoke now sends two fresh requests:
 
 1. KB route query for `corp_kb.company_common`
@@ -99,6 +111,29 @@ curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28tool_name%2Cse
 ```
 
 Expected result: the fresh request increments the expected `selected_route_id` and `tool_name`.
+
+ASR compatibility smoke
+-----------------------
+
+Use this when the incident path involves `proxy -> cli-proxy-api /transcribe`.
+
+```bash
+CLIPROXY_MGMT_KEY=... python3 scripts/asr_compat_smoke.py
+```
+
+What it checks:
+
+- live `POST /transcribe` through project `proxy`
+- `cli-proxy-api /v0/management/transcribe-health`
+- `backend_mode=chatgpt_compat`
+- challenge/error-rate windows for the last 5m and 30m
+- degraded credential count
+
+If you want the shared smoke harness to include it in one pass:
+
+```bash
+RUN_ASR_COMPAT_SMOKE=true CLIPROXY_MGMT_KEY=... ./victoriametrics/smoke_test.sh
+```
 
 Corp DB Latency Triage
 ----------------------
@@ -187,5 +222,12 @@ If the error message is empty or lacks the budget, first verify the running cont
 Notes
 -----
 
+- Proxy-specific user-path alerts now track:
+  - `ProxyUserPathHigh5xxRatio`
+  - `ProxyUserPathHighP95Latency`
+- Grafana now includes dedicated panels for:
+  - `Incident Route Traffic`
+  - `Proxy User Path p95`
+  - `Proxy User Path 5xx Ratio`
 - Keep the triage order fixed so agents and humans debug the same way.
 - `docker-compose.observability.yml` is now a port-binding overlay only. Losing the overlay no longer drops OTEL env, but it does remove the localhost service bindings used by several manual smoke commands.

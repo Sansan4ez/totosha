@@ -13,3 +13,27 @@ groups:
           summary: HTTP service {{ $labels.service_name }} stopped exporting request metrics.
           impact: Health checks may still pass while telemetry export is broken for a single service.
           runbook: docs/operations/observability-runbook.md
+      - alert: ProxyUserPathHigh5xxRatio
+        expr: sum by (route) (rate(http_server_duration_milliseconds_count{service_name="proxy",route=~"/transcribe|/v1/.*",status=~"5.."}[10m])) / clamp_min(sum by (route) (rate(http_server_duration_milliseconds_count{service_name="proxy",route=~"/transcribe|/v1/.*"}[10m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          alert_id: OBS-ALERT-003
+          service: proxy
+          route: '{{ $labels.route }}'
+        annotations:
+          summary: Proxy route {{ $labels.route }} is serving more than 5% 5xx responses over 10 minutes.
+          impact: Bot and model traffic can stay reachable while the real user path is erroring at the proxy boundary.
+          runbook: docs/operations/observability-runbook.md
+      - alert: ProxyUserPathHighP95Latency
+        expr: histogram_quantile(0.95, sum by (le, route) (rate(http_server_duration_milliseconds_bucket{service_name="proxy",route=~"/transcribe|/v1/.*",status!~"5.."}[15m]))) > 2500
+        for: 15m
+        labels:
+          severity: warning
+          alert_id: OBS-ALERT-004
+          service: proxy
+          route: '{{ $labels.route }}'
+        annotations:
+          summary: Proxy route {{ $labels.route }} exceeded the 2.5s p95 latency budget over 15 minutes.
+          impact: Tail latency can breach the user-visible SLO before the route turns fully unavailable.
+          runbook: docs/operations/observability-runbook.md

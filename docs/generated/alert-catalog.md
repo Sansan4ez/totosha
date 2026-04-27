@@ -11,4 +11,7 @@ This inventory is generated from the minimum alert catalog under `victoriametric
 | Alert ID | Execution | Title | Severity | Datasource | Runbook |
 | --- | --- | --- | --- | --- | --- |
 | `OBS-ALERT-001` | vmalert | API telemetry silence | critical | VictoriaMetrics | `docs/operations/observability-runbook.md` |
-| `OBS-ALERT-002` | manual | Observability smoke failed | warning | smoke-test | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-002` | manual | Observability and incident replay smoke failed | warning | smoke-test | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-003` | vmalert | Proxy user-path 5xx ratio high | critical | VictoriaMetrics | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-004` | vmalert | Proxy user-path p95 latency high | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-005` | manual | ASR compatibility smoke failed | warning | cli-proxy-api /transcribe | `docs/operations/observability-runbook.md` |

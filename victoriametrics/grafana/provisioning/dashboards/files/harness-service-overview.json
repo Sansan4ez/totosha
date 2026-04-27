@@ -2,7 +2,7 @@
   "uid": "harness-service-overview",
   "title": "Harness Service Overview",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "30s",
   "templating": {
     "list": [
@@ -150,6 +150,48 @@
       "targets": [
         {
           "expr": "sum by (tool_name, selected_route_id) (rate(tool_executions_total{service_name=\"core\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Incident Route Traffic",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (selected_route_id) (rate(retrieval_route_requests_total{service_name=\"core\",selected_route_id=~\"corp_kb.company_common|corp_db.application_recommendation|corp_db.portfolio_by_sphere\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Proxy User Path p95",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_server_duration_milliseconds_bucket{service_name=\"proxy\",route=~\"/transcribe|/v1/.*\",status!~\"5..\"}[5m])))"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Proxy User Path 5xx Ratio",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(http_server_duration_milliseconds_count{service_name=\"proxy\",route=~\"/transcribe|/v1/.*\",status=~\"5..\"}[5m])) / clamp_min(sum by (route) (rate(http_server_duration_milliseconds_count{service_name=\"proxy\",route=~\"/transcribe|/v1/.*\"}[5m])), 0.0001)"
         }
       ]
     }
