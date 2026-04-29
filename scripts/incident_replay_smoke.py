@@ -165,9 +165,25 @@ def run_doctor_checks() -> list[str]:
     return validate_doctor_results(results)
 
 
+def _http_endpoint_available(url: str, timeout_s: float) -> bool:
+    try:
+        status, _payload = http_json(url, timeout_s=timeout_s)
+    except Exception:
+        return False
+    return status == 200
+
+
+def _should_use_docker_exec(args: argparse.Namespace) -> bool:
+    if args.docker_exec:
+        return True
+    tools_health_url = f"{args.tools_api_url.rstrip('/')}/health"
+    return not _http_endpoint_available(tools_health_url, min(args.timeout_s, 5.0))
+
+
 def run_bench_dataset(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
     dataset_path = Path(args.dataset).resolve()
     errors: list[str] = []
+    use_docker_exec = _should_use_docker_exec(args)
     with tempfile.TemporaryDirectory(prefix="incident-pfit7-") as tmpdir:
         results_path = Path(tmpdir) / "results.jsonl"
         summary_path = Path(tmpdir) / "summary.json"
@@ -187,7 +203,7 @@ def run_bench_dataset(args: argparse.Namespace) -> tuple[dict[str, Any], list[st
             "--chat-id",
             str(args.chat_id or DEFAULT_SMOKE_USER_ID),
         ]
-        if args.docker_exec:
+        if use_docker_exec:
             run_cmd.append("--docker-exec")
         run_proc = subprocess.run(
             run_cmd,
@@ -250,7 +266,8 @@ def validate_chat_replay_response(payload: dict[str, Any], expected: ChatReplayE
     tools_used = meta.get("tools_used") if isinstance(meta.get("tools_used"), list) else []
     if expected.expected_tool not in tools_used:
         errors.append(f"{expected.slug}:tools_used={tools_used}")
-    if not str(payload.get("answer") or "").strip():
+    answer = str(payload.get("answer") or payload.get("response") or "")
+    if not answer.strip():
         errors.append(f"{expected.slug}:empty_answer")
     return errors
 

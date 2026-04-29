@@ -1,10 +1,16 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from incident_replay_smoke import ChatReplayExpectation, validate_chat_replay_response, validate_doctor_results
+from incident_replay_smoke import (
+    ChatReplayExpectation,
+    _should_use_docker_exec,
+    validate_chat_replay_response,
+    validate_doctor_results,
+)
 
 
 class IncidentReplaySmokeTests(unittest.TestCase):
@@ -28,6 +34,15 @@ class IncidentReplaySmokeTests(unittest.TestCase):
         self.assertIn("doctor_failed:corp_db_rfc026_schema_objects:missing table", errors)
         self.assertIn("doctor_missing:corp_db_rfc026_parent_links", errors)
 
+    def test_should_use_docker_exec_when_tools_api_health_is_unreachable(self):
+        class Args:
+            docker_exec = False
+            tools_api_url = "http://127.0.0.1:8100"
+            timeout_s = 30.0
+
+        with patch("incident_replay_smoke._http_endpoint_available", return_value=False):
+            self.assertTrue(_should_use_docker_exec(Args()))
+
     def test_validate_chat_replay_response_accepts_expected_meta(self):
         expected = ChatReplayExpectation(
             slug="series_list",
@@ -37,7 +52,7 @@ class IncidentReplaySmokeTests(unittest.TestCase):
             expected_tool="corp_db_search",
         )
         payload = {
-            "answer": "Есть серии LAD LED R500 и LAD LED LINE.",
+            "response": "Есть серии LAD LED R500 и LAD LED LINE.",
             "meta": {
                 "status": "ok",
                 "request_id": "req-1",

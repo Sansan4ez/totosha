@@ -1,6 +1,14 @@
 # LocalTopSH Core - Python ReAct Agent
 FROM python:3.11-bookworm
 
+ARG BUILD_GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
+ENV BUILD_GIT_SHA=${BUILD_GIT_SHA} \
+    BUILD_TIME=${BUILD_TIME} \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 # Install tools for agent and users
 RUN apt-get update && apt-get install -y \
     git curl wget gawk \

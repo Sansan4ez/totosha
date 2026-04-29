@@ -19,4 +19,5 @@ Read by Intent
 - Review observability policy -> `docs/operations/observability-policy.md`
 - Diagnose ChatGPT-compatible voice `/transcribe` path and fork contract -> `docs/operations/chatgpt-transcribe-chain.md`
 - Upgrade existing corp-db volumes to RFC-026 schema/data -> `docs/operations/corp-db-rfc026-upgrade-runbook.md`
+- Restore the 2026-04-27 RFC-026 runtime drift incident -> `docs/operations/incident-2026-04-27-rfc026-routing-recovery-plan.md`
 - Orchestrate `br` tasks in `tmux` with Codex -> `docs/operations/tmux-br-orchestrator.md`

@@ -40,6 +40,14 @@ def _trace_meta() -> tuple[str, str]:
     return "-", "-"
 
 
+def _build_runtime_info() -> dict[str, str]:
+    return {
+        "git_sha": str(os.getenv("BUILD_GIT_SHA", "unknown") or "unknown"),
+        "build_time": str(os.getenv("BUILD_TIME", "unknown") or "unknown"),
+        "route_selector_enabled": "true" if os.getenv("ROUTE_SELECTOR_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"} else "false",
+    }
+
+
 class ChatRequest(BaseModel):
     user_id: int
     chat_id: int
@@ -289,10 +297,11 @@ async def health(response: Response):
     from documents import routing_catalog_health
 
     catalog_health = routing_catalog_health()
+    runtime = _build_runtime_info()
     if catalog_health.get("status") == "unavailable":
         response.status_code = 503
-        return {"status": "unavailable", "service": "core", "routing_catalog": catalog_health}
-    return {"status": "ok", "service": "core", "routing_catalog": catalog_health}
+        return {"status": "unavailable", "service": "core", "build": runtime, "routing_catalog": catalog_health}
+    return {"status": "ok", "service": "core", "build": runtime, "routing_catalog": catalog_health}
 
 
 @app.get("/health/routing")

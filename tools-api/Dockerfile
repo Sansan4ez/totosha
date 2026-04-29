@@ -1,5 +1,13 @@
 FROM python:3.11-slim
 
+ARG BUILD_GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
+ENV BUILD_GIT_SHA=${BUILD_GIT_SHA} \
+    BUILD_TIME=${BUILD_TIME} \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl git \

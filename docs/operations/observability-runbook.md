@@ -18,10 +18,12 @@ docker compose -f victoriametrics/docker-compose.yml up -d
 2. Start the application stack on the default supported path:
 
 ```bash
+export BUILD_GIT_SHA=$(git rev-parse --short HEAD)
+export BUILD_TIME=$(date -u +%FT%TZ)
 docker compose up -d
 ```
 
-This starts `core`, `bot`, `proxy`, `tools-api`, `scheduler`, and `corp-db-worker` with OTEL exporter wiring by default.
+This starts `core`, `bot`, `proxy`, `tools-api`, `scheduler`, `corp-db`, and the one-shot `corp-db-migrator` with OTEL exporter wiring by default.
 
 3. If you need localhost app ports for direct smoke or curl-based triage, apply the port-binding overlay:
 
@@ -29,9 +31,11 @@ This starts `core`, `bot`, `proxy`, `tools-api`, `scheduler`, and `corp-db-worke
 docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 ```
 
-When rebuilding services, keep the base app command as the default:
+When rebuilding services, keep the base app command as the default and preserve runtime build metadata:
 
 ```bash
+export BUILD_GIT_SHA=$(git rev-parse --short HEAD)
+export BUILD_TIME=$(date -u +%FT%TZ)
 docker compose up -d --build core tools-api proxy bot scheduler
 ```
 
@@ -53,10 +57,11 @@ The shared smoke now includes the `totosha-pfit.7` replay layer on the `core` pa
 - RFC-026 live schema drift checks from `scripts/doctor.py`
 - `/api/chat` route assertions for the broad series questions
 
-Run it directly when you need a focused post-remediation check:
+Run it directly when you need a focused post-remediation check.
+Use `--docker-exec` whenever `tools-api` is not exposed on localhost; the smoke script also auto-falls back to that mode when `http://127.0.0.1:8100/health` is unreachable.
 
 ```bash
-python3 scripts/incident_replay_smoke.py
+python3 scripts/incident_replay_smoke.py --docker-exec
 ```
 
 For RFC-020 correlation smoke on the local stack, the `core` service smoke now sends two fresh requests:
@@ -73,12 +78,13 @@ The smoke fails unless each request is visible in:
 Quick Checks
 ------------
 
-1. `curl -fsS http://127.0.0.1:4000/health`
-2. `curl -fsS http://127.0.0.1:4000/metrics | head`
-3. `curl -fsS http://127.0.0.1:13133/`
-4. `curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=up'`
-5. `curl -fsS http://127.0.0.1:10428/select/jaeger/api/services`
-6. `curl -fsS http://127.0.0.1:3003/api/health`
+1. `curl -fsS http://127.0.0.1:4000/health | jq`
+2. `curl -fsS http://127.0.0.1:8100/health | jq`
+3. `curl -fsS http://127.0.0.1:4000/metrics | head`
+4. `curl -fsS http://127.0.0.1:13133/`
+5. `curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=up'`
+6. `curl -fsS http://127.0.0.1:10428/select/jaeger/api/services`
+7. `curl -fsS http://127.0.0.1:3003/api/health`
 
 Note: `http://127.0.0.1:8428/api/v1/targets` may stay empty in this topology. Prometheus scraping is executed by the OTEL collector, and VictoriaMetrics receives the exported series rather than scraping app targets directly.
 
@@ -102,6 +108,11 @@ curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20(service_name)(ht
 ```
 
 Expected result: `up{service_name="core|tools-api|proxy|scheduler|bot"}` converges to `1`, and request counters are present for the services that already served traffic.
+
+Also verify runtime visibility fields after every rebuild:
+
+- `core /health` -> `build.git_sha`, `build.build_time`, `routing_catalog.catalog_version`, `routing_catalog.schema_version`
+- `tools-api /health` -> `build.git_sha`, `build.build_time`, `corp_db_rfc026.applied=true`
 
 For retrieval correlation, use these checks after a fresh routed request:
 
