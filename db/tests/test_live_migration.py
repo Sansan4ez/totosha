@@ -156,6 +156,36 @@ class LiveMigrationTests(unittest.TestCase):
         self.assertEqual(curated_inserts, [[(7, 2, 1, curated_inserts[0][0][3])]])
         self.assertEqual(conn.execute_calls[-1][1], [[7, 8]])
 
+    def test_ensure_rfc026_schema_downgrades_orphan_parent_refs_to_null(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "categories.json").write_text(
+                json.dumps(
+                    {
+                        "categories": [
+                            {"id": 1, "name": "Root", "parent": None},
+                            {"id": 2, "name": "Child", "parent": {"id": 1, "name": "Root"}},
+                            {"id": 3, "name": "Orphan", "parent": {"id": 999, "name": "Missing"}},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (base / "spheres.json").write_text(
+                json.dumps({"spheres": []}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            conn = FakeConn()
+            stats = asyncio.run(ensure_rfc026_schema(conn, base))
+
+        self.assertEqual(stats["parent_links"], 1)
+        parent_updates = [
+            args for sql, args in conn.executemany_calls if "UPDATE corp.categories" in sql
+        ]
+        self.assertEqual(parent_updates, [[(1, None), (2, 1), (3, None)]])
+
 
 if __name__ == "__main__":
     unittest.main()

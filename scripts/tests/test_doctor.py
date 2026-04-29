@@ -11,6 +11,31 @@ from doctor import SecurityDoctor
 
 
 class SecurityDoctorRfc026Tests(unittest.TestCase):
+    def test_expected_rfc026_counts_ignore_orphan_parent_refs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "db").mkdir()
+            (root / "db" / "categories.json").write_text(
+                json.dumps(
+                    {
+                        "categories": [
+                            {"id": 1, "name": "Root", "parent": None},
+                            {"id": 2, "name": "Child", "parent": {"id": 1, "name": "Root"}},
+                            {"id": 3, "name": "Orphan", "parent": {"id": 999, "name": "Missing"}},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (root / "db" / "spheres.json").write_text(
+                json.dumps({"spheres": []}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            doctor = SecurityDoctor(root)
+            self.assertEqual(doctor._expected_rfc026_counts(), {"parent_links": 1, "curated_rows": 0})
+
     def test_check_corp_db_rfc026_schema_reports_missing_objects(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

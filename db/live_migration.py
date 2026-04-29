@@ -80,13 +80,21 @@ def build_sphere_records(sphere_rows: list[dict], source_hash: str) -> list[tupl
 
 
 def build_category_parent_assignments(category_rows: list[dict]) -> list[tuple]:
-    return [
-        (
-            row["id"],
-            row["parent"]["id"] if row.get("parent") else None,
-        )
+    valid_category_ids = {
+        row.get("id")
         for row in category_rows
-    ]
+        if isinstance(row, dict) and row.get("id") is not None
+    }
+    assignments: list[tuple] = []
+    for row in category_rows:
+        if not isinstance(row, dict):
+            continue
+        parent = row.get("parent")
+        parent_id = parent.get("id") if isinstance(parent, dict) else None
+        if parent_id not in valid_category_ids:
+            parent_id = None
+        assignments.append((row["id"], parent_id))
+    return assignments
 
 
 async def ensure_rfc026_schema(conn, sources_dir: Path) -> dict[str, int]:

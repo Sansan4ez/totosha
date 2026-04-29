@@ -591,11 +591,16 @@ Checking 5 layers of protection:
         categories_payload = json.loads(categories_path.read_text(encoding="utf-8"))
         spheres_payload = json.loads(spheres_path.read_text(encoding="utf-8"))
 
+        category_rows = [row for row in categories_payload.get("categories", []) if isinstance(row, dict)]
+        valid_category_ids = {row.get("id") for row in category_rows if row.get("id") is not None}
+
         return {
             "parent_links": sum(
                 1
-                for row in categories_payload.get("categories", [])
-                if isinstance(row, dict) and row.get("parent") and row["parent"].get("id") is not None
+                for row in category_rows
+                if isinstance(row.get("parent"), dict)
+                and row["parent"].get("id") is not None
+                and row["parent"].get("id") in valid_category_ids
             ),
             "curated_rows": sum(
                 len(row.get("curatedCategoryIds", []))

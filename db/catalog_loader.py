@@ -47,14 +47,23 @@ def build_category_records(category_rows: list[dict], source_hash: str) -> list[
 
 
 def build_category_parent_records(category_rows: list[dict]) -> list[tuple]:
-    return [
-        (
-            row["id"],
-            row["parent"]["id"],
-        )
+    valid_category_ids = {
+        row.get("id")
         for row in category_rows
-        if row.get("parent")
-    ]
+        if isinstance(row, dict) and row.get("id") is not None
+    }
+    records: list[tuple] = []
+    for row in category_rows:
+        if not isinstance(row, dict):
+            continue
+        parent = row.get("parent")
+        if not isinstance(parent, dict):
+            continue
+        parent_id = parent.get("id")
+        if parent_id is None or parent_id not in valid_category_ids:
+            continue
+        records.append((row["id"], parent_id))
+    return records
 
 
 def build_sphere_category_records(sphere_rows: list[dict], source_hash: str) -> list[tuple]:

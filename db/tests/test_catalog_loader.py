@@ -41,8 +41,9 @@ class FakeConn:
 
 
 class CatalogLoaderTests(unittest.TestCase):
-    def test_build_category_parent_records_preserves_parent_ids(self):
+    def test_build_category_parent_records_preserves_only_resolvable_parent_ids(self):
         rows = [
+            {"id": 18, "name": "LAD LED R320 Ex", "parent": None},
             {"id": 37, "name": "LAD LED R500", "parent": None},
             {
                 "id": 63,
@@ -55,7 +56,7 @@ class CatalogLoaderTests(unittest.TestCase):
                 "parent": {"id": 18, "name": "LAD LED R320 Ex"},
             },
         ]
-        self.assertEqual(build_category_parent_records(rows), [(63, 62), (147, 18)])
+        self.assertEqual(build_category_parent_records(rows), [(147, 18)])
 
     def test_build_sphere_curated_category_records_match_rfc_026_shape(self):
         sphere_rows = json.loads(Path("db/spheres.json").read_text(encoding="utf-8"))["spheres"]
