@@ -2495,16 +2495,86 @@ def _route_selector_enabled() -> bool:
     return os.getenv("ROUTE_SELECTOR_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 
+def _compact_selector_argument_schema(argument_schema: dict[str, Any], locked_args: dict[str, Any]) -> dict[str, Any]:
+    properties = argument_schema.get("properties") if isinstance(argument_schema, dict) else {}
+    if not isinstance(properties, dict):
+        properties = {}
+    required = argument_schema.get("required") if isinstance(argument_schema, dict) else []
+    compact: dict[str, Any] = {
+        "required": list(required) if isinstance(required, list) else [],
+        "allowed_args": sorted(str(name) for name in properties.keys()),
+    }
+    enum_args: dict[str, list[Any]] = {}
+    for name, spec in properties.items():
+        if not isinstance(spec, dict):
+            continue
+        values = spec.get("enum")
+        if isinstance(values, list) and values:
+            enum_args[str(name)] = list(values)
+    if enum_args:
+        compact["enum_args"] = enum_args
+    if isinstance(locked_args, dict) and locked_args:
+        compact["locked_arg_keys"] = sorted(str(name) for name in locked_args.keys())
+    return compact
+
+
+def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[str, Any]:
+    compact_routes: list[dict[str, Any]] = []
+    for route in selector_payload.get("routes") or []:
+        if not isinstance(route, dict):
+            continue
+        locked_args = route.get("locked_args") if isinstance(route.get("locked_args"), dict) else {}
+        compact_route = {
+            "route_id": str(route.get("route_id") or ""),
+            "route_family": str(route.get("route_family") or ""),
+            "route_kind": str(route.get("route_kind") or ""),
+            "title": str(route.get("title") or "")[:160],
+            "summary": str(route.get("summary") or "")[:240],
+            "topics": list(route.get("topics") or [])[:6],
+            "keywords": list(route.get("keywords") or [])[:12],
+            "patterns": list(route.get("patterns") or [])[:6],
+            "tool_name": str(route.get("tool_name") or route.get("executor") or ""),
+            "locked_args": locked_args,
+            "argument_schema": _compact_selector_argument_schema(route.get("argument_schema") or {}, locked_args),
+            "argument_hints": dict(route.get("argument_hints") or {}),
+            "fallback_route_ids": list(route.get("fallback_route_ids") or []),
+        }
+        table_scopes = route.get("table_scopes")
+        if isinstance(table_scopes, list) and table_scopes:
+            compact_route["table_scopes"] = table_scopes[:8]
+        document_selectors = route.get("document_selectors")
+        if isinstance(document_selectors, list) and document_selectors:
+            compact_route["document_selectors"] = document_selectors[:8]
+        compact_routes.append(compact_route)
+
+    compact_payload = {
+        "query": str(selector_payload.get("query") or ""),
+        "catalog_version": str(selector_payload.get("catalog_version") or ""),
+        "schema_version": int(selector_payload.get("schema_version") or 0),
+        "candidate_route_ids": list(selector_payload.get("candidate_route_ids") or []),
+        "routes": compact_routes,
+    }
+    resolved_sphere_context = selector_payload.get("resolved_sphere_context")
+    if isinstance(resolved_sphere_context, dict) and resolved_sphere_context:
+        compact_payload["resolved_sphere_context"] = {
+            "sphere_name": str(resolved_sphere_context.get("sphere_name") or ""),
+            "category_names": list(resolved_sphere_context.get("category_names") or []),
+            "confirmed": bool(resolved_sphere_context.get("confirmed")),
+        }
+    return compact_payload
+
+
 def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dict[str, str]]:
-    payload = json.dumps(selector_payload, ensure_ascii=False, separators=(",", ":"))
+    compact_payload = _compact_route_selector_payload(selector_payload)
+    payload = json.dumps(compact_payload, ensure_ascii=False, separators=(",", ":"))
     system = (
         "You are a strict retrieval route selector. Choose exactly one route from the provided routes. "
         "Return only valid JSON with selected_route_id, confidence, reason, tool_args, and optional fallback_route_ids. "
         "tool_args must contain only fields declared by the selected route argument_schema. "
-        "Do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
+        "Respect locked_args for the chosen route and do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
     )
     user = (
-        "Select the best route and arguments for this user query using only this route catalog payload:\n"
+        "Select the best route and arguments for this user query using only this compact route catalog payload:\n"
         f"{payload}"
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]

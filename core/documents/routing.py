@@ -1860,7 +1860,7 @@ def _preferred_route_ids_for_intent(query: str, intent_family: str) -> list[str]
         return []
     if intent_family == "catalog_lookup":
         if _is_broad_series_query(query):
-            return ["corp_kb.company_common", "corp_db.catalog_lookup", "corp_db.category_lamps", "corp_db.sphere_curated_categories"]
+            return ["corp_kb.company_common"]
         if _is_sphere_category_query(query):
             return ["corp_db.sphere_curated_categories", "corp_db.category_lamps", "corp_db.catalog_lookup", "corp_db.category_mountings"]
         if _is_series_or_category_mounting_query(query):
@@ -2086,6 +2086,8 @@ def build_route_selector_payload(
     explicit_document_request = _is_explicit_document_request(query)
     intent_family = _infer_intent_family(query, explicit_document_request=explicit_document_request)
     max_routes = max(1, min(int(limit or SELECTOR_ROUTE_LIMIT), SELECTOR_ROUTE_LIMIT))
+    if intent_family == "catalog_lookup" and _is_broad_series_query(query):
+        max_routes = min(max_routes, 1)
     if len(routes) <= max_routes:
         candidates = list(routes)
         candidate_mode = "all_visible"

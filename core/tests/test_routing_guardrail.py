@@ -514,6 +514,23 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_close_reason"], "route_selector_unavailable")
         self.assertIn("selector upstream unavailable", meta["route_selector_validation_error"])
 
+    def test_route_selector_messages_use_compact_payload_under_context_budget(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                payload = _MODULE.build_route_selector_payload("Какие у вас есть серии светильников?")
+                messages = _MODULE._build_route_selector_messages(payload)
+
+        self.assertEqual([message["role"] for message in messages], ["system", "user"])
+        self.assertIn("corp_kb.company_common", messages[1]["content"])
+        self.assertNotIn("corp_db.catalog_lookup", messages[1]["content"])
+        self.assertNotIn("executor_args_template", messages[1]["content"])
+        self.assertNotIn("evidence_policy", messages[1]["content"])
+        self.assertLess(sum(len(message.get("content") or "") for message in messages), 40000)
+
     def test_selector_executes_scoped_route_and_finalizes_without_extra_tools(self):
         selector_response = {
             "choices": [

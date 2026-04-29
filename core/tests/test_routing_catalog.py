@@ -748,7 +748,8 @@ class RoutingCatalogTests(unittest.TestCase):
                         self.assertEqual(selection["intent_family"], "catalog_lookup")
                         self.assertEqual(selection["selected"]["route_id"], "corp_kb.company_common")
                         self.assertEqual(selection["primary_candidate"]["route_id"], "corp_kb.company_common")
-                        self.assertEqual(payload["candidate_route_ids"][0], "corp_kb.company_common")
+                        self.assertEqual(payload["candidate_route_ids"], ["corp_kb.company_common"])
+                        self.assertNotIn("corp_db.catalog_lookup", payload["candidate_route_ids"])
 
     def test_select_route_prefers_curated_sphere_categories_for_broad_category_questions(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
