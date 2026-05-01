@@ -211,7 +211,67 @@ ROUTE_OWNER_PRIORITY = {
     "document_ingestion": 30,
     "runtime_merged": 40,
 }
+ROUTE_FAMILY_CARDS = {
+    "company_info": {
+        "title": "Company information",
+        "summary": "General company facts, series descriptions, certificates, contacts, and source-scoped corporate knowledge.",
+    },
+    "catalog": {
+        "title": "Catalog",
+        "summary": "Catalog entities, representative category examples, and structured product selection routes.",
+    },
+    "sphere_category_mapping": {
+        "title": "Sphere and category mapping",
+        "summary": "Curated mappings between application spheres and display categories.",
+    },
+    "portfolio": {
+        "title": "Portfolio",
+        "summary": "Realized projects, references, and examples by sphere, object, or product family.",
+    },
+    "mountings": {
+        "title": "Mountings",
+        "summary": "Mounting options and compatibility for categories and model families.",
+    },
+    "documents": {
+        "title": "Documents",
+        "summary": "Document lookup and file-backed product evidence such as passports or certificates.",
+    },
+    "codes_and_sku": {
+        "title": "Codes and SKU",
+        "summary": "Article, ETM, Oracle, and reverse model-code lookup routes.",
+    },
+    "other": {
+        "title": "Other",
+        "summary": "Fallback family for routes that do not yet belong to a business family.",
+    },
+}
+ROUTE_FAMILY_ORDER = {
+    family_id: index
+    for index, family_id in enumerate(ROUTE_FAMILY_CARDS.keys(), start=1)
+}
+ROUTE_BUSINESS_METADATA = {
+    "corp_kb.company_common": {"family_id": "company_info", "leaf_route_id": "company_general", "route_stage": "stage1_general"},
+    "corp_kb.series_description": {"family_id": "company_info", "leaf_route_id": "series_description", "route_stage": "stage2_specialized"},
+    "corp_kb.luxnet": {"family_id": "company_info", "leaf_route_id": "luxnet_overview", "route_stage": "stage1_general"},
+    "corp_kb.lighting_norms": {"family_id": "company_info", "leaf_route_id": "lighting_norms_reference", "route_stage": "stage1_general"},
+    "corp_db.catalog_lookup": {"family_id": "catalog", "leaf_route_id": "catalog_entity_lookup", "route_stage": "stage1_general"},
+    "corp_db.category_lamps": {"family_id": "catalog", "leaf_route_id": "category_lamps", "route_stage": "stage1_general"},
+    "corp_db.showcase_lamps_by_category": {"family_id": "catalog", "leaf_route_id": "showcase_lamps_by_category", "route_stage": "stage2_specialized"},
+    "corp_db.documents_by_lamp_name": {"family_id": "documents", "leaf_route_id": "documents_by_lamp_name", "route_stage": "stage2_specialized"},
+    "corp_db.sku_lookup": {"family_id": "codes_and_sku", "leaf_route_id": "sku_by_code", "route_stage": "stage1_general"},
+    "corp_db.sku_codes_lookup": {"family_id": "codes_and_sku", "leaf_route_id": "sku_codes_lookup", "route_stage": "stage2_specialized"},
+    "corp_db.sphere_curated_categories": {"family_id": "sphere_category_mapping", "leaf_route_id": "curated_categories_by_sphere", "route_stage": "stage1_general"},
+    "corp_db.sphere_categories": {"family_id": "sphere_category_mapping", "leaf_route_id": "imported_categories_by_sphere", "route_stage": "stage1_general"},
+    "corp_db.lamp_filters": {"family_id": "catalog", "leaf_route_id": "catalog_filters_by_category", "route_stage": "stage1_general"},
+    "corp_db.category_mountings": {"family_id": "mountings", "leaf_route_id": "mountings_by_category", "route_stage": "stage1_general"},
+    "corp_db.lamp_mounting_compatibility": {"family_id": "mountings", "leaf_route_id": "mounting_compatibility_by_series", "route_stage": "stage2_specialized"},
+    "corp_db.portfolio_lookup": {"family_id": "portfolio", "leaf_route_id": "portfolio_named_object_lookup", "route_stage": "stage1_general"},
+    "corp_db.portfolio_by_sphere": {"family_id": "portfolio", "leaf_route_id": "portfolio_projects_by_sphere", "route_stage": "stage1_general"},
+    "corp_db.portfolio_examples_by_lamp": {"family_id": "portfolio", "leaf_route_id": "portfolio_examples_by_lamp", "route_stage": "stage2_specialized"},
+    "corp_db.application_recommendation": {"family_id": "catalog", "leaf_route_id": "application_recommendation", "route_stage": "stage1_general"},
+}
 SERIES_AWARE_ROUTE_IDS = {
+    "corp_kb.series_description",
     "corp_db.category_mountings",
     "corp_db.lamp_mounting_compatibility",
 }
@@ -227,11 +287,47 @@ MOUNTING_TYPE_AWARE_ROUTE_IDS = {
 }
 CATEGORY_AWARE_ROUTE_IDS = {
     "corp_db.category_lamps",
+    "corp_db.showcase_lamps_by_category",
     "corp_db.lamp_filters",
     "corp_db.category_mountings",
     "corp_db.lamp_mounting_compatibility",
 }
 ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
+    "corp_kb.company_common": {
+        "kind",
+        "query",
+        "profile",
+        "knowledge_route_id",
+        "source_files",
+        "topic_facets",
+        "limit",
+    },
+    "corp_kb.series_description": {
+        "kind",
+        "query",
+        "profile",
+        "knowledge_route_id",
+        "source_files",
+        "series",
+        "topic_facets",
+        "limit",
+    },
+    "corp_kb.luxnet": {
+        "kind",
+        "query",
+        "profile",
+        "knowledge_route_id",
+        "source_files",
+        "limit",
+    },
+    "corp_kb.lighting_norms": {
+        "kind",
+        "query",
+        "profile",
+        "knowledge_route_id",
+        "source_files",
+        "limit",
+    },
     "corp_db.catalog_lookup": {
         "kind",
         "query",
@@ -250,6 +346,14 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "limit",
         "offset",
     },
+    "corp_db.sku_codes_lookup": {
+        "kind",
+        "name",
+        "etm",
+        "oracl",
+        "limit",
+        "offset",
+    },
     "corp_db.category_lamps": {
         "kind",
         "category",
@@ -257,6 +361,21 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "limit",
         "offset",
         "fuzzy",
+    },
+    "corp_db.showcase_lamps_by_category": {
+        "kind",
+        "category",
+        "query",
+        "limit",
+        "offset",
+        "fuzzy",
+    },
+    "corp_db.documents_by_lamp_name": {
+        "kind",
+        "name",
+        "query",
+        "limit",
+        "offset",
     },
     "corp_db.portfolio_lookup": {
         "kind",
@@ -363,8 +482,12 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
 }
 ROUTE_REQUIRED_ARGUMENTS = {
     "corp_db.application_recommendation": {"query"},
+    "corp_db.documents_by_lamp_name": {"name"},
     "corp_db.portfolio_lookup": {"query"},
     "corp_db.portfolio_by_sphere": {"sphere"},
+    "corp_db.showcase_lamps_by_category": {"category"},
+    "corp_db.sku_codes_lookup": {"name"},
+    "corp_kb.series_description": {"query"},
     "corp_db.sphere_curated_categories": {"sphere"},
     "corp_db.sphere_categories": {"sphere"},
 }
@@ -402,6 +525,35 @@ def _truth_source_owner(origin: str, payload: dict[str, Any] | None = None) -> s
     if origin in {"runtime_merged"}:
         return "runtime_merged"
     return "repo_static"
+
+
+def _default_family_metadata(route_id: str, route_kind: str) -> dict[str, str]:
+    if route_kind == "doc_domain" or route_id.startswith("doc_search."):
+        return {
+            "family_id": "documents",
+            "leaf_route_id": "document_domain_lookup",
+            "route_stage": "stage1_general",
+        }
+    if route_id.startswith("corp_kb."):
+        return {
+            "family_id": "company_info",
+            "leaf_route_id": "company_general",
+            "route_stage": "stage1_general",
+        }
+    return {
+        "family_id": "other",
+        "leaf_route_id": route_id or "other",
+        "route_stage": "stage1_general",
+    }
+
+
+def _family_metadata_for_route(route_id: str, route_kind: str) -> dict[str, str]:
+    metadata = dict(_default_family_metadata(route_id, route_kind))
+    metadata.update(ROUTE_BUSINESS_METADATA.get(route_id, {}))
+    family = ROUTE_FAMILY_CARDS.get(metadata["family_id"], ROUTE_FAMILY_CARDS["other"])
+    metadata["family_title"] = str(family.get("title") or metadata["family_id"])
+    metadata["family_summary"] = str(family.get("summary") or "")
+    return metadata
 
 
 def _catalog_required_for_runtime() -> bool:
@@ -590,10 +742,19 @@ def _normalize_route_card(
     authority = str(route.get("authority") or "").strip() or (
         "primary" if route_kind != "doc_domain" or route_id.startswith("doc_search.doc_") else "secondary"
     )
+    family_metadata = _family_metadata_for_route(route_id, route_kind)
+    for field_name in ("family_id", "family_title", "family_summary", "leaf_route_id", "route_stage"):
+        if str(route.get(field_name) or "").strip():
+            family_metadata[field_name] = str(route.get(field_name) or "").strip()
 
     normalized = {
         "route_id": route_id,
         "route_family": route_family,
+        "family_id": family_metadata["family_id"],
+        "family_title": family_metadata["family_title"],
+        "family_summary": family_metadata["family_summary"],
+        "leaf_route_id": family_metadata["leaf_route_id"],
+        "route_stage": family_metadata["route_stage"],
         "route_kind": route_kind,
         "authority": authority,
         "title": str(route.get("title") or route_id).strip(),
@@ -615,6 +776,9 @@ def _normalize_route_card(
         "route_owner": source_owner or _truth_source_owner(origin),
     }
     normalized["observability_labels"].setdefault("route_family", route_family)
+    normalized["observability_labels"].setdefault("family_id", family_metadata["family_id"])
+    normalized["observability_labels"].setdefault("leaf_route_id", family_metadata["leaf_route_id"])
+    normalized["observability_labels"].setdefault("route_stage", family_metadata["route_stage"])
     normalized["observability_labels"].setdefault("route_kind", route_kind)
     normalized["observability_labels"].setdefault("authority", authority)
     normalized["observability_labels"].setdefault("source", normalized["source"])
@@ -712,6 +876,47 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "observability_labels": {"scope": "source_file"},
         },
         {
+            "route_id": "corp_kb.series_description",
+            "route_family": "corp_kb.company_common",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Series descriptions and lineup overview",
+            "summary": "Dedicated company-KB leaf route for broad series overviews and series-level descriptions.",
+            "topics": ["series", "catalog", "company"],
+            "keywords": [
+                "серии светильников",
+                "какие серии",
+                "какие есть серии",
+                "описание серий",
+                "линейки светильников",
+                "список серий",
+                "nl nova",
+                "nl vega",
+                "lad led r500",
+                "lad led r700",
+            ],
+            "patterns": [
+                "какие у вас есть серии светильников",
+                "в общей базе есть описание всех серий",
+                "какие серии доступны",
+                "опиши серию",
+                "расскажи про серию",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {
+                "kind": "hybrid_search",
+                "profile": "kb_route_lookup",
+                "knowledge_route_id": "corp_kb.company_common",
+                "source_files": ["common_information_about_company.md"],
+                "topic_facets": ["series"],
+            },
+            "argument_hints": {
+                "series": "Choose one canonical business series when the user asks about a specific series; omit it for broad lineup questions.",
+                "query": "Keep the original series wording so the KB search can answer either broad lineup or a specific series description.",
+            },
+            "observability_labels": {"scope": "source_file", "specialization": "series_description"},
+        },
+        {
             "route_id": "corp_kb.luxnet",
             "route_family": "corp_kb.luxnet",
             "route_kind": "corp_table",
@@ -799,6 +1004,35 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "observability_labels": {"scope": "sku_lookup"},
         },
         {
+            "route_id": "corp_db.sku_codes_lookup",
+            "route_family": "corp_db.catalog_lookup",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "SKU and codes by lamp name",
+            "summary": "Reverse lookup from lamp/model name to ETM, ORACL, and related SKU identifiers.",
+            "topics": ["catalog", "sku", "codes", "lamp"],
+            "keywords": [
+                "коды модели",
+                "артикулы модели",
+                "etm код",
+                "oracl код",
+                "sku модели",
+                "коды светильника",
+            ],
+            "patterns": [
+                "какие коды у модели",
+                "какие артикулы у светильника",
+                "найди etm и oracl для модели",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact"},
+            "argument_hints": {
+                "name": "Extract the lamp or model name whose ETM/ORACL/article codes the user wants.",
+            },
+            "fallback_route_ids": ["corp_db.sku_lookup", "corp_db.catalog_lookup"],
+            "observability_labels": {"scope": "sku_codes_lookup"},
+        },
+        {
             "route_id": "corp_db.category_lamps",
             "route_family": "corp_db.category_lamps",
             "route_kind": "corp_table",
@@ -828,6 +1062,63 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "query": "Keep the original category phrase for fuzzy resolution when the input is already a leaf-like catalog category.",
             },
             "observability_labels": {"scope": "category_lamps"},
+        },
+        {
+            "route_id": "corp_db.showcase_lamps_by_category",
+            "route_family": "corp_db.category_lamps",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Showcase lamps by category",
+            "summary": "Representative lamps for a display category when the user asks for examples rather than the full category list.",
+            "topics": ["catalog", "category", "lamp", "showcase"],
+            "keywords": [
+                "примеры светильников категории",
+                "покажи примеры",
+                "представительные модели",
+                "витрина категории",
+                "покажи несколько моделей",
+            ],
+            "patterns": [
+                "какие светильники показать в категории",
+                "покажи примеры моделей категории",
+                "какие модели можно привести как пример",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "category_lamps", "fuzzy": True, "limit": 3},
+            "argument_hints": {
+                "category": "Extract the display category name for which representative lamps should be shown.",
+                "query": "Keep the original wording when the category needs fuzzy resolution.",
+            },
+            "fallback_route_ids": ["corp_db.category_lamps"],
+            "observability_labels": {"scope": "showcase_lamps_by_category"},
+        },
+        {
+            "route_id": "corp_db.documents_by_lamp_name",
+            "route_family": "corp_db.catalog_lookup",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Documents by lamp name",
+            "summary": "Catalog-backed route for listing passports, certificates, and other linked documents for a lamp or model family.",
+            "topics": ["documents", "catalog", "lamp"],
+            "keywords": [
+                "документы на светильник",
+                "паспорт на модель",
+                "сертификаты на модель",
+                "документы для серии",
+                "какие документы есть",
+            ],
+            "patterns": [
+                "какие документы есть для модели",
+                "покажи документы на светильник",
+                "какие паспорта и сертификаты есть",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact", "limit": 3},
+            "argument_hints": {
+                "name": "Extract the lamp, model, or series name whose linked documents should be listed.",
+            },
+            "fallback_route_ids": ["corp_db.catalog_lookup"],
+            "observability_labels": {"scope": "documents_by_lamp_name"},
         },
         {
             "route_id": "corp_db.sphere_curated_categories",
@@ -1152,6 +1443,11 @@ def default_corp_db_route_cards() -> list[dict[str, Any]]:
         {
             "route_id": route["route_id"],
             "route_family": route["route_family"],
+            "family_id": str(route.get("family_id") or ""),
+            "family_title": str(route.get("family_title") or ""),
+            "family_summary": str(route.get("family_summary") or ""),
+            "leaf_route_id": str(route.get("leaf_route_id") or route["route_id"]),
+            "route_stage": str(route.get("route_stage") or ""),
             "route_kind": route["route_kind"],
             "authority": route["authority"],
             "source": route["source"],
@@ -1676,7 +1972,7 @@ def load_routing_index() -> dict[str, Any]:
         return _merge_catalogs([*payloads, legacy_runtime], manifest_origin="runtime_legacy")
 
     if payloads:
-        return _merge_catalogs(payloads, manifest_origin="published")
+        return _merge_catalogs([_bootstrap_catalog_payload(), *payloads], manifest_origin="published")
     return _bootstrap_catalog_payload()
 
 
@@ -1763,15 +2059,68 @@ def _is_series_or_category_mounting_query(query: str) -> bool:
     return any(marker in query_text for marker in ("сер", "категор", "линейк", "модел"))
 
 
+def _is_series_description_query(query: str) -> bool:
+    query_text = _normalize(query)
+    if _is_broad_series_query(query):
+        return True
+    if any(marker in query_text for marker in ("опиши сери", "описание серии", "расскажи про сери", "что за серия")):
+        return not any(marker in query_text for marker in BROAD_SERIES_QUERY_EXCLUSIONS)
+    return False
+
+
+def _is_documents_by_lamp_query(query: str) -> bool:
+    query_text = _normalize(query)
+    if not _is_explicit_document_request(query):
+        return False
+    return any(
+        marker in query_text
+        for marker in (
+            "какие документы есть",
+            "документы на",
+            "документы для",
+            "паспорт на",
+            "паспорт для",
+            "сертификаты на",
+            "сертификаты для",
+        )
+    )
+
+
+def _is_codes_for_lamp_query(query: str) -> bool:
+    query_text = _normalize(query)
+    return any(
+        marker in query_text
+        for marker in (
+            "какие коды у",
+            "какие артикулы у",
+            "etm и oracl",
+            "etm код",
+            "oracl код",
+            "sku для модели",
+            "артикулы для модели",
+        )
+    )
+
+
+def _is_showcase_category_query(query: str) -> bool:
+    query_text = _normalize(query)
+    if "категор" not in query_text:
+        return False
+    return any(marker in query_text for marker in ("покажи примеры", "примеры моделей", "как пример", "представительные модели", "витрина"))
+
+
 def _route_intent_family(route: dict[str, Any]) -> str:
     route_id = str(route.get("route_id") or "")
     route_family = str(route.get("route_family") or "")
-    if route_id.startswith("corp_kb."):
-        return "company_fact"
+    if route_id in {"corp_db.documents_by_lamp_name"}:
+        return "document_lookup"
     if route_id in {
+        "corp_kb.series_description",
         "corp_db.catalog_lookup",
         "corp_db.sku_lookup",
+        "corp_db.sku_codes_lookup",
         "corp_db.category_lamps",
+        "corp_db.showcase_lamps_by_category",
         "corp_db.sphere_curated_categories",
         "corp_db.sphere_categories",
         "corp_db.lamp_filters",
@@ -1779,6 +2128,8 @@ def _route_intent_family(route: dict[str, Any]) -> str:
         "corp_db.lamp_mounting_compatibility",
     }:
         return "catalog_lookup"
+    if route_id.startswith("corp_kb."):
+        return "company_fact"
     if route_id == "corp_db.application_recommendation":
         return "application_recommendation"
     if route_id in {"corp_db.portfolio_lookup", "corp_db.portfolio_by_sphere", "corp_db.portfolio_examples_by_lamp"}:
@@ -1857,10 +2208,16 @@ def _preferred_route_ids_for_intent(query: str, intent_family: str) -> list[str]
     if intent_family == "application_recommendation":
         return ["corp_db.application_recommendation", "corp_db.portfolio_lookup", "corp_db.portfolio_by_sphere"]
     if intent_family == "document_lookup":
+        if _is_documents_by_lamp_query(query):
+            return ["corp_db.documents_by_lamp_name"]
         return []
     if intent_family == "catalog_lookup":
-        if _is_broad_series_query(query):
-            return ["corp_kb.company_common"]
+        if _is_series_description_query(query):
+            return ["corp_kb.series_description", "corp_kb.company_common"]
+        if _is_codes_for_lamp_query(query):
+            return ["corp_db.sku_codes_lookup", "corp_db.catalog_lookup", "corp_db.sku_lookup"]
+        if _is_showcase_category_query(query):
+            return ["corp_db.showcase_lamps_by_category", "corp_db.category_lamps", "corp_db.catalog_lookup"]
         if _is_sphere_category_query(query):
             return ["corp_db.sphere_curated_categories", "corp_db.category_lamps", "corp_db.catalog_lookup", "corp_db.category_mountings"]
         if _is_series_or_category_mounting_query(query):
@@ -1926,6 +2283,8 @@ def _candidate_payload(route: dict[str, Any], *, intent_family: str, selection_r
     payload["route_family"] = str(route.get("route_family") or "")
     payload["selected_route_kind"] = str(route.get("route_kind") or "")
     payload["selected_route_family"] = str(route.get("route_family") or "")
+    payload["selected_family_id"] = str(route.get("family_id") or "")
+    payload["selected_leaf_route_id"] = str(route.get("leaf_route_id") or route.get("route_id") or "")
     payload["intent_family"] = intent_family
     payload["route_intent_family"] = _route_intent_family(route)
     return payload
@@ -1975,6 +2334,8 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
                 "route_id": str(item.get("route_id") or ""),
                 "route_kind": str(item.get("route_kind") or ""),
                 "route_family": str(item.get("route_family") or ""),
+                "family_id": str(item.get("family_id") or ""),
+                "leaf_route_id": str(item.get("leaf_route_id") or item.get("route_id") or ""),
                 "selection_reason": str(item.get("selection_reason") or ""),
                 "intent_family": str(item.get("intent_family") or ""),
                 "route_intent_family": str(item.get("route_intent_family") or ""),
@@ -1994,6 +2355,8 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
                 "route_id": str(item.get("route_id") or ""),
                 "route_kind": str(item.get("route_kind") or ""),
                 "route_family": str(item.get("route_family") or ""),
+                "family_id": str(item.get("family_id") or ""),
+                "leaf_route_id": str(item.get("leaf_route_id") or item.get("route_id") or ""),
                 "selection_reason": str(item.get("selection_reason") or ""),
                 "intent_family": str(item.get("intent_family") or ""),
                 "route_intent_family": str(item.get("route_intent_family") or ""),
@@ -2003,6 +2366,8 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
         "selection_reason": selection_reason,
         "selected_route_kind": str(selected.get("route_kind") or "") if selected is not None else "",
         "selected_route_family": str(selected.get("route_family") or "") if selected is not None else "",
+        "selected_family_id": str(selected.get("family_id") or "") if selected is not None else "",
+        "selected_leaf_route_id": str(selected.get("leaf_route_id") or selected.get("route_id") or "") if selected is not None else "",
         "catalog_version": str(catalog.get("catalog_version") or ""),
         "catalog_origin": str(catalog.get("manifest_origin") or ""),
         "route_count": int(catalog.get("route_count") or 0),
@@ -2054,6 +2419,11 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
     return {
         "route_id": str(route.get("route_id") or ""),
         "route_family": str(route.get("route_family") or ""),
+        "family_id": str(route.get("family_id") or "other"),
+        "family_title": str(route.get("family_title") or ""),
+        "family_summary": str(route.get("family_summary") or "")[:240],
+        "leaf_route_id": str(route.get("leaf_route_id") or route.get("route_id") or ""),
+        "route_stage": str(route.get("route_stage") or ""),
         "route_kind": str(route.get("route_kind") or ""),
         "authority": str(route.get("authority") or ""),
         "title": str(route.get("title") or ""),
@@ -2075,6 +2445,39 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
     }
 
 
+def _selector_family_cards(routes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    ordered: list[tuple[int, str]] = []
+    for route in routes:
+        family_id = str(route.get("family_id") or "other")
+        family = grouped.get(family_id)
+        if family is None:
+            family = {
+                "family_id": family_id,
+                "family_title": str(route.get("family_title") or ROUTE_FAMILY_CARDS.get(family_id, ROUTE_FAMILY_CARDS["other"]).get("title") or family_id),
+                "family_summary": str(route.get("family_summary") or ROUTE_FAMILY_CARDS.get(family_id, ROUTE_FAMILY_CARDS["other"]).get("summary") or "")[:240],
+                "route_ids": [],
+                "leaf_routes": [],
+            }
+            grouped[family_id] = family
+            ordered.append((len(ordered), family_id))
+        route_id = str(route.get("route_id") or "")
+        family["route_ids"].append(route_id)
+        family["leaf_routes"].append(
+            {
+                "route_id": route_id,
+                "leaf_route_id": str(route.get("leaf_route_id") or route_id),
+                "title": str(route.get("title") or "")[:160],
+                "summary": str(route.get("summary") or "")[:200],
+                "route_kind": str(route.get("route_kind") or ""),
+                "authority": str(route.get("authority") or ""),
+                "route_stage": str(route.get("route_stage") or ""),
+            }
+        )
+    ordered.sort(key=lambda item: (ROUTE_FAMILY_ORDER.get(item[1], 999), item[0]))
+    return [grouped[family_id] for _, family_id in ordered]
+
+
 def build_route_selector_payload(
     query: str,
     *,
@@ -2086,22 +2489,27 @@ def build_route_selector_payload(
     explicit_document_request = _is_explicit_document_request(query)
     intent_family = _infer_intent_family(query, explicit_document_request=explicit_document_request)
     max_routes = max(1, min(int(limit or SELECTOR_ROUTE_LIMIT), SELECTOR_ROUTE_LIMIT))
-    if intent_family == "catalog_lookup" and _is_broad_series_query(query):
+    if intent_family == "catalog_lookup" and _is_series_description_query(query):
         max_routes = min(max_routes, 1)
     if len(routes) <= max_routes:
         candidates = list(routes)
-        candidate_mode = "all_visible"
+        candidate_mode = "all_visible_grouped_by_family"
     else:
         candidates = _ordered_routes_for_intent(routes, query, intent_family)[:max_routes]
-        candidate_mode = "intent_then_catalog_order"
+        candidate_mode = "intent_then_catalog_order_grouped_by_family"
+    compact_routes = [_compact_selector_route_card(route, sphere_context=sphere_context) for route in candidates]
+    families = _selector_family_cards(compact_routes)
     return {
         "query": query,
+        "intent_family": intent_family,
         "resolved_sphere_context": dict(sphere_context or {}),
         "catalog_version": str(catalog.get("catalog_version") or ""),
         "catalog_origin": str(catalog.get("manifest_origin") or ""),
         "schema_version": int(catalog.get("schema_version") or 0),
         "route_count": int(catalog.get("route_count") or len(routes)),
         "candidate_mode": candidate_mode,
-        "candidate_route_ids": [str(route.get("route_id") or "") for route in candidates],
-        "routes": [_compact_selector_route_card(route, sphere_context=sphere_context) for route in candidates],
+        "candidate_route_ids": [str(route.get("route_id") or "") for route in compact_routes],
+        "candidate_family_ids": [str(family.get("family_id") or "") for family in families],
+        "families": families,
+        "routes": compact_routes,
     }

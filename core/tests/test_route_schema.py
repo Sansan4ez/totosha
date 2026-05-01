@@ -21,6 +21,10 @@ def _route(payload: dict) -> dict:
     base = {
         "route_id": "corp_kb.company_common",
         "route_family": "corp_kb.company_common",
+        "family_id": "company_info",
+        "family_title": "Company information",
+        "leaf_route_id": "company_general",
+        "route_stage": "stage1_general",
         "route_kind": "corp_table",
         "authority": "primary",
         "title": "Company common knowledge base",
@@ -165,6 +169,7 @@ class RouteSchemaTests(unittest.TestCase):
         result = validate_selector_output(
             json.dumps(
                 {
+                    "selected_family_id": "company_info",
                     "selected_route_id": "corp_kb.company_common",
                     "tool_args": {"query": "контакты", "topic_facets": ["contacts"]},
                     "fallback_route_ids": ["corp_kb.luxnet"],
@@ -174,6 +179,7 @@ class RouteSchemaTests(unittest.TestCase):
         )
 
         self.assertTrue(result.valid)
+        self.assertEqual(result.selected_family_id, "company_info")
         self.assertEqual(result.tool_args["knowledge_route_id"], "corp_kb.company_common")
         self.assertEqual(result.fallback_route_ids, ["corp_kb.luxnet"])
 
@@ -198,6 +204,21 @@ class RouteSchemaTests(unittest.TestCase):
         self.assertEqual(hidden_result.error_code, "unsafe_selector_output")
         self.assertFalse(undeclared_fallback.valid)
         self.assertEqual(undeclared_fallback.error_code, "unsafe_selector_output")
+
+    def test_selector_rejects_mismatched_family_and_route(self):
+        route = _route({})
+        result = validate_selector_output(
+            {
+                "selected_family_id": "portfolio",
+                "selected_route_id": "corp_kb.company_common",
+                "tool_args": {"query": "контакты"},
+            },
+            [route],
+        )
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.error_code, "unsafe_selector_output")
+        self.assertIn("does not match", result.error)
 
     def test_argument_schema_enforces_type_enum_bounds_pattern_max_length_and_max_items(self):
         route = _route(

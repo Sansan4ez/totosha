@@ -120,7 +120,7 @@ class RoutingCatalogTests(unittest.TestCase):
                 payload = load_routing_index()
             self.assertEqual(payload["manifest_origin"], "published")
             self.assertEqual(payload["catalog_version"], "repo-v1")
-            self.assertEqual(payload["routes"][0]["route_id"], "corp_db.custom_lookup")
+            self.assertIn("corp_db.custom_lookup", {route["route_id"] for route in payload["routes"]})
 
     def test_build_routing_index_merges_repo_manifest_and_live_doc_routes(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -746,9 +746,12 @@ class RoutingCatalogTests(unittest.TestCase):
                         payload = build_route_selector_payload(query, limit=5)
 
                         self.assertEqual(selection["intent_family"], "catalog_lookup")
-                        self.assertEqual(selection["selected"]["route_id"], "corp_kb.company_common")
-                        self.assertEqual(selection["primary_candidate"]["route_id"], "corp_kb.company_common")
-                        self.assertEqual(payload["candidate_route_ids"], ["corp_kb.company_common"])
+                        self.assertEqual(selection["selected"]["route_id"], "corp_kb.series_description")
+                        self.assertEqual(selection["selected_family_id"], "company_info")
+                        self.assertEqual(selection["selected_leaf_route_id"], "series_description")
+                        self.assertEqual(selection["primary_candidate"]["route_id"], "corp_kb.series_description")
+                        self.assertEqual(payload["candidate_route_ids"], ["corp_kb.series_description"])
+                        self.assertEqual(payload["candidate_family_ids"], ["company_info"])
                         self.assertNotIn("corp_db.catalog_lookup", payload["candidate_route_ids"])
 
     def test_select_route_prefers_curated_sphere_categories_for_broad_category_questions(self):
@@ -779,6 +782,45 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertEqual(selection["selected"]["route_id"], "corp_db.category_mountings")
         self.assertEqual(payload["candidate_route_ids"][0], "corp_db.category_mountings")
 
+    def test_select_route_prefers_documents_by_lamp_for_lamp_document_list_queries(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                selection = select_route("Какие документы есть для NL Nova?")
+
+        self.assertEqual(selection["intent_family"], "document_lookup")
+        self.assertEqual(selection["selected"]["route_id"], "corp_db.documents_by_lamp_name")
+        self.assertEqual(selection["selected_family_id"], "documents")
+
+    def test_select_route_prefers_sku_codes_lookup_for_reverse_code_questions(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                selection = select_route("Какие ETM и ORACL коды у NL Nova?")
+
+        self.assertEqual(selection["intent_family"], "catalog_lookup")
+        self.assertEqual(selection["selected"]["route_id"], "corp_db.sku_codes_lookup")
+        self.assertEqual(selection["selected_family_id"], "codes_and_sku")
+
+    def test_select_route_prefers_showcase_lamps_by_category_for_example_queries(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                selection = select_route("Покажи примеры моделей для категории прожекторы")
+
+        self.assertEqual(selection["intent_family"], "catalog_lookup")
+        self.assertEqual(selection["selected"]["route_id"], "corp_db.showcase_lamps_by_category")
+        self.assertEqual(selection["selected_family_id"], "catalog")
+
     def test_default_corp_db_routes_cover_structured_domains(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             with patch.dict(
@@ -791,9 +833,13 @@ class RoutingCatalogTests(unittest.TestCase):
         routes = {route["route_id"]: route for route in payload["routes"]}
         expected_route_ids = {
             "corp_kb.company_common",
+            "corp_kb.series_description",
             "corp_db.catalog_lookup",
             "corp_db.sku_lookup",
+            "corp_db.sku_codes_lookup",
             "corp_db.category_lamps",
+            "corp_db.showcase_lamps_by_category",
+            "corp_db.documents_by_lamp_name",
             "corp_db.sphere_curated_categories",
             "corp_db.sphere_categories",
             "corp_db.lamp_filters",
@@ -864,6 +910,12 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertNotIn("sphere", routes["corp_db.portfolio_lookup"]["argument_schema"]["properties"])
         self.assertNotIn("category", routes["corp_db.sphere_curated_categories"]["argument_schema"]["properties"])
         self.assertNotIn("series", routes["corp_db.catalog_lookup"]["argument_schema"]["properties"])
+        self.assertEqual(routes["corp_kb.series_description"]["family_id"], "company_info")
+        self.assertEqual(routes["corp_kb.series_description"]["leaf_route_id"], "series_description")
+        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["family_id"], "documents")
+        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["argument_schema"]["required"], ["kind", "name"])
+        self.assertEqual(routes["corp_db.sku_codes_lookup"]["argument_schema"]["required"], ["kind", "name"])
+        self.assertEqual(routes["corp_db.showcase_lamps_by_category"]["argument_schema"]["required"], ["kind", "category"])
 
     def test_selector_payload_uses_compact_route_specific_enums(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -900,6 +952,24 @@ class RoutingCatalogTests(unittest.TestCase):
             category_schema = route["argument_schema"]["properties"].get("category")
             if isinstance(category_schema, dict):
                 self.assertNotIn("enum", category_schema)
+
+    def test_selector_payload_groups_candidates_by_business_family(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                payload = build_route_selector_payload("Какие документы есть для NL Nova?", limit=8)
+
+        self.assertIn("families", payload)
+        self.assertIn("candidate_family_ids", payload)
+        families = {family["family_id"]: family for family in payload["families"]}
+        self.assertIn("documents", families)
+        document_routes = {leaf["route_id"] for leaf in families["documents"]["leaf_routes"]}
+        self.assertIn("corp_db.documents_by_lamp_name", document_routes)
+        route_ids = {route["route_id"] for route in payload["routes"]}
+        self.assertIn("corp_db.documents_by_lamp_name", route_ids)
 
     def test_selector_payload_injects_scoped_curated_category_enum_for_local_follow_up(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:

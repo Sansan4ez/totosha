@@ -198,7 +198,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         quality_route = quality_selection["selected"]
         self.assertEqual(quality_route["route_id"], "corp_kb.company_common")
 
-    def test_broad_series_question_uses_company_common_runtime_route(self):
+    def test_broad_series_question_uses_series_description_leaf_route(self):
         response, exec_mock, meta = self._run_flow(
             user_message="Какие у вас есть серии светильников?",
             corp_db_payload={
@@ -224,7 +224,10 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[1]["knowledge_route_id"], "corp_kb.company_common")
         self.assertEqual(exec_mock.await_args_list[0].args[1]["topic_facets"], ["series"])
+        self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
         self.assertEqual(meta["retrieval_route_family"], "corp_kb.company_common")
+        self.assertEqual(meta["retrieval_business_family_id"], "company_info")
+        self.assertEqual(meta["retrieval_leaf_route_id"], "series_description")
         self.assertEqual(meta["knowledge_route_id"], "corp_kb.company_common")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
 
@@ -422,6 +425,8 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("query", route_selection["selector"]["validated_arg_keys"])
         self.assertIn("catalog_version", route_selection)
         self.assertIn("schema_version", route_selection)
+        self.assertEqual(route_selection["selected_family_id"], "company_info")
+        self.assertIn("company_info", route_selection["selector"]["candidate_family_ids"])
         self.assertIn("corp_kb.company_common", route_selection["candidate_route_ids"])
         self.assertTrue(secondary)
 
@@ -525,7 +530,9 @@ class RoutingGuardrailTests(unittest.TestCase):
                 messages = _MODULE._build_route_selector_messages(payload)
 
         self.assertEqual([message["role"] for message in messages], ["system", "user"])
-        self.assertIn("corp_kb.company_common", messages[1]["content"])
+        self.assertIn("corp_kb.series_description", messages[1]["content"])
+        self.assertIn("selected_family_id", messages[0]["content"])
+        self.assertIn("company_info", messages[1]["content"])
         self.assertNotIn("corp_db.catalog_lookup", messages[1]["content"])
         self.assertNotIn("executor_args_template", messages[1]["content"])
         self.assertNotIn("evidence_policy", messages[1]["content"])

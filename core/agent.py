@@ -600,6 +600,8 @@ def _portfolio_lookup_fallback_call(message: str) -> tuple[str, dict[str, Any], 
     route_hint = {
         "route_id": route_id,
         "route_family": route_id,
+        "family_id": "portfolio",
+        "leaf_route_id": "portfolio_projects_by_sphere" if route_id == "corp_db.portfolio_by_sphere" else "portfolio_named_object_lookup",
         "route_kind": "corp_table",
         "tool_name": "corp_db_search",
         "tool_args": dict(args),
@@ -718,6 +720,8 @@ async def _try_controlled_portfolio_fallback(
     routing_state["route_id"] = fallback_route_id
     routing_state["route_source"] = "corp_db"
     routing_state["retrieval_route_family"] = fallback_route_id
+    routing_state["retrieval_business_family_id"] = str(fallback_route_hint.get("family_id") or "portfolio")
+    routing_state["retrieval_leaf_route_id"] = str(fallback_route_hint.get("leaf_route_id") or fallback_route_id)
     routing_state["selected_route_kind"] = "corp_table"
     routing_state["knowledge_route_id"] = ""
     routing_state["source_file_scope"] = []
@@ -832,6 +836,8 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         if knowledge_route_id not in effective_candidate_route_ids:
             effective_candidate_route_ids = [knowledge_route_id, *effective_candidate_route_ids]
     effective_route_family = str(state.get("retrieval_route_family") or effective_route_id)
+    effective_business_family_id = str(state.get("retrieval_business_family_id") or state.get("selected_family_id") or "")
+    effective_leaf_route_id = str(state.get("retrieval_leaf_route_id") or state.get("route_id") or "")
     meta = run_meta_get()
     if isinstance(meta, dict):
         meta["execution_mode"] = execution_mode
@@ -842,6 +848,8 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["retrieval_selected_route_kind"] = str(state.get("selected_route_kind") or "")
         meta["retrieval_candidate_route_ids"] = effective_candidate_route_ids
         meta["retrieval_route_family"] = effective_route_family
+        meta["retrieval_business_family_id"] = effective_business_family_id
+        meta["retrieval_leaf_route_id"] = effective_leaf_route_id
         meta["retrieval_phase"] = str(state.get("retrieval_phase") or "")
         meta["retrieval_evidence_status"] = str(state.get("retrieval_evidence_status") or "")
         meta["retrieval_retry_count"] = int(state.get("retrieval_retry_count") or 0)
@@ -886,6 +894,8 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
     update_correlation_context(
         selected_route_id=str(state.get("route_id") or ""),
         selected_route_family=str(state.get("retrieval_route_family") or ""),
+        selected_business_family_id=effective_business_family_id,
+        selected_leaf_route_id=effective_leaf_route_id,
         selected_route_kind=str(state.get("selected_route_kind") or ""),
         selected_source=str(state.get("selected_source") or "unknown"),
         knowledge_route_id=str(state.get("knowledge_route_id") or ""),
@@ -913,6 +923,8 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         if isinstance(candidate_route_ids, list):
             span.set_attribute("retrieval.candidate_route_ids", ",".join(str(item) for item in candidate_route_ids))
         span.set_attribute("retrieval.route_family", str(state.get("retrieval_route_family") or ""))
+        span.set_attribute("retrieval.business_family_id", effective_business_family_id)
+        span.set_attribute("retrieval.leaf_route_id", effective_leaf_route_id)
         span.set_attribute("retrieval.phase", str(state.get("retrieval_phase") or ""))
         span.set_attribute("retrieval.evidence_status", str(state.get("retrieval_evidence_status") or ""))
         span.set_attribute("retrieval.retry_count", int(state.get("retrieval_retry_count") or 0))
@@ -2527,6 +2539,8 @@ def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[st
         compact_route = {
             "route_id": str(route.get("route_id") or ""),
             "route_family": str(route.get("route_family") or ""),
+            "family_id": str(route.get("family_id") or ""),
+            "leaf_route_id": str(route.get("leaf_route_id") or route.get("route_id") or ""),
             "route_kind": str(route.get("route_kind") or ""),
             "title": str(route.get("title") or "")[:160],
             "summary": str(route.get("summary") or "")[:240],
@@ -2549,9 +2563,12 @@ def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[st
 
     compact_payload = {
         "query": str(selector_payload.get("query") or ""),
+        "intent_family": str(selector_payload.get("intent_family") or ""),
         "catalog_version": str(selector_payload.get("catalog_version") or ""),
         "schema_version": int(selector_payload.get("schema_version") or 0),
+        "candidate_family_ids": list(selector_payload.get("candidate_family_ids") or []),
         "candidate_route_ids": list(selector_payload.get("candidate_route_ids") or []),
+        "families": list(selector_payload.get("families") or []),
         "routes": compact_routes,
     }
     resolved_sphere_context = selector_payload.get("resolved_sphere_context")
@@ -2568,10 +2585,10 @@ def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dic
     compact_payload = _compact_route_selector_payload(selector_payload)
     payload = json.dumps(compact_payload, ensure_ascii=False, separators=(",", ":"))
     system = (
-        "You are a strict retrieval route selector. Choose exactly one route from the provided routes. "
-        "Return only valid JSON with selected_route_id, confidence, reason, tool_args, and optional fallback_route_ids. "
+        "You are a strict retrieval route selector. First choose the best business family, then choose exactly one leaf route from that family. "
+        "Return only valid JSON with selected_family_id, selected_route_id, confidence, reason, tool_args, and optional fallback_route_ids. "
         "tool_args must contain only fields declared by the selected route argument_schema. "
-        "Respect locked_args for the chosen route and do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
+        "selected_family_id must match the chosen route family_id. Respect locked_args for the chosen route and do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
     )
     user = (
         "Select the best route and arguments for this user query using only this compact route catalog payload:\n"
@@ -2889,6 +2906,7 @@ async def _select_route_with_llm(
 
     selected_route = dict(validation.route or {})
     selected_route["tool_args"] = dict(validation.tool_args)
+    selected_route["selected_family_id"] = str(validation.selected_family_id or selected_route.get("family_id") or "")
     selected_route["selection_reason"] = str(validation.route.get("selection_reason") if validation.route else "") or "llm_selector"
     selected_route["selector_confidence"] = ""
     selected_route["selector_reason"] = ""
@@ -2928,6 +2946,8 @@ async def _select_route_with_llm(
         "selection_reason": str(selected_route.get("selection_reason") or ""),
         "selected_route_kind": str(selected_route.get("route_kind") or ""),
         "selected_route_family": str(selected_route.get("route_family") or ""),
+        "selected_family_id": str(selected_route.get("selected_family_id") or selected_route.get("family_id") or ""),
+        "selected_leaf_route_id": str(selected_route.get("leaf_route_id") or selected_route.get("route_id") or ""),
         "catalog_version": str(selector_payload.get("catalog_version") or ""),
         "catalog_origin": str(selector_payload.get("catalog_origin") or ""),
         "schema_version": int(selector_payload.get("schema_version") or 0),
@@ -2943,6 +2963,7 @@ async def _select_route_with_llm(
             "validation_error_code": first_validation_error_code,
             "validation_error": first_validation_error,
             "validated_arg_keys": list(selected_route.get("validated_arg_keys") or []),
+            "candidate_family_ids": list(selector_payload.get("candidate_family_ids") or []),
             "candidate_route_ids": list(selector_payload.get("candidate_route_ids") or []),
         },
     }
@@ -3138,6 +3159,8 @@ async def run_agent(
         or 0
     ) if route_hint else int(route_selection.get("schema_version") or 0)
     retrieval_route_family = ""
+    retrieval_business_family_id = ""
+    retrieval_leaf_route_id = ""
     if route_hint:
         retrieval_route_family = str(
             route_hint.get("selected_route_family")
@@ -3147,6 +3170,12 @@ async def run_agent(
         )
         if "." not in retrieval_route_family and route_hint.get("route_id"):
             retrieval_route_family = str(route_hint.get("route_id") or "")
+        retrieval_business_family_id = str(
+            route_hint.get("selected_family_id")
+            or route_hint.get("family_id")
+            or ""
+        )
+        retrieval_leaf_route_id = str(route_hint.get("leaf_route_id") or route_hint.get("route_id") or "")
     intent_family = str(route_selection.get("intent_family") or "").strip()
     if not intent_family:
         intent_family = (
@@ -3171,6 +3200,8 @@ async def run_agent(
         "selected_route_kind": selected_route_kind,
         "candidate_route_ids": candidate_route_ids,
         "retrieval_route_family": authoritative_route_id or retrieval_route_family,
+        "retrieval_business_family_id": retrieval_business_family_id,
+        "retrieval_leaf_route_id": retrieval_leaf_route_id or canonical_route_id,
         "retrieval_phase": "open",
         "retrieval_evidence_status": "",
         "retrieval_retry_count": 0,

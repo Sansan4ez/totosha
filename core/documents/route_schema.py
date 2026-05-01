@@ -63,6 +63,7 @@ EVIDENCE_BYPASS_KEYS = {
     "skip_evidence",
 }
 SAFE_SELECTOR_KEYS = {
+    "selected_family_id",
     "selected_route_id",
     "confidence",
     "reason",
@@ -87,6 +88,7 @@ class RouteSelectorOutputError(ValueError):
 @dataclass(frozen=True)
 class SelectorValidationResult:
     valid: bool
+    selected_family_id: str = ""
     selected_route_id: str = ""
     route: dict[str, Any] | None = None
     tool_args: dict[str, Any] = field(default_factory=dict)
@@ -551,9 +553,13 @@ def _visible_routes_by_id(routes: list[dict[str, Any]]) -> dict[str, dict[str, A
     return visible
 
 
+def _route_selector_family_id(route: dict[str, Any]) -> str:
+    return str(route.get("family_id") or route.get("route_family") or route.get("route_id") or "").strip()
+
+
 def _build_repair_prompt(error: RouteSelectorOutputError) -> str:
     return (
-        "Return one corrected strict JSON object with selected_route_id, optional "
+        "Return one corrected strict JSON object with selected_family_id, selected_route_id, optional "
         "fallback_route_ids, and tool_args that contain only fields declared by "
         f"the selected route schema. Error: {error.message}"
     )
@@ -602,6 +608,16 @@ def validate_selector_output(
         if route is None:
             raise RouteSelectorOutputError("unsafe_selector_output", f"selected route {selected_route_id} is not visible")
 
+        selected_family_id = str(parsed.get("selected_family_id") or "").strip()
+        route_family_id = _route_selector_family_id(route)
+        if selected_family_id and selected_family_id != route_family_id:
+            raise RouteSelectorOutputError(
+                "unsafe_selector_output",
+                f"selected family {selected_family_id} does not match route {selected_route_id} family {route_family_id}",
+            )
+        if not selected_family_id:
+            selected_family_id = route_family_id
+
         selector_tool_args = parsed.get("tool_args") or {}
         if not isinstance(selector_tool_args, dict):
             raise RouteSelectorOutputError("invalid_tool_args", "tool_args must be an object")
@@ -620,6 +636,7 @@ def validate_selector_output(
 
         return SelectorValidationResult(
             valid=True,
+            selected_family_id=selected_family_id,
             selected_route_id=selected_route_id,
             route=dict(route),
             tool_args=final_args,
