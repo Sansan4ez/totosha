@@ -35,3 +35,4 @@ RFCs
 - `docs/rfc/RFC-024-agent-web-abuse-controls-and-session-bounding.md`
 - `docs/rfc/RFC-025-route-card-centered-retrieval-refactor.md`
 - `docs/rfc/RFC-026-canonical-route-arguments-and-bounded-portfolio-retrieval.md`
+- `docs/rfc/RFC-027-three-stage-hierarchical-routing-evolution.md`
