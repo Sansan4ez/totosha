@@ -13,8 +13,8 @@ from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
 from documents.argument_catalogs import canonical_sphere_names, curated_category_names_for_sphere
-from documents.route_schema import validate_selector_output
-from documents.routing import build_route_selector_payload, select_route
+from documents.route_schema import merge_route_tool_args, validate_selector_output
+from documents.routing import build_route_selector_payload, load_routing_index, select_route, selector_payload_leaf_routes
 from documents.routing_policy import (
     APPLICATION_RECOMMENDATION_KEYWORDS,
     COMPANY_COMMON_FACET_KEYWORDS,
@@ -552,6 +552,122 @@ def _route_execution_args(route_hint: dict[str, Any], query: str) -> dict[str, A
     return args
 
 
+def _active_visible_routes_by_id() -> dict[str, dict[str, Any]]:
+    try:
+        catalog = load_routing_index()
+    except Exception:
+        return {}
+    routes_by_id: dict[str, dict[str, Any]] = {}
+    for route in catalog.get("routes") or []:
+        if not isinstance(route, dict):
+            continue
+        route_id = str(route.get("route_id") or "").strip()
+        if not route_id or route.get("hidden") is True or route.get("selector_visible") is False:
+            continue
+        routes_by_id[route_id] = dict(route)
+    return routes_by_id
+
+
+def _route_fallback_scope_lists(route_hint: dict[str, Any] | None) -> tuple[list[str], list[str]]:
+    if not isinstance(route_hint, dict):
+        return [], []
+    fallback_policy = route_hint.get("fallback_policy") if isinstance(route_hint.get("fallback_policy"), dict) else {}
+    same_family = _dedupe_strings(
+        fallback_policy.get("same_family_route_ids")
+        or route_hint.get("fallback_route_ids")
+        or []
+    )
+    cross_family = _dedupe_strings(
+        fallback_policy.get("cross_family_route_ids")
+        or route_hint.get("cross_family_fallback_route_ids")
+        or []
+    )
+    same_family = [route_id for route_id in same_family if route_id not in cross_family]
+    return same_family, cross_family
+
+
+def _record_route_fallback_attempt(
+    routing_state: dict[str, Any],
+    fallback_route_id: str,
+    *,
+    local_to_family: bool,
+) -> None:
+    attempted = routing_state.get("retrieval_attempted_fallback_route_ids")
+    if not isinstance(attempted, list):
+        attempted = []
+        routing_state["retrieval_attempted_fallback_route_ids"] = attempted
+    if fallback_route_id and fallback_route_id not in attempted:
+        attempted.append(fallback_route_id)
+    routing_state["retrieval_used_fallback_route_id"] = fallback_route_id
+    routing_state["retrieval_used_fallback_scope"] = "family_local" if local_to_family else "cross_family"
+    routing_state["retrieval_used_fallback_local"] = bool(local_to_family)
+    routing_state["retrieval_retry_count"] = int(routing_state.get("retrieval_retry_count") or 0) + 1
+
+
+def _build_fallback_route_args(
+    target_route: dict[str, Any],
+    *,
+    source_route_hint: dict[str, Any],
+    message: str,
+) -> dict[str, Any]:
+    target_route_id = str(target_route.get("route_id") or "")
+    if target_route_id == "corp_db.portfolio_by_sphere":
+        _, args, fallback_hint = _portfolio_lookup_fallback_call(message)
+        if str(fallback_hint.get("route_id") or "") == target_route_id:
+            return args
+
+    source_args = dict(source_route_hint.get("tool_args") or {})
+    schema = target_route.get("argument_schema") if isinstance(target_route.get("argument_schema"), dict) else {}
+    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    locked_args = target_route.get("locked_args") if isinstance(target_route.get("locked_args"), dict) else {}
+    seed_args = {
+        key: value
+        for key, value in source_args.items()
+        if key in properties
+        and key not in locked_args
+    }
+    if (
+        str(target_route.get("route_stage") or "") == "stage1_general"
+        and str(target_route.get("family_id") or "") == str(source_route_hint.get("selected_family_id") or source_route_hint.get("family_id") or "")
+        and "document_type" not in (target_route.get("locked_args") or {})
+    ):
+        seed_args.pop("document_type", None)
+    if "query" in properties and not str(seed_args.get("query") or "").strip():
+        seed_args["query"] = message
+    return merge_route_tool_args(target_route, seed_args, validate_required=True)
+
+
+def _fallback_route_hint(
+    route: dict[str, Any],
+    *,
+    args: dict[str, Any],
+    selected_route: dict[str, Any],
+) -> dict[str, Any]:
+    fallback_hint = dict(route)
+    fallback_hint["tool_args"] = dict(args)
+    fallback_hint["selected_family_id"] = str(route.get("family_id") or "")
+    fallback_hint["selected_route_kind"] = str(route.get("route_kind") or "")
+    fallback_hint["selected_route_family"] = str(route.get("route_family") or "")
+    fallback_hint["selector_status"] = str(selected_route.get("selector_status") or "")
+    fallback_hint["selector_model"] = str(selected_route.get("selector_model") or "")
+    fallback_hint["routing_catalog_version"] = str(
+        selected_route.get("routing_catalog_version")
+        or selected_route.get("catalog_version")
+        or ""
+    )
+    fallback_hint["routing_catalog_origin"] = str(
+        selected_route.get("routing_catalog_origin")
+        or selected_route.get("catalog_origin")
+        or ""
+    )
+    fallback_hint["routing_schema_version"] = int(
+        selected_route.get("routing_schema_version")
+        or selected_route.get("schema_version")
+        or 0
+    )
+    return fallback_hint
+
+
 def _portfolio_lookup_fallback_call(message: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
     normalized = _routing_message_text(message)
     broad_query = any(
@@ -669,6 +785,9 @@ async def _try_controlled_portfolio_fallback(
         return ""
     if not _is_portfolio_lookup_intent(message):
         return ""
+    selected_family_id = str((route_hint or {}).get("selected_family_id") or (route_hint or {}).get("family_id") or routing_state.get("retrieval_business_family_id") or "")
+    if selected_family_id != "portfolio":
+        return ""
     route_args = dict((route_hint or {}).get("tool_args") or {})
     selected_route_id = str((route_hint or {}).get("route_id") or routing_state.get("route_id") or "")
     if str(route_args.get("kind") or "") == "portfolio_by_sphere" or selected_route_id == "corp_db.portfolio_by_sphere":
@@ -685,6 +804,7 @@ async def _try_controlled_portfolio_fallback(
         routing_state["retrieval_fallback_route_ids"] = fallback_ids
     if fallback_route_id and fallback_route_id not in fallback_ids:
         fallback_ids.append(fallback_route_id)
+    _record_route_fallback_attempt(routing_state, fallback_route_id, local_to_family=True)
 
     agent_logger.warning(
         "Weak company KB evidence for portfolio query, executing controlled fallback %s with args=%s",
@@ -722,6 +842,7 @@ async def _try_controlled_portfolio_fallback(
     routing_state["retrieval_route_family"] = fallback_route_id
     routing_state["retrieval_business_family_id"] = str(fallback_route_hint.get("family_id") or "portfolio")
     routing_state["retrieval_leaf_route_id"] = str(fallback_route_hint.get("leaf_route_id") or fallback_route_id)
+    routing_state["retrieval_route_stage"] = str(fallback_route_hint.get("route_stage") or "")
     routing_state["selected_route_kind"] = "corp_table"
     routing_state["knowledge_route_id"] = ""
     routing_state["source_file_scope"] = []
@@ -738,6 +859,179 @@ async def _try_controlled_portfolio_fallback(
         tool_result=tool_result,
         route_hint=fallback_route_hint,
     )
+
+
+def _family_local_failure_response(message: str, route_hint: dict[str, Any] | None) -> str:
+    family_id = str((route_hint or {}).get("selected_family_id") or (route_hint or {}).get("family_id") or "")
+    if family_id == "documents":
+        return (
+            "Не удалось найти релевантные документы по этому запросу. "
+            "Уточните модель, серию или тип документа."
+        )
+    if family_id == "codes_and_sku":
+        return (
+            "Не удалось найти код или артикул по этому запросу. "
+            "Уточните модель, исходный код или нужную систему кодов."
+        )
+    if family_id == "sphere_category_mapping":
+        return (
+            "Не удалось подобрать категории для этой сферы. "
+            "Уточните сферу применения или приведите больше контекста."
+        )
+    if family_id == "mountings":
+        return (
+            "Не удалось определить подходящие крепления по этому запросу. "
+            "Уточните серию, категорию или тип монтажа."
+        )
+    if family_id == "catalog":
+        return (
+            "Не удалось найти подходящую позицию в каталоге по этому запросу. "
+            "Уточните модель, категорию или код."
+        )
+    return (
+        "Не удалось получить достаточно данных по этому запросу в выбранном разделе. "
+        "Уточните формулировку или назовите более точные сущности."
+    )
+
+
+async def _try_family_local_route_fallbacks(
+    *,
+    base_messages: list[dict[str, Any]],
+    message: str,
+    selected_route: dict[str, Any],
+    routing_state: dict[str, Any],
+    tool_ctx: ToolContext,
+) -> str:
+    family_id = str(selected_route.get("selected_family_id") or selected_route.get("family_id") or "")
+    if not family_id or family_id == "company_info":
+        return ""
+
+    routes_by_id = _active_visible_routes_by_id()
+    if not routes_by_id:
+        return ""
+
+    current_route = dict(selected_route)
+    visited_route_ids = {str(current_route.get("route_id") or "")}
+    attempts_remaining = 4
+
+    while attempts_remaining > 0:
+        same_family_ids, cross_family_ids = _route_fallback_scope_lists(current_route)
+        ordered_fallback_ids = [*same_family_ids, *cross_family_ids]
+        next_fallback_id = next((route_id for route_id in ordered_fallback_ids if route_id not in visited_route_ids), "")
+        if not next_fallback_id:
+            break
+
+        target_route = routes_by_id.get(next_fallback_id)
+        if not isinstance(target_route, dict):
+            break
+
+        local_to_family = next_fallback_id in same_family_ids
+        try:
+            fallback_args = _build_fallback_route_args(
+                target_route,
+                source_route_hint=current_route,
+                message=message,
+            )
+        except Exception as exc:
+            agent_logger.warning("Skipping fallback route %s: %s", next_fallback_id, exc)
+            visited_route_ids.add(next_fallback_id)
+            current_route = dict(target_route)
+            continue
+
+        fallback_route_hint = _fallback_route_hint(
+            target_route,
+            args=fallback_args,
+            selected_route=selected_route,
+        )
+        fallback_tool_name = _route_tool_name(fallback_route_hint)
+        if not fallback_tool_name:
+            visited_route_ids.add(next_fallback_id)
+            current_route = dict(target_route)
+            continue
+        if _is_duplicate_retrieval_attempt(fallback_tool_name, fallback_args, routing_state):
+            visited_route_ids.add(next_fallback_id)
+            current_route = dict(target_route)
+            continue
+
+        _record_route_fallback_attempt(routing_state, next_fallback_id, local_to_family=local_to_family)
+        _update_routing_observability(routing_state)
+        _record_retrieval_attempt(fallback_tool_name, fallback_args, routing_state)
+        tool_result = await execute_tool(
+            fallback_tool_name,
+            fallback_args,
+            tool_ctx,
+            tool_call_id=f"route-selector-fallback-{next_fallback_id}",
+            tool_call_seq=int(routing_state.get("retrieval_retry_count") or 0),
+        )
+        if tool_result.success:
+            bench_artifact = tool_result.metadata.get("bench_artifact") if isinstance(tool_result.metadata, dict) else None
+            if isinstance(bench_artifact, dict):
+                run_meta_append_artifact(bench_artifact)
+            _record_tool_output_contract(fallback_tool_name, tool_result, routing_state)
+
+        fallback_status_state = dict(routing_state)
+        if local_to_family:
+            fallback_status_state["knowledge_route_id"] = ""
+        evidence_status = _route_evidence_status(
+            fallback_tool_name,
+            fallback_args,
+            tool_result,
+            message,
+            fallback_status_state,
+        )
+        routing_state["retrieval_evidence_status"] = evidence_status
+        if tool_result.success:
+            routing_state["selected_source"] = "doc_search" if fallback_tool_name == "doc_search" else "corp_db"
+        if evidence_status == "sufficient":
+            routing_state["intent"] = str(current_route.get("route_intent_family") or routing_state.get("intent") or "")
+            routing_state["route_id"] = str(fallback_route_hint.get("route_id") or "")
+            routing_state["route_source"] = "doc_search" if fallback_tool_name == "doc_search" else "corp_db"
+            routing_state["retrieval_route_family"] = str(
+                fallback_route_hint.get("selected_route_family")
+                or fallback_route_hint.get("route_family")
+                or fallback_route_hint.get("route_id")
+                or ""
+            )
+            routing_state["retrieval_business_family_id"] = str(
+                fallback_route_hint.get("selected_family_id")
+                or fallback_route_hint.get("family_id")
+                or family_id
+            )
+            routing_state["retrieval_leaf_route_id"] = str(
+                fallback_route_hint.get("leaf_route_id")
+                or fallback_route_hint.get("route_id")
+                or ""
+            )
+            routing_state["retrieval_route_stage"] = str(fallback_route_hint.get("route_stage") or "")
+            routing_state["selected_route_kind"] = str(
+                fallback_route_hint.get("selected_route_kind")
+                or fallback_route_hint.get("route_kind")
+                or ""
+            )
+            routing_state["knowledge_route_id"] = str(fallback_args.get("knowledge_route_id") or "")
+            routing_state["source_file_scope"] = list(fallback_args.get("source_files") or [])
+            routing_state["topic_facets"] = list(fallback_args.get("topic_facets") or [])
+            routing_state["retrieval_phase"] = "closed"
+            routing_state["retrieval_close_reason"] = (
+                "family_local_fallback_sufficient"
+                if local_to_family
+                else "cross_family_fallback_sufficient"
+            )
+            routing_state["finalizer_mode"] = "llm"
+            _update_routing_observability(routing_state)
+            return await _finalize_with_scoped_evidence(
+                base_messages=base_messages,
+                tool_name=fallback_tool_name,
+                tool_args=fallback_args,
+                tool_result=tool_result,
+                route_hint=fallback_route_hint,
+            )
+
+        visited_route_ids.add(next_fallback_id)
+        current_route = fallback_route_hint
+        attempts_remaining -= 1
+
+    return ""
 
 
 def _is_authoritative_kb_tool_attempt(name: str, args: dict, state: dict[str, Any]) -> bool:
@@ -826,6 +1120,46 @@ def _has_high_level_retrieval_hint(state: dict[str, Any]) -> bool:
     }
 
 
+def _route_arg_validation_status(state: dict[str, Any]) -> str:
+    error_code = str(state.get("route_selector_validation_error_code") or "").strip()
+    validation_errors = state.get("retrieval_validation_errors")
+    has_validation_error = bool(error_code)
+    if isinstance(validation_errors, list):
+        has_validation_error = has_validation_error or any(str(item or "").strip() for item in validation_errors)
+    selector_status = str(state.get("route_selector_status") or "").strip()
+    repair_status = str(state.get("route_selector_repair_status") or "").strip()
+    validated_arg_keys = state.get("retrieval_validated_arg_keys")
+    has_validated_keys = isinstance(validated_arg_keys, list) and bool(validated_arg_keys)
+    if has_validation_error and selector_status == "valid" and repair_status == "succeeded":
+        return "repaired"
+    if has_validation_error:
+        return "error"
+    if has_validated_keys or str(state.get("route_id") or "").strip():
+        return "ok"
+    return "none"
+
+
+def _route_fallback_counts(state: dict[str, Any]) -> tuple[int, int, int, int]:
+    fallback_route_ids = [
+        str(item).strip()
+        for item in list(state.get("retrieval_fallback_route_ids") or [])
+        if str(item).strip()
+    ]
+    cross_family_route_ids = {
+        str(item).strip()
+        for item in list(state.get("retrieval_cross_family_fallback_route_ids") or [])
+        if str(item).strip()
+    }
+    attempted_route_ids = {
+        str(item).strip()
+        for item in list(state.get("retrieval_attempted_fallback_route_ids") or [])
+        if str(item).strip()
+    }
+    family_local_count = sum(1 for route_id in fallback_route_ids if route_id not in cross_family_route_ids)
+    cross_family_count = sum(1 for route_id in fallback_route_ids if route_id in cross_family_route_ids)
+    return len(fallback_route_ids), family_local_count, cross_family_count, len(attempted_route_ids)
+
+
 def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = "") -> None:
     execution_mode = normalize_execution_mode(state.get("execution_mode"))
     effective_route_id = str(state.get("route_id") or "")
@@ -838,6 +1172,9 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
     effective_route_family = str(state.get("retrieval_route_family") or effective_route_id)
     effective_business_family_id = str(state.get("retrieval_business_family_id") or state.get("selected_family_id") or "")
     effective_leaf_route_id = str(state.get("retrieval_leaf_route_id") or state.get("route_id") or "")
+    effective_route_stage = str(state.get("retrieval_route_stage") or state.get("selected_route_stage") or "")
+    route_arg_validation_status = _route_arg_validation_status(state)
+    fallback_route_count, family_local_fallback_count, cross_family_fallback_count, attempted_fallback_count = _route_fallback_counts(state)
     meta = run_meta_get()
     if isinstance(meta, dict):
         meta["execution_mode"] = execution_mode
@@ -850,13 +1187,26 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["retrieval_route_family"] = effective_route_family
         meta["retrieval_business_family_id"] = effective_business_family_id
         meta["retrieval_leaf_route_id"] = effective_leaf_route_id
+        meta["retrieval_route_stage"] = effective_route_stage
         meta["retrieval_phase"] = str(state.get("retrieval_phase") or "")
         meta["retrieval_evidence_status"] = str(state.get("retrieval_evidence_status") or "")
         meta["retrieval_retry_count"] = int(state.get("retrieval_retry_count") or 0)
         meta["retrieval_close_reason"] = str(state.get("retrieval_close_reason") or "")
         meta["retrieval_validated_arg_keys"] = list(state.get("retrieval_validated_arg_keys") or [])
         meta["retrieval_validation_errors"] = list(state.get("retrieval_validation_errors") or [])
+        meta["retrieval_validation_status"] = route_arg_validation_status
         meta["retrieval_fallback_route_ids"] = list(state.get("retrieval_fallback_route_ids") or [])
+        meta["retrieval_fallback_route_count"] = fallback_route_count
+        meta["retrieval_family_local_fallback_count"] = family_local_fallback_count
+        meta["retrieval_cross_family_fallback_count"] = cross_family_fallback_count
+        meta["retrieval_attempted_fallback_count"] = attempted_fallback_count
+        meta["retrieval_fallback_scope"] = str(state.get("retrieval_fallback_scope") or "")
+        meta["retrieval_fallback_family_id"] = str(state.get("retrieval_fallback_family_id") or "")
+        meta["retrieval_cross_family_fallback_route_ids"] = list(state.get("retrieval_cross_family_fallback_route_ids") or [])
+        meta["retrieval_attempted_fallback_route_ids"] = list(state.get("retrieval_attempted_fallback_route_ids") or [])
+        meta["retrieval_used_fallback_route_id"] = str(state.get("retrieval_used_fallback_route_id") or "")
+        meta["retrieval_used_fallback_scope"] = str(state.get("retrieval_used_fallback_scope") or "")
+        meta["retrieval_used_fallback_local"] = bool(state.get("retrieval_used_fallback_local"))
         meta["route_selector_status"] = str(state.get("route_selector_status") or "")
         meta["route_selector_model"] = str(state.get("route_selector_model") or "")
         meta["route_selector_latency_ms"] = float(state.get("route_selector_latency_ms") or 0.0)
@@ -896,6 +1246,10 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         selected_route_family=str(state.get("retrieval_route_family") or ""),
         selected_business_family_id=effective_business_family_id,
         selected_leaf_route_id=effective_leaf_route_id,
+        route_stage=effective_route_stage,
+        route_arg_validation_status=route_arg_validation_status,
+        route_selector_validation_error_code=str(state.get("route_selector_validation_error_code") or ""),
+        route_selector_confidence=str(state.get("route_selector_confidence") or ""),
         selected_route_kind=str(state.get("selected_route_kind") or ""),
         selected_source=str(state.get("selected_source") or "unknown"),
         knowledge_route_id=str(state.get("knowledge_route_id") or ""),
@@ -907,6 +1261,9 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         route_selector_status=str(state.get("route_selector_status") or ""),
         routing_catalog_version=str(state.get("routing_catalog_version") or ""),
         routing_guardrail_hits=int(state.get("guardrail_activations", 0)),
+        used_fallback_scope=str(state.get("retrieval_used_fallback_scope") or ""),
+        used_fallback_route_id=str(state.get("retrieval_used_fallback_route_id") or ""),
+        fallback_family_id=str(state.get("retrieval_fallback_family_id") or ""),
         guardrail_blocked_tool=blocked_tool,
         finalizer_mode=str(state.get("finalizer_mode") or ""),
     )
@@ -925,11 +1282,13 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         span.set_attribute("retrieval.route_family", str(state.get("retrieval_route_family") or ""))
         span.set_attribute("retrieval.business_family_id", effective_business_family_id)
         span.set_attribute("retrieval.leaf_route_id", effective_leaf_route_id)
+        span.set_attribute("retrieval.route_stage", effective_route_stage)
         span.set_attribute("retrieval.phase", str(state.get("retrieval_phase") or ""))
         span.set_attribute("retrieval.evidence_status", str(state.get("retrieval_evidence_status") or ""))
         span.set_attribute("retrieval.retry_count", int(state.get("retrieval_retry_count") or 0))
         span.set_attribute("retrieval.close_reason", str(state.get("retrieval_close_reason") or ""))
         span.set_attribute("application.recovery_outcome", str(state.get("application_recovery_outcome") or ""))
+        span.set_attribute("retrieval.validation_status", route_arg_validation_status)
         validated_arg_keys = state.get("retrieval_validated_arg_keys")
         if isinstance(validated_arg_keys, list):
             span.set_attribute("retrieval.validated_arg_keys", ",".join(str(item) for item in validated_arg_keys))
@@ -939,6 +1298,27 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         fallback_route_ids = state.get("retrieval_fallback_route_ids")
         if isinstance(fallback_route_ids, list):
             span.set_attribute("retrieval.fallback_route_ids", ",".join(str(item) for item in fallback_route_ids))
+        span.set_attribute("retrieval.fallback_route_count", fallback_route_count)
+        span.set_attribute("retrieval.family_local_fallback_count", family_local_fallback_count)
+        span.set_attribute("retrieval.cross_family_fallback_count", cross_family_fallback_count)
+        span.set_attribute("retrieval.attempted_fallback_count", attempted_fallback_count)
+        span.set_attribute("retrieval.fallback_scope", str(state.get("retrieval_fallback_scope") or ""))
+        span.set_attribute("retrieval.fallback_family_id", str(state.get("retrieval_fallback_family_id") or ""))
+        attempted_fallback_route_ids = state.get("retrieval_attempted_fallback_route_ids")
+        if isinstance(attempted_fallback_route_ids, list):
+            span.set_attribute(
+                "retrieval.attempted_fallback_route_ids",
+                ",".join(str(item) for item in attempted_fallback_route_ids),
+            )
+        span.set_attribute("retrieval.used_fallback_route_id", str(state.get("retrieval_used_fallback_route_id") or ""))
+        span.set_attribute("retrieval.used_fallback_scope", str(state.get("retrieval_used_fallback_scope") or ""))
+        span.set_attribute("retrieval.used_fallback_local", bool(state.get("retrieval_used_fallback_local")))
+        cross_family_fallback_route_ids = state.get("retrieval_cross_family_fallback_route_ids")
+        if isinstance(cross_family_fallback_route_ids, list):
+            span.set_attribute(
+                "retrieval.cross_family_fallback_route_ids",
+                ",".join(str(item) for item in cross_family_fallback_route_ids),
+            )
         span.set_attribute("route_selector.status", str(state.get("route_selector_status") or ""))
         span.set_attribute("route_selector.model", str(state.get("route_selector_model") or ""))
         span.set_attribute("route_selector.latency_ms", float(state.get("route_selector_latency_ms") or 0.0))
@@ -2531,35 +2911,51 @@ def _compact_selector_argument_schema(argument_schema: dict[str, Any], locked_ar
 
 
 def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[str, Any]:
-    compact_routes: list[dict[str, Any]] = []
-    for route in selector_payload.get("routes") or []:
-        if not isinstance(route, dict):
+    compact_families: list[dict[str, Any]] = []
+    for family in selector_payload.get("families") or []:
+        if not isinstance(family, dict):
             continue
-        locked_args = route.get("locked_args") if isinstance(route.get("locked_args"), dict) else {}
-        compact_route = {
-            "route_id": str(route.get("route_id") or ""),
-            "route_family": str(route.get("route_family") or ""),
-            "family_id": str(route.get("family_id") or ""),
-            "leaf_route_id": str(route.get("leaf_route_id") or route.get("route_id") or ""),
-            "route_kind": str(route.get("route_kind") or ""),
-            "title": str(route.get("title") or "")[:160],
-            "summary": str(route.get("summary") or "")[:240],
-            "topics": list(route.get("topics") or [])[:6],
-            "keywords": list(route.get("keywords") or [])[:12],
-            "patterns": list(route.get("patterns") or [])[:6],
-            "tool_name": str(route.get("tool_name") or route.get("executor") or ""),
-            "locked_args": locked_args,
-            "argument_schema": _compact_selector_argument_schema(route.get("argument_schema") or {}, locked_args),
-            "argument_hints": dict(route.get("argument_hints") or {}),
-            "fallback_route_ids": list(route.get("fallback_route_ids") or []),
+        compact_family = {
+            "family_id": str(family.get("family_id") or ""),
+            "family_title": str(family.get("family_title") or "")[:120],
+            "family_summary": str(family.get("family_summary") or "")[:240],
+            "leaf_routes": [],
         }
-        table_scopes = route.get("table_scopes")
-        if isinstance(table_scopes, list) and table_scopes:
-            compact_route["table_scopes"] = table_scopes[:8]
-        document_selectors = route.get("document_selectors")
-        if isinstance(document_selectors, list) and document_selectors:
-            compact_route["document_selectors"] = document_selectors[:8]
-        compact_routes.append(compact_route)
+        for route in family.get("leaf_routes") or []:
+            if not isinstance(route, dict):
+                continue
+            locked_args = route.get("locked_args") if isinstance(route.get("locked_args"), dict) else {}
+            fallback_policy = route.get("fallback_policy") if isinstance(route.get("fallback_policy"), dict) else {}
+            compact_route = {
+                "route_id": str(route.get("route_id") or ""),
+                "route_family": str(route.get("route_family") or ""),
+                "family_id": str(route.get("family_id") or ""),
+                "leaf_route_id": str(route.get("leaf_route_id") or route.get("route_id") or ""),
+                "route_kind": str(route.get("route_kind") or ""),
+                "title": str(route.get("title") or "")[:160],
+                "summary": str(route.get("summary") or "")[:240],
+                "topics": list(route.get("topics") or [])[:6],
+                "keywords": list(route.get("keywords") or [])[:12],
+                "patterns": list(route.get("patterns") or [])[:6],
+                "tool_name": str(route.get("tool_name") or route.get("executor") or ""),
+                "locked_args": locked_args,
+                "argument_schema": _compact_selector_argument_schema(route.get("argument_schema") or {}, locked_args),
+                "argument_hints": dict(route.get("argument_hints") or {}),
+                "fallback_policy": {
+                    "default_scope": str(fallback_policy.get("default_scope") or "family_local"),
+                    "same_family_route_ids": list(fallback_policy.get("same_family_route_ids") or [])[:6],
+                    "cross_family_route_ids": list(fallback_policy.get("cross_family_route_ids") or [])[:6],
+                    "allow_cross_family": bool(fallback_policy.get("allow_cross_family")),
+                },
+            }
+            table_scopes = route.get("table_scopes")
+            if isinstance(table_scopes, list) and table_scopes:
+                compact_route["table_scopes"] = table_scopes[:8]
+            document_selectors = route.get("document_selectors")
+            if isinstance(document_selectors, list) and document_selectors:
+                compact_route["document_selectors"] = document_selectors[:8]
+            compact_family["leaf_routes"].append(compact_route)
+        compact_families.append(compact_family)
 
     compact_payload = {
         "query": str(selector_payload.get("query") or ""),
@@ -2567,9 +2963,7 @@ def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[st
         "catalog_version": str(selector_payload.get("catalog_version") or ""),
         "schema_version": int(selector_payload.get("schema_version") or 0),
         "candidate_family_ids": list(selector_payload.get("candidate_family_ids") or []),
-        "candidate_route_ids": list(selector_payload.get("candidate_route_ids") or []),
-        "families": list(selector_payload.get("families") or []),
-        "routes": compact_routes,
+        "families": compact_families,
     }
     resolved_sphere_context = selector_payload.get("resolved_sphere_context")
     if isinstance(resolved_sphere_context, dict) and resolved_sphere_context:
@@ -2588,7 +2982,8 @@ def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dic
         "You are a strict retrieval route selector. First choose the best business family, then choose exactly one leaf route from that family. "
         "Return only valid JSON with selected_family_id, selected_route_id, confidence, reason, tool_args, and optional fallback_route_ids. "
         "tool_args must contain only fields declared by the selected route argument_schema. "
-        "selected_family_id must match the chosen route family_id. Respect locked_args for the chosen route and do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
+        "selected_family_id must match the chosen route family_id. Optional fallback_route_ids must stay inside the selected family unless the selected leaf fallback_policy explicitly lists cross_family_route_ids. "
+        "Respect locked_args for the chosen route and do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
     )
     user = (
         "Select the best route and arguments for this user query using only this compact route catalog payload:\n"
@@ -2865,7 +3260,7 @@ async def _select_route_with_llm(
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
     selector_started = perf_counter()
     selector_payload = build_route_selector_payload(routing_message, sphere_context=sphere_context)
-    candidate_routes = list(selector_payload.get("routes") or [])
+    candidate_routes = selector_payload_leaf_routes(selector_payload)
     if not candidate_routes:
         raise RuntimeError("route selector has no candidate routes")
 
@@ -2919,7 +3314,7 @@ async def _select_route_with_llm(
     except Exception:
         pass
     selected_route["candidate_route_ids"] = list(selector_payload.get("candidate_route_ids") or [])
-    selected_route["fallback_route_ids"] = list(validation.fallback_route_ids)
+    selected_route["selector_fallback_route_ids"] = list(validation.fallback_route_ids)
     selected_route["selector_status"] = "valid"
     selected_route["selector_model"] = selector_model
     selected_route["selector_latency_ms"] = (perf_counter() - selector_started) * 1000
@@ -2948,6 +3343,7 @@ async def _select_route_with_llm(
         "selected_route_family": str(selected_route.get("route_family") or ""),
         "selected_family_id": str(selected_route.get("selected_family_id") or selected_route.get("family_id") or ""),
         "selected_leaf_route_id": str(selected_route.get("leaf_route_id") or selected_route.get("route_id") or ""),
+        "selected_route_stage": str(selected_route.get("route_stage") or ""),
         "catalog_version": str(selector_payload.get("catalog_version") or ""),
         "catalog_origin": str(selector_payload.get("catalog_origin") or ""),
         "schema_version": int(selector_payload.get("schema_version") or 0),
@@ -3047,7 +3443,6 @@ async def run_agent(
     
     routing_message = _routing_query_text(message) or str(message or "")
     selector_sphere_context = _prepare_selector_sphere_context(session, routing_message, current_turn_id)
-    explicit_document_request = _is_document_lookup_intent(routing_message)
     if _route_selector_enabled():
         try:
             route_selection, route_hint, secondary_route_candidates = await _select_route_with_llm(
@@ -3059,18 +3454,10 @@ async def run_agent(
             _record_route_selector_unavailable(str(exc))
             return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
     else:
-        route_selection = select_route(routing_message, explicit_document_request=explicit_document_request)
-        if route_selection.get("catalog_unavailable"):
-            agent_logger.error("Routing catalog unavailable: %s", route_selection.get("error") or "unknown")
-            return (
-                "Маршрутизация временно недоступна: активный каталог маршрутов не опубликован "
-                "или не прошел проверку. Повторите запрос позже."
-            )
-        route_hint = (
-            route_selection.get("primary_candidate")
-            or route_selection.get("selected")
-        )
-        secondary_route_candidates = list(route_selection.get("secondary_candidates") or []) if route_selection else []
+        error = "route selector LLM unavailable: runtime selector fallback disabled"
+        agent_logger.error(error)
+        _record_route_selector_unavailable(error)
+        return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
     if route_hint:
         workspace_info += "\nRouting shortlist:"
         workspace_info += f"\n- primary: {_format_route_candidate_for_prompt(route_hint)}"
@@ -3158,6 +3545,21 @@ async def run_agent(
         or route_hint.get("schema_version")
         or 0
     ) if route_hint else int(route_selection.get("schema_version") or 0)
+    fallback_policy = (route_hint.get("fallback_policy") or {}) if route_hint and isinstance(route_hint.get("fallback_policy"), dict) else {}
+    declared_same_family_fallback_ids = list(
+        fallback_policy.get("same_family_route_ids")
+        or route_hint.get("fallback_route_ids")
+        or []
+    ) if route_hint else []
+    declared_cross_family_fallback_ids = list(
+        fallback_policy.get("cross_family_route_ids")
+        or route_hint.get("cross_family_fallback_route_ids")
+        or []
+    ) if route_hint else []
+    declared_fallback_route_ids = list(dict.fromkeys([
+        *[str(item).strip() for item in declared_same_family_fallback_ids if str(item).strip()],
+        *[str(item).strip() for item in declared_cross_family_fallback_ids if str(item).strip()],
+    ]))
     retrieval_route_family = ""
     retrieval_business_family_id = ""
     retrieval_leaf_route_id = ""
@@ -3202,6 +3604,7 @@ async def run_agent(
         "retrieval_route_family": authoritative_route_id or retrieval_route_family,
         "retrieval_business_family_id": retrieval_business_family_id,
         "retrieval_leaf_route_id": retrieval_leaf_route_id or canonical_route_id,
+        "retrieval_route_stage": str(route_hint.get("route_stage") or route_selection.get("selected_route_stage") or "") if route_hint else str(route_selection.get("selected_route_stage") or ""),
         "retrieval_phase": "open",
         "retrieval_evidence_status": "",
         "retrieval_retry_count": 0,
@@ -3214,7 +3617,20 @@ async def run_agent(
             ]
             if str(item or "").strip()
         ] if route_hint else [],
-        "retrieval_fallback_route_ids": list(route_hint.get("fallback_route_ids") or [] if route_hint else []),
+        "retrieval_fallback_route_ids": declared_fallback_route_ids,
+        "retrieval_fallback_scope": str(
+            fallback_policy.get("default_scope") or ""
+        ),
+        "retrieval_fallback_family_id": str(
+            fallback_policy.get("family_id")
+            or retrieval_business_family_id
+            or ""
+        ),
+        "retrieval_cross_family_fallback_route_ids": declared_cross_family_fallback_ids,
+        "retrieval_attempted_fallback_route_ids": [],
+        "retrieval_used_fallback_route_id": "",
+        "retrieval_used_fallback_scope": "",
+        "retrieval_used_fallback_local": False,
         "route_selector_status": str(selector_meta.get("status") or route_hint.get("selector_status") or "") if route_hint else "",
         "route_selector_model": str(selector_meta.get("model") or route_hint.get("selector_model") or "") if route_hint else "",
         "route_selector_latency_ms": selector_latency_ms,
@@ -3326,6 +3742,27 @@ async def run_agent(
                     )
                     if fallback_response:
                         return fallback_response
+                    fallback_response = await _try_family_local_route_fallbacks(
+                        base_messages=messages,
+                        message=routing_message,
+                        selected_route=route_hint,
+                        routing_state=routing_state,
+                        tool_ctx=tool_ctx,
+                    )
+                    if fallback_response:
+                        return fallback_response
+                    family_local_boundaries = {"documents", "codes_and_sku", "sphere_category_mapping", "catalog", "mountings"}
+                    selected_family_id = str(route_hint.get("selected_family_id") or route_hint.get("family_id") or "")
+                    if selected_family_id in family_local_boundaries:
+                        routing_state["retrieval_phase"] = "closed"
+                        routing_state["retrieval_close_reason"] = (
+                            "cross_family_fallback_exhausted"
+                            if str(routing_state.get("retrieval_used_fallback_scope") or "") == "cross_family"
+                            else "family_local_fallback_exhausted"
+                        )
+                        routing_state["finalizer_mode"] = "deterministic_fallback"
+                        _update_routing_observability(routing_state)
+                        return _family_local_failure_response(routing_message, route_hint)
                     routing_state["retrieval_phase"] = "open"
                     _update_routing_observability(routing_state)
             except Exception as exc:

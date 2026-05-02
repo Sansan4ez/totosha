@@ -228,6 +228,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_route_family"], "corp_kb.company_common")
         self.assertEqual(meta["retrieval_business_family_id"], "company_info")
         self.assertEqual(meta["retrieval_leaf_route_id"], "series_description")
+        self.assertEqual(meta["retrieval_route_stage"], "stage2_specialized")
         self.assertEqual(meta["knowledge_route_id"], "corp_kb.company_common")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
 
@@ -438,7 +439,9 @@ class RoutingGuardrailTests(unittest.TestCase):
         ):
             payload = _MODULE.build_route_selector_payload("Что порекомендуешь для РЖД?")
 
-        route = next(item for item in payload["routes"] if item["route_id"] == "corp_db.application_recommendation")
+        route = next(
+            item for item in _MODULE.selector_payload_leaf_routes(payload) if item["route_id"] == "corp_db.application_recommendation"
+        )
         properties = route["argument_schema"]["properties"]
 
         self.assertEqual(
@@ -446,6 +449,62 @@ class RoutingGuardrailTests(unittest.TestCase):
             {"kind", "query", "limit_categories", "limit_lamps", "limit_portfolio"},
         )
         self.assertEqual(route["argument_schema"]["required"], ["kind", "query"])
+
+    def test_document_subtype_selector_payload_stays_inside_documents_family(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                selection = _MODULE.select_route("Покажи паспорт на NL Nova")
+                payload = _MODULE.build_route_selector_payload("Покажи паспорт на NL Nova", limit=8)
+
+        route = next(
+            item for item in _MODULE.selector_payload_leaf_routes(payload) if item["route_id"] == "corp_db.passport_by_lamp_name"
+        )
+        self.assertEqual(selection["selected"]["route_id"], "corp_db.passport_by_lamp_name")
+        self.assertEqual(selection["selected_family_id"], "documents")
+        self.assertEqual(payload["candidate_route_ids"][0], "corp_db.passport_by_lamp_name")
+        self.assertEqual(route["locked_args"]["document_type"], "passport")
+        self.assertEqual(
+            route["fallback_policy"]["same_family_route_ids"],
+            ["corp_db.documents_by_lamp_name"],
+        )
+        self.assertEqual(route["fallback_policy"]["cross_family_route_ids"], [])
+
+    def test_code_lookup_selector_payload_stays_inside_codes_family(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                selection = _MODULE.select_route("Какой ETM-код у NL Nova?")
+                payload = _MODULE.build_route_selector_payload("Какой ETM-код у NL Nova?", limit=8)
+
+        route = next(
+            item for item in _MODULE.selector_payload_leaf_routes(payload) if item["route_id"] == "corp_db.sku_codes_lookup"
+        )
+        self.assertEqual(selection["selected"]["route_id"], "corp_db.sku_codes_lookup")
+        self.assertEqual(selection["selected_family_id"], "codes_and_sku")
+        self.assertEqual(payload["candidate_route_ids"][0], "corp_db.sku_codes_lookup")
+        self.assertEqual(
+            route["argument_schema"]["properties"]["lookup_direction"]["enum"],
+            ["by_name", "by_code"],
+        )
+        self.assertEqual(
+            route["argument_schema"]["properties"]["code_system"]["enum"],
+            ["etm", "oracl", "sku", "article", "catalog_identifier", "mixed"],
+        )
+        self.assertEqual(
+            route["fallback_policy"]["same_family_route_ids"],
+            ["corp_db.sku_lookup"],
+        )
+        self.assertEqual(
+            route["fallback_policy"]["cross_family_route_ids"],
+            ["corp_db.catalog_lookup"],
+        )
 
     def test_llm_route_selector_repairs_invalid_selector_args_once(self):
         invalid_response = {
@@ -519,6 +578,20 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_close_reason"], "route_selector_unavailable")
         self.assertIn("selector upstream unavailable", meta["route_selector_validation_error"])
 
+    def test_selector_disabled_runtime_fails_closed_without_tool_execution(self):
+        response, exec_mock, meta = self._run_flow(
+            user_message="какие есть сертификаты?",
+            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+            route_selector_enabled=False,
+        )
+
+        self.assertEqual(response, _MODULE.ROUTE_SELECTOR_UNAVAILABLE_MESSAGE)
+        self.assertEqual(exec_mock.await_count, 0)
+        self.assertEqual(meta["route_selector_status"], "unavailable")
+        self.assertEqual(meta["retrieval_evidence_status"], "error")
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_unavailable")
+        self.assertIn("fallback disabled", meta["route_selector_validation_error"])
+
     def test_route_selector_messages_use_compact_payload_under_context_budget(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             with patch.dict(
@@ -534,6 +607,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("selected_family_id", messages[0]["content"])
         self.assertIn("company_info", messages[1]["content"])
         self.assertNotIn("corp_db.catalog_lookup", messages[1]["content"])
+        self.assertNotIn("\"candidate_route_ids\"", messages[1]["content"])
         self.assertNotIn("executor_args_template", messages[1]["content"])
         self.assertNotIn("evidence_policy", messages[1]["content"])
         self.assertLess(sum(len(message.get("content") or "") for message in messages), 40000)
@@ -593,6 +667,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertGreater(meta["route_selector_latency_ms"], 0)
         self.assertIn("query", meta["retrieval_validated_arg_keys"])
         self.assertIn("topic_facets", meta["retrieval_validated_arg_keys"])
+        self.assertEqual(meta["retrieval_validation_status"], "ok")
         self.assertTrue(meta["routing_catalog_version"])
         self.assertGreaterEqual(meta["routing_schema_version"], 1)
 
@@ -639,6 +714,204 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
         self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
         self.assertEqual(meta["finalizer_mode"], "llm")
+
+    def test_route_selector_documents_fallback_stays_inside_documents_family(self):
+        selector_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_family_id": "documents",
+                                "selected_route_id": "corp_db.passport_by_lamp_name",
+                                "confidence": "high",
+                                "reason": "passport request by lamp",
+                                "tool_args": {"name": "NL Nova"},
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        response, exec_mock, meta = self._run_flow(
+            user_message="Покажи паспорт на NL Nova",
+            corp_db_payloads=[
+                {"status": "empty", "kind": "lamp_exact", "results": []},
+                {
+                    "status": "success",
+                    "kind": "lamp_exact",
+                    "results": [{"name": "NL Nova", "document_title": "Паспорт NL Nova"}],
+                },
+            ],
+            corp_db_payload={"status": "empty", "kind": "lamp_exact", "results": []},
+            llm_responses_override=[
+                selector_response,
+                self._final_response("Нашёл документы для NL Nova, включая паспорт."),
+            ],
+            route_selector_enabled=True,
+        )
+
+        self.assertIn("NL Nova", response)
+        self.assertEqual(exec_mock.await_count, 2)
+        first_args = exec_mock.await_args_list[0].args[1]
+        second_args = exec_mock.await_args_list[1].args[1]
+        self.assertEqual(first_args["kind"], "lamp_exact")
+        self.assertEqual(first_args["document_type"], "passport")
+        self.assertEqual(second_args["kind"], "lamp_exact")
+        self.assertEqual(second_args["name"], "NL Nova")
+        self.assertNotIn("document_type", second_args)
+        self.assertEqual(meta["retrieval_business_family_id"], "documents")
+        self.assertEqual(meta["retrieval_route_stage"], "stage1_general")
+        self.assertEqual(meta["retrieval_validation_status"], "ok")
+        self.assertEqual(meta["retrieval_fallback_route_count"], 1)
+        self.assertEqual(meta["retrieval_family_local_fallback_count"], 1)
+        self.assertEqual(meta["retrieval_cross_family_fallback_count"], 0)
+        self.assertEqual(meta["retrieval_attempted_fallback_count"], 1)
+        self.assertEqual(meta["retrieval_used_fallback_route_id"], "corp_db.documents_by_lamp_name")
+        self.assertEqual(meta["retrieval_used_fallback_scope"], "family_local")
+        self.assertTrue(meta["retrieval_used_fallback_local"])
+        self.assertEqual(meta["retrieval_close_reason"], "family_local_fallback_sufficient")
+
+    def test_route_selector_codes_fallback_stays_inside_codes_family(self):
+        selector_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_family_id": "codes_and_sku",
+                                "selected_route_id": "corp_db.sku_codes_lookup",
+                                "confidence": "high",
+                                "reason": "code lookup by lamp name",
+                                "tool_args": {
+                                    "name": "NL Nova",
+                                    "lookup_direction": "by_name",
+                                    "code_system": "etm",
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        response, exec_mock, meta = self._run_flow(
+            user_message="Какой ETM-код у NL Nova?",
+            corp_db_payloads=[
+                {"status": "empty", "kind": "lamp_exact", "results": []},
+                {
+                    "status": "success",
+                    "kind": "sku_by_code",
+                    "results": [{"name": "NL Nova", "etm": "12345"}],
+                },
+            ],
+            corp_db_payload={"status": "empty", "kind": "lamp_exact", "results": []},
+            llm_responses_override=[
+                selector_response,
+                self._final_response("ETM-код для NL Nova: 12345."),
+            ],
+            route_selector_enabled=True,
+        )
+
+        self.assertIn("12345", response)
+        self.assertEqual(exec_mock.await_count, 2)
+        first_args = exec_mock.await_args_list[0].args[1]
+        second_args = exec_mock.await_args_list[1].args[1]
+        self.assertEqual(first_args["kind"], "lamp_exact")
+        self.assertEqual(second_args["kind"], "sku_by_code")
+        self.assertEqual(second_args["name"], "NL Nova")
+        self.assertEqual(second_args["lookup_direction"], "by_name")
+        self.assertEqual(second_args["code_system"], "etm")
+        self.assertEqual(meta["retrieval_business_family_id"], "codes_and_sku")
+        self.assertEqual(meta["retrieval_route_stage"], "stage1_general")
+        self.assertEqual(meta["retrieval_validation_status"], "ok")
+        self.assertEqual(meta["retrieval_fallback_route_count"], 2)
+        self.assertEqual(meta["retrieval_family_local_fallback_count"], 1)
+        self.assertEqual(meta["retrieval_cross_family_fallback_count"], 1)
+        self.assertEqual(meta["retrieval_attempted_fallback_count"], 1)
+        self.assertEqual(meta["retrieval_used_fallback_route_id"], "corp_db.sku_lookup")
+        self.assertEqual(meta["retrieval_used_fallback_scope"], "family_local")
+        self.assertTrue(meta["retrieval_used_fallback_local"])
+        self.assertEqual(meta["retrieval_close_reason"], "family_local_fallback_sufficient")
+
+    def test_route_selector_empty_sphere_category_lookup_stays_out_of_portfolio(self):
+        selector_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_family_id": "sphere_category_mapping",
+                                "selected_route_id": "corp_db.sphere_curated_categories",
+                                "confidence": "high",
+                                "reason": "sphere to category mapping",
+                                "tool_args": {"sphere": "Складские помещения"},
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        response, exec_mock, meta = self._run_flow(
+            user_message="Какие категории подходят для складских помещений?",
+            corp_db_payload={"status": "empty", "kind": "sphere_curated_categories", "results": []},
+            llm_responses_override=[selector_response],
+            route_selector_enabled=True,
+        )
+
+        self.assertIn("категори", response.lower())
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[1]["kind"], "sphere_curated_categories")
+        self.assertEqual(meta["retrieval_business_family_id"], "sphere_category_mapping")
+        self.assertEqual(meta["retrieval_route_stage"], "stage1_general")
+        self.assertEqual(meta["retrieval_validation_status"], "ok")
+        self.assertEqual(meta["retrieval_fallback_route_count"], 0)
+        self.assertEqual(meta["retrieval_close_reason"], "family_local_fallback_exhausted")
+        self.assertEqual(meta["retrieval_used_fallback_route_id"], "")
+
+    def test_route_selector_empty_portfolio_lookup_does_not_drift_into_catalog(self):
+        selector_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_family_id": "portfolio",
+                                "selected_route_id": "corp_db.portfolio_by_sphere",
+                                "confidence": "high",
+                                "reason": "portfolio projects by sphere",
+                                "tool_args": {"sphere": "РЖД"},
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        response, exec_mock, meta = self._run_flow(
+            user_message="Какие объекты были реализованы для РЖД?",
+            corp_db_payload={"status": "empty", "kind": "portfolio_by_sphere", "results": []},
+            llm_responses_override=[selector_response],
+            route_selector_enabled=True,
+        )
+
+        self.assertIn("уточните", response.lower())
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[1]["kind"], "portfolio_by_sphere")
+        self.assertEqual(meta["retrieval_business_family_id"], "portfolio")
+        self.assertEqual(meta["retrieval_route_stage"], "stage1_general")
+        self.assertEqual(meta["retrieval_validation_status"], "ok")
+        self.assertEqual(meta["retrieval_fallback_route_count"], 0)
+        self.assertEqual(meta["retrieval_family_local_fallback_count"], 0)
+        self.assertEqual(meta["retrieval_cross_family_fallback_count"], 0)
+        self.assertEqual(meta["retrieval_close_reason"], "")
+        self.assertEqual(meta["retrieval_used_fallback_route_id"], "")
 
     def test_wrong_document_doc_search_output_is_weak(self):
         payload = {

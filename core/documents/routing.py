@@ -41,12 +41,44 @@ DOCUMENT_REQUEST_KEYWORDS = (
     "фрагмент",
     "цитат",
 )
+DOCUMENT_TYPE_ENUM = ("passport", "certificate", "manual", "ies")
+PASSPORT_TERMS = (
+    "паспорт",
+    "паспорта",
+)
 CERTIFICATE_TERMS = (
     "сертификат",
     "сертификаты",
     "сертификац",
     "декларац",
 )
+MANUAL_TERMS = (
+    "инструк",
+    "руководств",
+    "manual",
+    "мануал",
+)
+IES_TERMS = (
+    "ies",
+    "ies-файл",
+    "ies файл",
+)
+DOCUMENT_SUBTYPE_ROUTE_IDS = {
+    "passport": "corp_db.passport_by_lamp_name",
+    "certificate": "corp_db.certificate_by_lamp_name",
+    "manual": "corp_db.manual_by_lamp_name",
+    "ies": "corp_db.ies_by_lamp_name",
+}
+DOCUMENT_TYPE_TERMS = {
+    "passport": PASSPORT_TERMS,
+    "certificate": CERTIFICATE_TERMS,
+    "manual": MANUAL_TERMS,
+    "ies": IES_TERMS,
+}
+DOCUMENTS_FAMILY_ROUTE_IDS = {
+    "corp_db.documents_by_lamp_name",
+    *DOCUMENT_SUBTYPE_ROUTE_IDS.values(),
+}
 CERTIFICATE_DOCUMENT_CONTEXT_KEYWORDS = (
     "ссылка",
     "прямая ссылка",
@@ -80,6 +112,15 @@ DOCUMENT_IN_TEXT_PATTERNS = (
     "цитату из",
     "фрагмент из",
 )
+CODE_SYSTEM_TERMS = {
+    "etm": ("etm", "етм"),
+    "oracl": ("oracl", "оракл"),
+    "sku": ("sku",),
+    "article": ("артикул", "артикулы"),
+    "catalog_identifier": ("код номенклатуры", "каталожный код", "каталожный номер"),
+}
+CODE_LOOKUP_DIRECTION_ENUM = ("by_name", "by_code")
+CODE_SYSTEM_ENUM = ("etm", "oracl", "sku", "article", "catalog_identifier", "mixed")
 ORCHESTRATION_KEYWORDS = (
     "подбери",
     "рекоменд",
@@ -257,7 +298,11 @@ ROUTE_BUSINESS_METADATA = {
     "corp_db.catalog_lookup": {"family_id": "catalog", "leaf_route_id": "catalog_entity_lookup", "route_stage": "stage1_general"},
     "corp_db.category_lamps": {"family_id": "catalog", "leaf_route_id": "category_lamps", "route_stage": "stage1_general"},
     "corp_db.showcase_lamps_by_category": {"family_id": "catalog", "leaf_route_id": "showcase_lamps_by_category", "route_stage": "stage2_specialized"},
-    "corp_db.documents_by_lamp_name": {"family_id": "documents", "leaf_route_id": "documents_by_lamp_name", "route_stage": "stage2_specialized"},
+    "corp_db.documents_by_lamp_name": {"family_id": "documents", "leaf_route_id": "documents_by_lamp_name", "route_stage": "stage1_general"},
+    "corp_db.passport_by_lamp_name": {"family_id": "documents", "leaf_route_id": "passport_by_lamp_name", "route_stage": "stage2_specialized"},
+    "corp_db.certificate_by_lamp_name": {"family_id": "documents", "leaf_route_id": "certificate_by_lamp_name", "route_stage": "stage2_specialized"},
+    "corp_db.manual_by_lamp_name": {"family_id": "documents", "leaf_route_id": "manual_by_lamp_name", "route_stage": "stage2_specialized"},
+    "corp_db.ies_by_lamp_name": {"family_id": "documents", "leaf_route_id": "ies_by_lamp_name", "route_stage": "stage2_specialized"},
     "corp_db.sku_lookup": {"family_id": "codes_and_sku", "leaf_route_id": "sku_by_code", "route_stage": "stage1_general"},
     "corp_db.sku_codes_lookup": {"family_id": "codes_and_sku", "leaf_route_id": "sku_codes_lookup", "route_stage": "stage2_specialized"},
     "corp_db.sphere_curated_categories": {"family_id": "sphere_category_mapping", "leaf_route_id": "curated_categories_by_sphere", "route_stage": "stage1_general"},
@@ -340,6 +385,9 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
     },
     "corp_db.sku_lookup": {
         "kind",
+        "lookup_direction",
+        "code_system",
+        "name",
         "query",
         "etm",
         "oracl",
@@ -348,9 +396,9 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
     },
     "corp_db.sku_codes_lookup": {
         "kind",
+        "lookup_direction",
+        "code_system",
         "name",
-        "etm",
-        "oracl",
         "limit",
         "offset",
     },
@@ -372,6 +420,39 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
     },
     "corp_db.documents_by_lamp_name": {
         "kind",
+        "document_type",
+        "name",
+        "query",
+        "limit",
+        "offset",
+    },
+    "corp_db.passport_by_lamp_name": {
+        "kind",
+        "document_type",
+        "name",
+        "query",
+        "limit",
+        "offset",
+    },
+    "corp_db.certificate_by_lamp_name": {
+        "kind",
+        "document_type",
+        "name",
+        "query",
+        "limit",
+        "offset",
+    },
+    "corp_db.manual_by_lamp_name": {
+        "kind",
+        "document_type",
+        "name",
+        "query",
+        "limit",
+        "offset",
+    },
+    "corp_db.ies_by_lamp_name": {
+        "kind",
+        "document_type",
         "name",
         "query",
         "limit",
@@ -972,8 +1053,8 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "route_family": "corp_db.sku_lookup",
             "route_kind": "corp_table",
             "authority": "primary",
-            "title": "ETM, ORACL, and SKU lookup",
-            "summary": "Structured lookup by ETM code, ORACL code, SKU, article, or exact catalog identifier.",
+            "title": "Codes and SKU lookup",
+            "summary": "Structured codes route for reverse code-to-lamp lookup and broader code-family questions.",
             "topics": ["catalog", "sku", "codes"],
             "keywords": [
                 "etm",
@@ -985,6 +1066,7 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "код",
                 "код номенклатуры",
                 "найди по коду",
+                "что это за модель по коду",
             ],
             "patterns": [
                 "найди по etm",
@@ -993,10 +1075,15 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "найди по оракл",
                 "найди sku",
                 "по артикулу",
+                "что это за модель по коду",
+                "найди модель по коду",
             ],
             "executor": "corp_db_search",
             "executor_args_template": {"kind": "sku_by_code"},
             "argument_hints": {
+                "lookup_direction": "Use by_code when the user starts from ETM/ORACL/article/SKU and wants the lamp or model.",
+                "code_system": "Use etm, oracl, sku, article, catalog_identifier, or mixed when the code family is explicit.",
+                "name": "Use the lamp or model name when the user asks broadly about codes for a product family and the exact code system is unclear.",
                 "etm": "Extract the ETM code as a short free string when present.",
                 "oracl": "Extract the ORACL code as a short free string when present.",
                 "query": "Use the original identifier text when the code system is unclear.",
@@ -1005,17 +1092,19 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
         },
         {
             "route_id": "corp_db.sku_codes_lookup",
-            "route_family": "corp_db.catalog_lookup",
+            "route_family": "corp_db.sku_codes_lookup",
             "route_kind": "corp_table",
             "authority": "primary",
             "title": "SKU and codes by lamp name",
-            "summary": "Reverse lookup from lamp/model name to ETM, ORACL, and related SKU identifiers.",
+            "summary": "Structured lookup from lamp/model name to ETM, ORACL, article, and related catalog identifiers.",
             "topics": ["catalog", "sku", "codes", "lamp"],
             "keywords": [
                 "коды модели",
                 "артикулы модели",
                 "etm код",
+                "etm-код",
                 "oracl код",
+                "oracl-код",
                 "sku модели",
                 "коды светильника",
             ],
@@ -1023,13 +1112,18 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
                 "какие коды у модели",
                 "какие артикулы у светильника",
                 "найди etm и oracl для модели",
+                "какой etm-код у",
+                "какой oracl-код у",
             ],
             "executor": "corp_db_search",
             "executor_args_template": {"kind": "lamp_exact"},
             "argument_hints": {
+                "lookup_direction": "Use by_name when the user starts from a lamp/model name and asks for ETM/ORACL/article/SKU codes.",
+                "code_system": "Use etm, oracl, sku, article, catalog_identifier, or mixed when the requested code family is explicit.",
                 "name": "Extract the lamp or model name whose ETM/ORACL/article codes the user wants.",
             },
             "fallback_route_ids": ["corp_db.sku_lookup", "corp_db.catalog_lookup"],
+            "cross_family_fallback_route_ids": ["corp_db.catalog_lookup"],
             "observability_labels": {"scope": "sku_codes_lookup"},
         },
         {
@@ -1094,16 +1188,18 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
         },
         {
             "route_id": "corp_db.documents_by_lamp_name",
-            "route_family": "corp_db.catalog_lookup",
+            "route_family": "corp_db.documents_by_lamp_name",
             "route_kind": "corp_table",
             "authority": "primary",
             "title": "Documents by lamp name",
-            "summary": "Catalog-backed route for listing passports, certificates, and other linked documents for a lamp or model family.",
+            "summary": "Catalog-backed route for listing passports, certificates, manuals, IES files, and other linked documents for a lamp or model family.",
             "topics": ["documents", "catalog", "lamp"],
             "keywords": [
                 "документы на светильник",
                 "паспорт на модель",
                 "сертификаты на модель",
+                "инструкция на модель",
+                "ies для модели",
                 "документы для серии",
                 "какие документы есть",
             ],
@@ -1116,9 +1212,121 @@ def bootstrap_route_cards() -> list[dict[str, Any]]:
             "executor_args_template": {"kind": "lamp_exact", "limit": 3},
             "argument_hints": {
                 "name": "Extract the lamp, model, or series name whose linked documents should be listed.",
+                "document_type": "Use passport, certificate, manual, or ies when the user clearly asks for one document subtype instead of the full list.",
             },
             "fallback_route_ids": ["corp_db.catalog_lookup"],
+            "cross_family_fallback_route_ids": ["corp_db.catalog_lookup"],
             "observability_labels": {"scope": "documents_by_lamp_name"},
+        },
+        {
+            "route_id": "corp_db.passport_by_lamp_name",
+            "route_family": "corp_db.documents_by_lamp_name",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Passport by lamp name",
+            "summary": "Catalog-backed route for passport requests scoped to one lamp, model, or series name.",
+            "topics": ["documents", "catalog", "lamp", "passport"],
+            "keywords": [
+                "паспорт",
+                "паспорта",
+                "паспорт на модель",
+                "паспорт на светильник",
+            ],
+            "patterns": [
+                "покажи паспорт на",
+                "покажи паспорт для",
+                "нужен паспорт на",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact", "limit": 3, "document_type": "passport"},
+            "argument_hints": {
+                "name": "Extract the lamp, model, or series name whose passport the user wants.",
+            },
+            "fallback_route_ids": ["corp_db.documents_by_lamp_name"],
+            "observability_labels": {"scope": "passport_by_lamp_name"},
+        },
+        {
+            "route_id": "corp_db.certificate_by_lamp_name",
+            "route_family": "corp_db.documents_by_lamp_name",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Certificate by lamp name",
+            "summary": "Catalog-backed route for certificate or declaration requests scoped to one lamp, model, or series name.",
+            "topics": ["documents", "catalog", "lamp", "certificate"],
+            "keywords": [
+                "сертификат",
+                "сертификаты",
+                "декларация",
+                "декларации",
+                "сертификат на модель",
+            ],
+            "patterns": [
+                "покажи сертификат на",
+                "покажи сертификат для",
+                "нужен сертификат на",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact", "limit": 3, "document_type": "certificate"},
+            "argument_hints": {
+                "name": "Extract the lamp, model, or series name whose certificate or declaration the user wants.",
+            },
+            "fallback_route_ids": ["corp_db.documents_by_lamp_name"],
+            "observability_labels": {"scope": "certificate_by_lamp_name"},
+        },
+        {
+            "route_id": "corp_db.manual_by_lamp_name",
+            "route_family": "corp_db.documents_by_lamp_name",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "Manual by lamp name",
+            "summary": "Catalog-backed route for installation manuals and instructions scoped to one lamp, model, or series name.",
+            "topics": ["documents", "catalog", "lamp", "manual"],
+            "keywords": [
+                "инструкция",
+                "инструкции",
+                "руководство",
+                "manual",
+                "мануал",
+            ],
+            "patterns": [
+                "покажи инструкцию на",
+                "покажи руководство на",
+                "покажи manual для",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact", "limit": 3, "document_type": "manual"},
+            "argument_hints": {
+                "name": "Extract the lamp, model, or series name whose instruction or manual the user wants.",
+            },
+            "fallback_route_ids": ["corp_db.documents_by_lamp_name"],
+            "observability_labels": {"scope": "manual_by_lamp_name"},
+        },
+        {
+            "route_id": "corp_db.ies_by_lamp_name",
+            "route_family": "corp_db.documents_by_lamp_name",
+            "route_kind": "corp_table",
+            "authority": "primary",
+            "title": "IES by lamp name",
+            "summary": "Catalog-backed route for IES photometric files scoped to one lamp, model, or series name.",
+            "topics": ["documents", "catalog", "lamp", "ies"],
+            "keywords": [
+                "ies",
+                "ies файл",
+                "ies-файл",
+                "фотометрия",
+            ],
+            "patterns": [
+                "покажи ies для",
+                "дай ies для",
+                "нужен ies для",
+            ],
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact", "limit": 3, "document_type": "ies"},
+            "argument_hints": {
+                "name": "Extract the lamp, model, or series name whose IES file the user wants.",
+            },
+            "fallback_route_ids": ["corp_db.documents_by_lamp_name"],
+            "observability_labels": {"scope": "ies_by_lamp_name"},
         },
         {
             "route_id": "corp_db.sphere_curated_categories",
@@ -1465,6 +1673,8 @@ def default_corp_db_route_cards() -> list[dict[str, Any]]:
             "argument_hints": dict(route["argument_hints"]),
             "evidence_policy": dict(route["evidence_policy"]),
             "fallback_route_ids": list(route["fallback_route_ids"]),
+            "cross_family_fallback_route_ids": list(route.get("cross_family_fallback_route_ids") or []),
+            "fallback_policy": dict(route.get("fallback_policy") or {}),
             "document_selectors": list(route["document_selectors"]),
             "route_owner": str(route.get("route_owner") or ""),
             "table_scopes": list(route["table_scopes"]),
@@ -1701,6 +1911,50 @@ def _covered_corp_db_domains(routes: list[dict[str, Any]]) -> set[str]:
     return covered
 
 
+def _validate_route_fallback_policies(
+    routes: list[dict[str, Any]],
+    *,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    routes_by_id = {
+        str(route.get("route_id") or ""): route
+        for route in routes
+        if isinstance(route, dict) and str(route.get("route_id") or "").strip()
+    }
+    for route in routes:
+        route_id = str(route.get("route_id") or "")
+        family_id = str(route.get("family_id") or "")
+        fallback_ids = _string_list(route.get("fallback_route_ids") or [])
+        raw_policy = route.get("fallback_policy") if isinstance(route.get("fallback_policy"), dict) else {}
+        cross_family_ids = set(
+            _string_list(
+                raw_policy.get("cross_family_route_ids")
+                or route.get("cross_family_fallback_route_ids")
+                or []
+            )
+        )
+        undeclared_cross_family_ids = [fallback_id for fallback_id in cross_family_ids if fallback_id not in fallback_ids]
+        for fallback_id in undeclared_cross_family_ids:
+            errors.append(f"{route_id}: cross-family fallback {fallback_id} must also be declared in fallback_route_ids")
+        for fallback_id in fallback_ids:
+            target_route = routes_by_id.get(fallback_id)
+            if target_route is None:
+                errors.append(f"{route_id}: fallback route {fallback_id} is missing from the active catalog")
+                continue
+            target_family_id = str(target_route.get("family_id") or "")
+            if fallback_id in cross_family_ids:
+                if target_family_id == family_id:
+                    warnings.append(
+                        f"{route_id}: fallback route {fallback_id} is declared cross-family but stays inside family {family_id}"
+                    )
+                continue
+            if target_family_id != family_id:
+                errors.append(
+                    f"{route_id}: fallback route {fallback_id} leaves family {family_id} and requires explicit cross_family_fallback_route_ids"
+                )
+
+
 def _validate_merged_catalog(
     routes: list[dict[str, Any]],
     *,
@@ -1742,6 +1996,8 @@ def _validate_merged_catalog(
             has_scope = bool(route.get("table_scopes")) or bool(route.get("scope_reason") or route.get("broad_scope_reason"))
             if not has_scope:
                 errors.append(f"{route_id}: corp_table route must declare table/source scope or broad_scope_reason")
+
+    _validate_route_fallback_policies(routes, errors=errors, warnings=warnings)
 
     covered_domains = _covered_corp_db_domains(routes)
     missing_domains = [domain for domain in KNOWN_CORP_DB_DOMAINS if domain not in covered_domains]
@@ -2026,9 +2282,21 @@ def _is_explicit_document_request(query: str) -> bool:
         query_text,
         CERTIFICATE_DOCUMENT_CONTEXT_KEYWORDS,
     )
+    subtype_by_lamp_context = bool(_detect_document_type(query)) and any(
+        marker in query_text
+        for marker in (
+            " на ",
+            " для ",
+            "светильник",
+            "модель",
+            "серия",
+            "линейк",
+        )
+    )
     return (
         any(keyword in query_text for keyword in DOCUMENT_REQUEST_KEYWORDS)
         or certificate_document_context
+        or subtype_by_lamp_context
         or any(pattern in query_text for pattern in DOCUMENT_LINK_CONTEXT_PATTERNS)
         or any(pattern in query_text for pattern in DOCUMENT_IN_TEXT_PATTERNS)
     )
@@ -2059,6 +2327,17 @@ def _is_series_or_category_mounting_query(query: str) -> bool:
     return any(marker in query_text for marker in ("сер", "категор", "линейк", "модел"))
 
 
+def _is_mounting_compatibility_query(query: str) -> bool:
+    query_text = _normalize(query)
+    if not _intent_contains(query_text, MOUNTING_QUERY_CUES):
+        return False
+    return any(marker in query_text for marker in ("совместим", "совместимость", "подходит", "подойдут", "подойдёт", "подойдет"))
+
+
+def _is_mountings_family_query(query: str) -> bool:
+    return _intent_contains(_normalize(query), MOUNTING_QUERY_CUES)
+
+
 def _is_series_description_query(query: str) -> bool:
     query_text = _normalize(query)
     if _is_broad_series_query(query):
@@ -2068,11 +2347,37 @@ def _is_series_description_query(query: str) -> bool:
     return False
 
 
+def _detect_document_type(query: str) -> str | None:
+    query_text = _normalize(query)
+    matches = [
+        document_type
+        for document_type in DOCUMENT_TYPE_ENUM
+        if _intent_contains(query_text, DOCUMENT_TYPE_TERMS[document_type])
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _detect_code_system(query: str) -> str | None:
+    query_text = _normalize(query)
+    matches = [
+        code_system
+        for code_system, terms in CODE_SYSTEM_TERMS.items()
+        if _intent_contains(query_text, terms)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        return "mixed"
+    return None
+
+
 def _is_documents_by_lamp_query(query: str) -> bool:
     query_text = _normalize(query)
     if not _is_explicit_document_request(query):
         return False
-    return any(
+    if any(
         marker in query_text
         for marker in (
             "какие документы есть",
@@ -2083,21 +2388,91 @@ def _is_documents_by_lamp_query(query: str) -> bool:
             "сертификаты на",
             "сертификаты для",
         )
+    ):
+        return True
+    document_type = _detect_document_type(query)
+    if not document_type:
+        return False
+    return any(
+        marker in query_text
+        for marker in (
+            " на ",
+            " для ",
+            "серии ",
+            "модели ",
+            "светильник",
+        )
     )
+
+
+def _is_reverse_code_lookup_query(query: str) -> bool:
+    query_text = _normalize(query)
+    reverse_patterns = (
+        "что это за модель по коду",
+        "что за модель по коду",
+        "какая модель по коду",
+        "какой светильник по коду",
+        "найди модель по коду",
+        "найди светильник по коду",
+        "модель по etm",
+        "модель по етм",
+        "модель по oracl",
+        "модель по оракл",
+        "светильник по etm",
+        "светильник по етм",
+        "светильник по oracl",
+        "светильник по оракл",
+        "по артикулу",
+    )
+    if any(pattern in query_text for pattern in reverse_patterns):
+        return True
+    query_terms = set(_terms(query))
+    has_lookup_target = bool(query_terms.intersection({"модель", "светильник"}))
+    has_by_code_marker = any(marker in query_text for marker in ("по коду", "по etm", "по етм", "по oracl", "по оракл"))
+    return has_lookup_target and has_by_code_marker
 
 
 def _is_codes_for_lamp_query(query: str) -> bool:
     query_text = _normalize(query)
-    return any(
+    if _is_reverse_code_lookup_query(query):
+        return False
+    if any(
         marker in query_text
         for marker in (
             "какие коды у",
             "какие артикулы у",
-            "etm и oracl",
-            "etm код",
-            "oracl код",
+            "какой артикул у",
             "sku для модели",
             "артикулы для модели",
+            "какой etm-код у",
+            "какой etm код у",
+            "какой етм код у",
+            "какой oracl-код у",
+            "какой oracl код у",
+            "какой оракл код у",
+        )
+    ):
+        return True
+    query_terms = set(_terms(query))
+    asks_for_specific_code = bool(query_terms.intersection({"какой", "какие", "покажи", "дай"})) and bool(_detect_code_system(query))
+    has_lamp_context = any(marker in query_text for marker in (" у ", " для ", "модел", "светильник", "серия", "линейк"))
+    return asks_for_specific_code and has_lamp_context
+
+
+def _is_codes_family_query(query: str) -> bool:
+    query_text = _normalize(query)
+    return any(
+        marker in query_text
+        for marker in (
+            "код",
+            "коды",
+            "артикул",
+            "артикулы",
+            "sku",
+            "etm",
+            "етм",
+            "oracl",
+            "оракл",
         )
     )
 
@@ -2109,10 +2484,55 @@ def _is_showcase_category_query(query: str) -> bool:
     return any(marker in query_text for marker in ("покажи примеры", "примеры моделей", "как пример", "представительные модели", "витрина"))
 
 
+def _is_broad_portfolio_query(query: str) -> bool:
+    query_text = _normalize(query)
+    if not _intent_contains(query_text, PORTFOLIO_LOOKUP_KEYWORDS):
+        return False
+    if any(
+        marker in query_text
+        for marker in (
+            "расскажи подробнее про",
+            "расскажи про объект",
+            "расскажи про проект",
+            "покажи проект",
+            "конкретный объект",
+            "конкретный проект",
+        )
+    ):
+        return False
+    return any(
+        marker in query_text
+        for marker in (
+            "какие реализован",
+            "реализованные проект",
+            "реализованные объект",
+            "список объектов",
+            "список проектов",
+            "портфолио по",
+            "проекты для",
+            "проекты по",
+            "объекты для",
+            "объекты по",
+            "по склад",
+            "для склад",
+            "по стади",
+            "для стади",
+            "по аэроп",
+            "для аэроп",
+            "по ржд",
+            "для ржд",
+            "по офис",
+            "для офис",
+            "по логист",
+            "для логист",
+        )
+    )
+
+
 def _route_intent_family(route: dict[str, Any]) -> str:
     route_id = str(route.get("route_id") or "")
     route_family = str(route.get("route_family") or "")
-    if route_id in {"corp_db.documents_by_lamp_name"}:
+    if str(route.get("family_id") or "") == "documents" or route_id in DOCUMENTS_FAMILY_ROUTE_IDS:
         return "document_lookup"
     if route_id in {
         "corp_kb.series_description",
@@ -2147,10 +2567,10 @@ def _infer_intent_family(query: str, *, explicit_document_request: bool) -> str:
     query_text = _normalize(query)
     if explicit_document_request:
         return "document_lookup"
-    if _intent_contains(query_text, PORTFOLIO_LOOKUP_KEYWORDS):
-        return "portfolio_lookup"
     if _is_sphere_category_query(query):
         return "catalog_lookup"
+    if _intent_contains(query_text, PORTFOLIO_LOOKUP_KEYWORDS):
+        return "portfolio_lookup"
     if _intent_contains(query_text, APPLICATION_RECOMMENDATION_KEYWORDS) or _intent_contains(query_text, ORCHESTRATION_KEYWORDS):
         return "application_recommendation"
     if _intent_contains(query_text, CATALOG_LOOKUP_KEYWORDS):
@@ -2176,6 +2596,19 @@ def _route_matches_query(route: dict[str, Any], query: str) -> bool:
     query_terms = {term for term in _terms(query) if term not in ROUTE_MATCH_STOPWORDS and len(term) > 1}
     route_id = str(route.get("route_id") or "").lower()
     route_family = str(route.get("route_family") or "").lower()
+    if route_id == "corp_db.documents_by_lamp_name":
+        return _is_documents_by_lamp_query(query)
+    if route_id in DOCUMENT_SUBTYPE_ROUTE_IDS.values():
+        document_type = str(
+            (route.get("locked_args") or {}).get("document_type")
+            or (route.get("executor_args_template") or {}).get("document_type")
+            or ""
+        ).strip()
+        return _is_documents_by_lamp_query(query) and _detect_document_type(query) == document_type
+    if route_id == "corp_db.sku_codes_lookup":
+        return _is_codes_for_lamp_query(query)
+    if route_id == "corp_db.sku_lookup":
+        return _is_reverse_code_lookup_query(query) or _is_codes_family_query(query)
     if route_id and route_id in query_text:
         return True
     if route_family and route_family in query_text:
@@ -2202,24 +2635,33 @@ def _route_matches_query(route: dict[str, Any], query: str) -> bool:
 def _preferred_route_ids_for_intent(query: str, intent_family: str) -> list[str]:
     query_text = _normalize(query)
     if intent_family == "portfolio_lookup":
-        if _intent_contains(query_text, ("список", "какие объект", "какие проект", "для ржд", "ржд")):
+        if _is_broad_portfolio_query(query) or _intent_contains(query_text, ("список", "какие объект", "какие проект", "для ржд", "ржд")):
             return ["corp_db.portfolio_by_sphere", "corp_db.portfolio_lookup", "corp_db.portfolio_examples_by_lamp"]
         return ["corp_db.portfolio_lookup", "corp_db.portfolio_by_sphere", "corp_db.portfolio_examples_by_lamp"]
     if intent_family == "application_recommendation":
         return ["corp_db.application_recommendation", "corp_db.portfolio_lookup", "corp_db.portfolio_by_sphere"]
     if intent_family == "document_lookup":
-        if _is_documents_by_lamp_query(query):
-            return ["corp_db.documents_by_lamp_name"]
-        return []
+        document_type = _detect_document_type(query)
+        if document_type and _is_documents_by_lamp_query(query):
+            return [DOCUMENT_SUBTYPE_ROUTE_IDS[document_type], "corp_db.documents_by_lamp_name"]
+        return ["corp_db.documents_by_lamp_name"]
     if intent_family == "catalog_lookup":
         if _is_series_description_query(query):
             return ["corp_kb.series_description", "corp_kb.company_common"]
+        if _is_reverse_code_lookup_query(query):
+            return ["corp_db.sku_lookup", "corp_db.sku_codes_lookup", "corp_db.catalog_lookup"]
         if _is_codes_for_lamp_query(query):
-            return ["corp_db.sku_codes_lookup", "corp_db.catalog_lookup", "corp_db.sku_lookup"]
+            return ["corp_db.sku_codes_lookup", "corp_db.sku_lookup", "corp_db.catalog_lookup"]
+        if _is_codes_family_query(query):
+            return ["corp_db.sku_lookup", "corp_db.sku_codes_lookup", "corp_db.catalog_lookup"]
         if _is_showcase_category_query(query):
             return ["corp_db.showcase_lamps_by_category", "corp_db.category_lamps", "corp_db.catalog_lookup"]
         if _is_sphere_category_query(query):
             return ["corp_db.sphere_curated_categories", "corp_db.category_lamps", "corp_db.catalog_lookup", "corp_db.category_mountings"]
+        if _is_mounting_compatibility_query(query):
+            return ["corp_db.lamp_mounting_compatibility", "corp_db.category_mountings", "corp_db.catalog_lookup", "corp_db.category_lamps"]
+        if _is_mountings_family_query(query):
+            return ["corp_db.category_mountings", "corp_db.lamp_mounting_compatibility", "corp_db.catalog_lookup", "corp_db.category_lamps"]
         if _is_series_or_category_mounting_query(query):
             return ["corp_db.category_mountings", "corp_db.lamp_mounting_compatibility", "corp_db.catalog_lookup", "corp_db.category_lamps"]
         return ["corp_db.catalog_lookup", "corp_db.sku_lookup", "corp_db.category_lamps", "corp_db.sphere_curated_categories"]
@@ -2258,6 +2700,8 @@ def _ordered_routes_for_intent(routes: list[dict[str, Any]], query: str, intent_
     text_matches = [route for route in routes if _route_matches_query(route, query) and route not in preferred and route not in intent_matches]
     if intent_family == "document_lookup":
         document_text_matches = _matching_document_routes(routes, query)
+        if _is_documents_by_lamp_query(query):
+            return _dedupe_routes([*preferred, *document_text_matches, *intent_matches, *text_matches, *routes])
         return _dedupe_routes([*document_text_matches, *preferred, *intent_matches, *text_matches, *routes])
     if intent_family == "company_fact":
         document_text_matches = _matching_document_routes(routes, query)
@@ -2272,7 +2716,12 @@ def _ordered_routes_for_intent(routes: list[dict[str, Any]], query: str, intent_
 
 def _ordered_routes_for_degraded_selection(routes: list[dict[str, Any]], query: str, intent_family: str) -> list[dict[str, Any]]:
     if intent_family == "document_lookup":
-        return _matching_document_routes(routes, query)
+        by_id = {str(route.get("route_id") or ""): route for route in routes}
+        preferred = [by_id[route_id] for route_id in _preferred_route_ids_for_intent(query, intent_family) if route_id in by_id]
+        matches = _matching_document_routes(routes, query)
+        if _is_documents_by_lamp_query(query):
+            return _dedupe_routes([*preferred, *matches])
+        return matches
     return _ordered_routes_for_intent(routes, query, intent_family)
 
 
@@ -2285,6 +2734,7 @@ def _candidate_payload(route: dict[str, Any], *, intent_family: str, selection_r
     payload["selected_route_family"] = str(route.get("route_family") or "")
     payload["selected_family_id"] = str(route.get("family_id") or "")
     payload["selected_leaf_route_id"] = str(route.get("leaf_route_id") or route.get("route_id") or "")
+    payload["selected_route_stage"] = str(route.get("route_stage") or "")
     payload["intent_family"] = intent_family
     payload["route_intent_family"] = _route_intent_family(route)
     return payload
@@ -2336,6 +2786,7 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
                 "route_family": str(item.get("route_family") or ""),
                 "family_id": str(item.get("family_id") or ""),
                 "leaf_route_id": str(item.get("leaf_route_id") or item.get("route_id") or ""),
+                "route_stage": str(item.get("route_stage") or ""),
                 "selection_reason": str(item.get("selection_reason") or ""),
                 "intent_family": str(item.get("intent_family") or ""),
                 "route_intent_family": str(item.get("route_intent_family") or ""),
@@ -2357,6 +2808,7 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
                 "route_family": str(item.get("route_family") or ""),
                 "family_id": str(item.get("family_id") or ""),
                 "leaf_route_id": str(item.get("leaf_route_id") or item.get("route_id") or ""),
+                "route_stage": str(item.get("route_stage") or ""),
                 "selection_reason": str(item.get("selection_reason") or ""),
                 "intent_family": str(item.get("intent_family") or ""),
                 "route_intent_family": str(item.get("route_intent_family") or ""),
@@ -2368,6 +2820,7 @@ def select_route(query: str, *, explicit_document_request: bool | None = None) -
         "selected_route_family": str(selected.get("route_family") or "") if selected is not None else "",
         "selected_family_id": str(selected.get("family_id") or "") if selected is not None else "",
         "selected_leaf_route_id": str(selected.get("leaf_route_id") or selected.get("route_id") or "") if selected is not None else "",
+        "selected_route_stage": str(selected.get("route_stage") or "") if selected is not None else "",
         "catalog_version": str(catalog.get("catalog_version") or ""),
         "catalog_origin": str(catalog.get("manifest_origin") or ""),
         "route_count": int(catalog.get("route_count") or 0),
@@ -2399,6 +2852,9 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
             or key in {
                 "query",
                 "name",
+                "document_type",
+                "lookup_direction",
+                "code_system",
                 "etm",
                 "oracl",
                 "category",
@@ -2416,6 +2872,7 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
             or key.endswith("_max")
         },
     }
+    fallback_policy = route_payload.get("fallback_policy") if isinstance(route_payload.get("fallback_policy"), dict) else {}
     return {
         "route_id": str(route.get("route_id") or ""),
         "route_family": str(route.get("route_family") or ""),
@@ -2440,6 +2897,19 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
         "argument_hints": dict(route_payload.get("argument_hints") or {}),
         "evidence_policy": dict(route.get("evidence_policy") or {}),
         "fallback_route_ids": list(route.get("fallback_route_ids") or [])[:6],
+        "cross_family_fallback_route_ids": list(route.get("cross_family_fallback_route_ids") or [])[:6],
+        "fallback_policy": {
+            "default_scope": str(fallback_policy.get("default_scope") or "family_local"),
+            "family_id": str(fallback_policy.get("family_id") or route.get("family_id") or "other"),
+            "same_family_route_ids": list(fallback_policy.get("same_family_route_ids") or route.get("fallback_route_ids") or [])[:6],
+            "cross_family_route_ids": list(
+                fallback_policy.get("cross_family_route_ids") or route.get("cross_family_fallback_route_ids") or []
+            )[:6],
+            "allow_cross_family": bool(
+                fallback_policy.get("allow_cross_family")
+                or route.get("cross_family_fallback_route_ids")
+            ),
+        },
         "document_selectors": list(route.get("document_selectors") or [])[:8],
         "table_scopes": list(route.get("table_scopes") or [])[:12],
     }
@@ -2463,19 +2933,20 @@ def _selector_family_cards(routes: list[dict[str, Any]]) -> list[dict[str, Any]]
             ordered.append((len(ordered), family_id))
         route_id = str(route.get("route_id") or "")
         family["route_ids"].append(route_id)
-        family["leaf_routes"].append(
-            {
-                "route_id": route_id,
-                "leaf_route_id": str(route.get("leaf_route_id") or route_id),
-                "title": str(route.get("title") or "")[:160],
-                "summary": str(route.get("summary") or "")[:200],
-                "route_kind": str(route.get("route_kind") or ""),
-                "authority": str(route.get("authority") or ""),
-                "route_stage": str(route.get("route_stage") or ""),
-            }
-        )
+        family["leaf_routes"].append(dict(route))
     ordered.sort(key=lambda item: (ROUTE_FAMILY_ORDER.get(item[1], 999), item[0]))
     return [grouped[family_id] for _, family_id in ordered]
+
+
+def selector_payload_leaf_routes(selector_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    routes: list[dict[str, Any]] = []
+    for family in selector_payload.get("families") or []:
+        if not isinstance(family, dict):
+            continue
+        for route in family.get("leaf_routes") or []:
+            if isinstance(route, dict):
+                routes.append(route)
+    return routes
 
 
 def build_route_selector_payload(
@@ -2511,5 +2982,4 @@ def build_route_selector_payload(
         "candidate_route_ids": [str(route.get("route_id") or "") for route in compact_routes],
         "candidate_family_ids": [str(family.get("family_id") or "") for family in families],
         "families": families,
-        "routes": compact_routes,
     }

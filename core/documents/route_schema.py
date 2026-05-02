@@ -37,6 +37,8 @@ ROUTE_CONTRACT_FIELDS = (
     "argument_hints",
     "evidence_policy",
     "fallback_route_ids",
+    "cross_family_fallback_route_ids",
+    "fallback_policy",
     "document_selectors",
     "table_scopes",
     "negative_keywords",
@@ -199,6 +201,12 @@ def _corp_db_argument_properties() -> dict[str, dict[str, Any]]:
         "limit": {"type": "integer", "minimum": 1, "maximum": 50},
         "offset": {"type": "integer", "minimum": 0, "maximum": 10000},
         "name": _string_property(240),
+        "document_type": {"type": "string", "enum": ["passport", "certificate", "manual", "ies"]},
+        "lookup_direction": {"type": "string", "enum": ["by_name", "by_code"]},
+        "code_system": {
+            "type": "string",
+            "enum": ["etm", "oracl", "sku", "article", "catalog_identifier", "mixed"],
+        },
         "etm": _string_property(80),
         "oracl": _string_property(80),
         "category": _string_property(240),
@@ -524,6 +532,10 @@ def normalize_route_card_contract(route: dict[str, Any]) -> dict[str, Any]:
     contract_route["argument_hints"] = dict(normalized.get("argument_hints") or {})
     contract_route["evidence_policy"] = _normalize_evidence_policy(contract_route)
     contract_route["fallback_route_ids"] = _dedupe_strings(normalized.get("fallback_route_ids") or [])
+    contract_route["cross_family_fallback_route_ids"] = _dedupe_strings(
+        normalized.get("cross_family_fallback_route_ids") or []
+    )
+    contract_route["fallback_policy"] = _normalize_fallback_policy(contract_route)
     contract_route["document_selectors"] = _infer_document_selectors(contract_route, executor_args_template)
     contract_route["table_scopes"] = _infer_table_scopes(contract_route, executor_args_template)
     contract_route["negative_keywords"] = _dedupe_strings(normalized.get("negative_keywords") or [])
@@ -557,10 +569,29 @@ def _route_selector_family_id(route: dict[str, Any]) -> str:
     return str(route.get("family_id") or route.get("route_family") or route.get("route_id") or "").strip()
 
 
+def _normalize_fallback_policy(route: dict[str, Any]) -> dict[str, Any]:
+    declared_fallback_ids = _dedupe_strings(route.get("fallback_route_ids") or [])
+    raw_policy = route.get("fallback_policy") if isinstance(route.get("fallback_policy"), dict) else {}
+    explicit_cross_family_ids = _dedupe_strings(
+        raw_policy.get("cross_family_route_ids")
+        or route.get("cross_family_fallback_route_ids")
+        or []
+    )
+    same_family_route_ids = [route_id for route_id in declared_fallback_ids if route_id not in explicit_cross_family_ids]
+    return {
+        "default_scope": str(raw_policy.get("default_scope") or "family_local"),
+        "family_id": _route_selector_family_id(route),
+        "same_family_route_ids": same_family_route_ids,
+        "cross_family_route_ids": explicit_cross_family_ids,
+        "allow_cross_family": bool(explicit_cross_family_ids),
+    }
+
+
 def _build_repair_prompt(error: RouteSelectorOutputError) -> str:
     return (
         "Return one corrected strict JSON object with selected_family_id, selected_route_id, optional "
-        "fallback_route_ids, and tool_args that contain only fields declared by "
+        "fallback_route_ids that stay inside the selected family unless the selected leaf explicitly allows "
+        "cross-family fallbacks, and tool_args that contain only fields declared by "
         f"the selected route schema. Error: {error.message}"
     )
 
@@ -624,14 +655,36 @@ def validate_selector_output(
         final_args = merge_route_tool_args(route, selector_tool_args, validate_required=True)
 
         route_fallback_ids = set(_dedupe_strings(route.get("fallback_route_ids") or []))
+        fallback_policy = route.get("fallback_policy") if isinstance(route.get("fallback_policy"), dict) else {}
+        cross_family_fallback_ids = set(
+            _dedupe_strings(
+                fallback_policy.get("cross_family_route_ids")
+                or route.get("cross_family_fallback_route_ids")
+                or []
+            )
+        )
+        same_family_fallback_ids = set(
+            _dedupe_strings(
+                fallback_policy.get("same_family_route_ids")
+                or [route_id for route_id in route_fallback_ids if route_id not in cross_family_fallback_ids]
+            )
+        )
+        declared_fallback_ids = same_family_fallback_ids | cross_family_fallback_ids
         fallback_route_ids = _dedupe_strings(parsed.get("fallback_route_ids") or [])
         for fallback_id in fallback_route_ids:
-            if fallback_id not in routes_by_id:
+            fallback_route = routes_by_id.get(fallback_id)
+            if fallback_route is None:
                 raise RouteSelectorOutputError("unsafe_selector_output", f"fallback route {fallback_id} is not visible")
-            if route_fallback_ids and fallback_id not in route_fallback_ids:
+            if fallback_id not in declared_fallback_ids:
                 raise RouteSelectorOutputError(
                     "unsafe_selector_output",
                     f"fallback route {fallback_id} is not declared by selected route",
+                )
+            fallback_family_id = _route_selector_family_id(fallback_route)
+            if fallback_id in same_family_fallback_ids and fallback_family_id != route_family_id:
+                raise RouteSelectorOutputError(
+                    "unsafe_selector_output",
+                    f"fallback route {fallback_id} leaves family {route_family_id} without explicit cross-family declaration",
                 )
 
         return SelectorValidationResult(

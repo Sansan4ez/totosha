@@ -59,6 +59,8 @@ class RouteSchemaTests(unittest.TestCase):
             "argument_hints",
             "evidence_policy",
             "fallback_route_ids",
+            "cross_family_fallback_route_ids",
+            "fallback_policy",
             "document_selectors",
             "table_scopes",
             "negative_keywords",
@@ -183,6 +185,80 @@ class RouteSchemaTests(unittest.TestCase):
         self.assertEqual(result.tool_args["knowledge_route_id"], "corp_kb.company_common")
         self.assertEqual(result.fallback_route_ids, ["corp_kb.luxnet"])
 
+    def test_selector_accepts_explicit_cross_family_fallbacks_only_when_declared(self):
+        catalog_route = _route(
+            {
+                "route_id": "corp_db.catalog_lookup",
+                "route_family": "corp_db.catalog_lookup",
+                "family_id": "catalog",
+                "family_title": "Catalog",
+                "leaf_route_id": "catalog_entity_lookup",
+                "executor_args_template": {"kind": "lamp_exact"},
+            }
+        )
+        route = _route(
+            {
+                "route_id": "corp_db.documents_by_lamp_name",
+                "route_family": "corp_db.documents_by_lamp_name",
+                "family_id": "documents",
+                "family_title": "Documents",
+                "leaf_route_id": "documents_by_lamp_name",
+                "executor_args_template": {"kind": "lamp_exact", "limit": 3},
+                "fallback_route_ids": ["corp_db.catalog_lookup"],
+                "cross_family_fallback_route_ids": ["corp_db.catalog_lookup"],
+            }
+        )
+
+        result = validate_selector_output(
+            {
+                "selected_family_id": "documents",
+                "selected_route_id": "corp_db.documents_by_lamp_name",
+                "tool_args": {"name": "NL Nova"},
+                "fallback_route_ids": ["corp_db.catalog_lookup"],
+            },
+            [route, catalog_route],
+        )
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.fallback_route_ids, ["corp_db.catalog_lookup"])
+
+    def test_selector_accepts_same_family_documents_fallback_for_subtype_leaf(self):
+        general_route = _route(
+            {
+                "route_id": "corp_db.documents_by_lamp_name",
+                "route_family": "corp_db.documents_by_lamp_name",
+                "family_id": "documents",
+                "family_title": "Documents",
+                "leaf_route_id": "documents_by_lamp_name",
+                "executor_args_template": {"kind": "lamp_exact", "limit": 3},
+            }
+        )
+        subtype_route = _route(
+            {
+                "route_id": "corp_db.passport_by_lamp_name",
+                "route_family": "corp_db.documents_by_lamp_name",
+                "family_id": "documents",
+                "family_title": "Documents",
+                "leaf_route_id": "passport_by_lamp_name",
+                "executor_args_template": {"kind": "lamp_exact", "limit": 3, "document_type": "passport"},
+                "fallback_route_ids": ["corp_db.documents_by_lamp_name"],
+            }
+        )
+
+        result = validate_selector_output(
+            {
+                "selected_family_id": "documents",
+                "selected_route_id": "corp_db.passport_by_lamp_name",
+                "tool_args": {"name": "NL Nova"},
+                "fallback_route_ids": ["corp_db.documents_by_lamp_name"],
+            },
+            [subtype_route, general_route],
+        )
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.tool_args["document_type"], "passport")
+        self.assertEqual(result.fallback_route_ids, ["corp_db.documents_by_lamp_name"])
+
     def test_selector_rejects_hidden_routes_and_undeclared_fallbacks(self):
         route = _route({})
         hidden = _route({"route_id": "corp_kb.hidden", "route_family": "corp_kb.hidden", "hidden": True})
@@ -204,6 +280,43 @@ class RouteSchemaTests(unittest.TestCase):
         self.assertEqual(hidden_result.error_code, "unsafe_selector_output")
         self.assertFalse(undeclared_fallback.valid)
         self.assertEqual(undeclared_fallback.error_code, "unsafe_selector_output")
+
+    def test_selector_rejects_cross_family_fallback_without_explicit_declaration(self):
+        catalog_route = _route(
+            {
+                "route_id": "corp_db.catalog_lookup",
+                "route_family": "corp_db.catalog_lookup",
+                "family_id": "catalog",
+                "family_title": "Catalog",
+                "leaf_route_id": "catalog_entity_lookup",
+                "executor_args_template": {"kind": "lamp_exact"},
+            }
+        )
+        route = _route(
+            {
+                "route_id": "corp_db.documents_by_lamp_name",
+                "route_family": "corp_db.documents_by_lamp_name",
+                "family_id": "documents",
+                "family_title": "Documents",
+                "leaf_route_id": "documents_by_lamp_name",
+                "executor_args_template": {"kind": "lamp_exact", "limit": 3},
+                "fallback_route_ids": ["corp_db.catalog_lookup"],
+            }
+        )
+
+        result = validate_selector_output(
+            {
+                "selected_family_id": "documents",
+                "selected_route_id": "corp_db.documents_by_lamp_name",
+                "tool_args": {"name": "NL Nova"},
+                "fallback_route_ids": ["corp_db.catalog_lookup"],
+            },
+            [route, catalog_route],
+        )
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.error_code, "unsafe_selector_output")
+        self.assertIn("explicit cross-family declaration", result.error)
 
     def test_selector_rejects_mismatched_family_and_route(self):
         route = _route({})
@@ -263,6 +376,103 @@ class RouteSchemaTests(unittest.TestCase):
                 )
                 self.assertFalse(result.valid)
                 self.assertIn(result.error_code, {"invalid_tool_args", "unsafe_selector_output"})
+
+    def test_document_type_enum_is_enforced_for_documents_routes(self):
+        route = normalize_route_card_contract(
+            {
+                "route_id": "corp_db.documents_by_lamp_name",
+                "route_family": "corp_db.documents_by_lamp_name",
+                "family_id": "documents",
+                "family_title": "Documents",
+                "leaf_route_id": "documents_by_lamp_name",
+                "route_kind": "corp_table",
+                "authority": "primary",
+                "title": "Documents by lamp name",
+                "executor": "corp_db_search",
+                "executor_args_template": {"kind": "lamp_exact", "limit": 3},
+            }
+        )
+
+        valid = validate_selector_output(
+            {
+                "selected_family_id": "documents",
+                "selected_route_id": "corp_db.documents_by_lamp_name",
+                "tool_args": {"name": "NL Nova", "document_type": "passport"},
+            },
+            [route],
+        )
+        invalid = validate_selector_output(
+            {
+                "selected_family_id": "documents",
+                "selected_route_id": "corp_db.documents_by_lamp_name",
+                "tool_args": {"name": "NL Nova", "document_type": "brochure"},
+            },
+            [route],
+        )
+
+        self.assertTrue(valid.valid)
+        self.assertFalse(invalid.valid)
+        self.assertEqual(invalid.error_code, "invalid_tool_args")
+
+    def test_codes_and_sku_discriminators_are_bounded(self):
+        by_code_route = normalize_route_card_contract(
+            {
+                "route_id": "corp_db.sku_lookup",
+                "route_family": "corp_db.sku_lookup",
+                "family_id": "codes_and_sku",
+                "family_title": "Codes and SKU",
+                "leaf_route_id": "sku_by_code",
+                "route_kind": "corp_table",
+                "authority": "primary",
+                "title": "Codes lookup",
+                "executor": "corp_db_search",
+                "executor_args_template": {"kind": "sku_by_code"},
+            }
+        )
+        by_name_route = normalize_route_card_contract(
+            {
+                "route_id": "corp_db.sku_codes_lookup",
+                "route_family": "corp_db.sku_codes_lookup",
+                "family_id": "codes_and_sku",
+                "family_title": "Codes and SKU",
+                "leaf_route_id": "sku_codes_lookup",
+                "route_kind": "corp_table",
+                "authority": "primary",
+                "title": "Codes by lamp name",
+                "executor": "corp_db_search",
+                "executor_args_template": {"kind": "lamp_exact"},
+            }
+        )
+
+        valid_by_code = validate_selector_output(
+            {
+                "selected_family_id": "codes_and_sku",
+                "selected_route_id": "corp_db.sku_lookup",
+                "tool_args": {"etm": "123456", "lookup_direction": "by_code", "code_system": "etm"},
+            },
+            [by_code_route],
+        )
+        valid_by_name = validate_selector_output(
+            {
+                "selected_family_id": "codes_and_sku",
+                "selected_route_id": "corp_db.sku_codes_lookup",
+                "tool_args": {"name": "NL Nova", "lookup_direction": "by_name", "code_system": "oracl"},
+            },
+            [by_name_route],
+        )
+        invalid = validate_selector_output(
+            {
+                "selected_family_id": "codes_and_sku",
+                "selected_route_id": "corp_db.sku_lookup",
+                "tool_args": {"query": "123456", "lookup_direction": "sideways", "code_system": "sap"},
+            },
+            [by_code_route],
+        )
+
+        self.assertTrue(valid_by_code.valid)
+        self.assertTrue(valid_by_name.valid)
+        self.assertFalse(invalid.valid)
+        self.assertEqual(invalid.error_code, "invalid_tool_args")
 
     def test_large_enum_domains_are_rejected_by_route_schema(self):
         with self.assertRaises(RouteCardContractError):
