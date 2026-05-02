@@ -50,6 +50,9 @@ class IncidentReplaySmokeTests(unittest.TestCase):
             expected_route_id="corp_kb.company_common",
             expected_route_kind="corp_table",
             expected_tool="corp_db_search",
+            expected_business_family_id="company_info",
+            expected_leaf_route_id="series_description",
+            expected_route_stage="stage2_specialized",
         )
         payload = {
             "response": "Есть серии LAD LED R500 и LAD LED LINE.",
@@ -58,6 +61,10 @@ class IncidentReplaySmokeTests(unittest.TestCase):
                 "request_id": "req-1",
                 "retrieval_route_id": "corp_kb.company_common",
                 "retrieval_selected_route_kind": "corp_table",
+                "retrieval_business_family_id": "company_info",
+                "retrieval_leaf_route_id": "series_description",
+                "retrieval_route_stage": "stage2_specialized",
+                "retrieval_validation_status": "ok",
                 "retrieval_selected_source": "corp_db",
                 "tools_used": ["corp_db_search"],
             },
@@ -72,6 +79,9 @@ class IncidentReplaySmokeTests(unittest.TestCase):
             expected_route_id="corp_kb.company_common",
             expected_route_kind="corp_table",
             expected_tool="corp_db_search",
+            expected_business_family_id="company_info",
+            expected_leaf_route_id="series_description",
+            expected_route_stage="stage2_specialized",
         )
         payload = {
             "answer": "",
@@ -80,6 +90,10 @@ class IncidentReplaySmokeTests(unittest.TestCase):
                 "request_id": "req-2",
                 "retrieval_route_id": "doc_search.document_lookup",
                 "retrieval_selected_route_kind": "doc_domain",
+                "retrieval_business_family_id": "document_lookup",
+                "retrieval_leaf_route_id": "document_domain_lookup",
+                "retrieval_route_stage": "stage1_general",
+                "retrieval_validation_status": "error",
                 "retrieval_selected_source": "doc_search",
                 "tools_used": ["doc_search"],
             },
@@ -89,6 +103,10 @@ class IncidentReplaySmokeTests(unittest.TestCase):
 
         self.assertIn("series_descriptions:route_id=doc_search.document_lookup", errors)
         self.assertIn("series_descriptions:route_kind=doc_domain", errors)
+        self.assertIn("series_descriptions:business_family=document_lookup", errors)
+        self.assertIn("series_descriptions:leaf_route_id=document_domain_lookup", errors)
+        self.assertIn("series_descriptions:route_stage=stage1_general", errors)
+        self.assertIn("series_descriptions:validation_status=error", errors)
         self.assertIn("series_descriptions:selected_source=doc_search", errors)
         self.assertIn("series_descriptions:tools_used=['doc_search']", errors)
         self.assertIn("series_descriptions:empty_answer", errors)

@@ -31,6 +31,13 @@ Minimum Expectations
   - trace span `api.request`
 - Core retrieval orchestration additionally emits:
   - metric `retrieval_route_requests_total`
+  - metric `retrieval_route_family_requests_total`
+  - metric `retrieval_route_leaf_requests_total`
+  - metric `retrieval_route_leaf_errors_total`
+  - metric `retrieval_route_leaf_duration_milliseconds`
+  - metric `retrieval_route_argument_validation_errors_total`
+  - metric `retrieval_route_family_fallback_total`
+  - metric `retrieval_route_stage_total`
   - metric `retrieval_route_duration_milliseconds`
   - metric `tool_executions_total`
   - metric `tool_execution_duration_milliseconds`
@@ -40,7 +47,7 @@ Minimum Expectations
   - metric `corp_db_search_phase_duration_milliseconds`
   - trace spans `tool.corp_db_search`, `corp_db.lamp_filters`, `corp_db.hybrid_primary`, `corp_db.embedding`, `corp_db.token_fallback`, `corp_db.alias_fallback`
 - Every instrumented service adds `request_id`, `trace_id`, and `span_id` correlation to logs.
-- Route-aware retrieval logs and spans also expose `selected_route_id`, `selected_route_family`, `selected_route_kind`, `selected_source`, `knowledge_route_id`, `document_id`, `tool_name`, and `tool_status`.
+- Route-aware retrieval logs and spans also expose `selected_route_id`, `selected_route_family`, `selected_business_family_id`, `selected_leaf_route_id`, `route_stage`, `route_arg_validation_status`, `used_fallback_scope`, `selected_route_kind`, `selected_source`, `knowledge_route_id`, `document_id`, `tool_name`, and `tool_status`.
 - Traces and logs are exported through the shared OTEL collector by default from the base app compose. `docker-compose.observability.yml` only adds localhost port bindings for local smoke and triage.
 - Metrics are scraped by the OTEL collector from each service `/metrics` endpoint and forwarded to VictoriaMetrics.
 - Every service keeps `service.name` stable and aligned with `harness/manifest.yaml`.

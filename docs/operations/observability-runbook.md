@@ -72,7 +72,8 @@ For RFC-020 correlation smoke on the local stack, the `core` service smoke now s
 The smoke fails unless each request is visible in:
 
 - VictoriaMetrics via `retrieval_route_requests_total` and `tool_executions_total`
-- VictoriaLogs via one fresh `request_id` carrying `trace_id`, `selected_route_id`, and `tool_name`
+- VictoriaMetrics via `retrieval_route_leaf_requests_total` and `retrieval_route_stage_total`
+- VictoriaLogs via one fresh `request_id` carrying `trace_id`, `selected_route_id`, `selected_business_family_id`, `selected_leaf_route_id`, `route_stage`, and `tool_name`
 - VictoriaTraces via the exact `trace_id` returned by `core /api/chat`
 
 Quick Checks
@@ -117,11 +118,12 @@ Also verify runtime visibility fields after every rebuild:
 For retrieval correlation, use these checks after a fresh routed request:
 
 ```bash
-curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28selected_route_id%2Cselected_route_kind%2Cselected_source%29%20%28increase%28retrieval_route_requests_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
-curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28tool_name%2Cselected_route_id%29%20%28increase%28tool_executions_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28selected_route_id%2Cselected_business_family_id%2Cselected_leaf_route_id%2Croute_stage%2Croute_arg_validation_status%29%20%28increase%28retrieval_route_leaf_requests_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28selected_business_family_id%2Cselected_leaf_route_id%2Croute_stage%29%20%28increase%28retrieval_route_stage_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28tool_name%2Cselected_route_id%2Cselected_leaf_route_id%2Croute_stage%2Cused_fallback_scope%29%20%28increase%28tool_executions_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
 ```
 
-Expected result: the fresh request increments the expected `selected_route_id` and `tool_name`.
+Expected result: the fresh request increments the expected `selected_route_id`, `selected_business_family_id`, `selected_leaf_route_id`, `route_stage`, `route_arg_validation_status`, and `tool_name`.
 
 ASR compatibility smoke
 -----------------------
@@ -168,7 +170,7 @@ curl -fsS -X POST 'http://127.0.0.1:9428/select/logsql/query' \
   -d 'limit=20'
 ```
 
-Expected result: one `request_id` across `core`, `tools-api`, and `proxy` with the same `trace_id`. For routed requests, the same log record set should expose `selected_route_id`, `selected_route_kind`, `selected_source`, and `tool_name`.
+Expected result: one `request_id` across `core`, `tools-api`, and `proxy` with the same `trace_id`. For routed requests, the same log record set should expose `selected_route_id`, `selected_business_family_id`, `selected_leaf_route_id`, `route_stage`, `route_arg_validation_status`, `selected_route_kind`, `selected_source`, and `tool_name`.
 
 3. Open the corresponding trace in VictoriaTraces or Jaeger API.
 
@@ -191,6 +193,10 @@ For RFC-020 correlation, confirm span tags include:
 
 - `selected_route_id`
 - `selected_route_family`
+- `selected_business_family_id`
+- `selected_leaf_route_id`
+- `route_stage`
+- `route_arg_validation_status`
 - `selected_route_kind`
 - `tool_name`
 - `knowledge_route_id` or `document_id`
@@ -205,9 +211,23 @@ Interpretation:
 
 ```bash
 curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=histogram_quantile%280.95%2C%20sum%20by%20%28le%2Cservice_name%2Croute%2Cmethod%2Cstatus%29%20%28rate%28http_server_duration_milliseconds_bucket%7Bservice_name%3D~%22core%7Ctools-api%22%2Croute%3D~%22%2Fapi%2Fchat%7C%2Fcorp-db%2Fsearch%22%7D%5B15m%5D%29%29%29'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=histogram_quantile%280.95%2C%20sum%20by%20%28le%2Cselected_business_family_id%2Cselected_leaf_route_id%2Croute_stage%2Croute_arg_validation_status%2Cused_fallback_scope%29%20%28rate%28retrieval_route_leaf_duration_milliseconds_bucket%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29%29'
 ```
 
-5. Attribute time inside `corp_db_search`.
+5. Inspect validation and fallback-specific routing signals.
+
+```bash
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28selected_route_id%2Cselected_leaf_route_id%2Croute_selector_validation_error_code%2Croute_arg_validation_status%29%20%28increase%28retrieval_route_argument_validation_errors_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28selected_route_id%2Cselected_leaf_route_id%2Cused_fallback_scope%2Cused_fallback_route_id%2Cfallback_family_id%29%20%28increase%28retrieval_route_family_fallback_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
+```
+
+Expected result:
+
+- validation regressions show up by `route_selector_validation_error_code` without log spelunking;
+- fallback traffic is split between `family_local` and `cross_family`;
+- route-level fallback targets stay visible through `used_fallback_route_id`.
+
+6. Attribute time inside `corp_db_search`.
 
 ```bash
 curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=histogram_quantile%280.95%2C%20sum%20by%20%28le%2Ckind%2Cprofile%2Cstatus%29%20%28rate%28corp_db_search_duration_milliseconds_bucket%5B15m%5D%29%29%29'
@@ -220,7 +240,7 @@ Reference acceptance after RFC-004 rollout:
 - `corp_db_search_duration_milliseconds{kind="hybrid_search",profile="entity_resolver"}` p95 around `975 ms`
 - `corp_db_search_duration_milliseconds{kind="lamp_filters",profile="candidate_generation"}` p95 around `487.5 ms`
 
-6. Interpret transport errors from `core`.
+7. Interpret transport errors from `core`.
 
 `core` now returns exception class and timeout budget, for example:
 

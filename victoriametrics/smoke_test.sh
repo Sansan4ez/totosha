@@ -31,6 +31,9 @@ KB_EXPECTED_ROUTE_KIND="${KB_EXPECTED_ROUTE_KIND:-corp_table}"
 KB_EXPECTED_SOURCE="${KB_EXPECTED_SOURCE:-corp_db}"
 KB_EXPECTED_TOOL="${KB_EXPECTED_TOOL:-corp_db_search}"
 KB_EXPECTED_DOCUMENT_ID="${KB_EXPECTED_DOCUMENT_ID:-}"
+KB_EXPECTED_FAMILY_ID="${KB_EXPECTED_FAMILY_ID:-company_info}"
+KB_EXPECTED_LEAF_ROUTE_ID="${KB_EXPECTED_LEAF_ROUTE_ID:-company_general}"
+KB_EXPECTED_ROUTE_STAGE="${KB_EXPECTED_ROUTE_STAGE:-stage1_general}"
 
 DOC_REQUEST_ID="${DOC_REQUEST_ID:-obs-rfc020-doc-route}"
 DOC_QUERY="${DOC_QUERY:-Какие нормы освещенности для спортивных объектов указаны в документе?}"
@@ -39,6 +42,9 @@ DOC_EXPECTED_ROUTE_KIND="${DOC_EXPECTED_ROUTE_KIND:-doc_domain}"
 DOC_EXPECTED_SOURCE="${DOC_EXPECTED_SOURCE:-doc_search}"
 DOC_EXPECTED_TOOL="${DOC_EXPECTED_TOOL:-doc_search}"
 DOC_EXPECTED_DOCUMENT_ID="${DOC_EXPECTED_DOCUMENT_ID:-}"
+DOC_EXPECTED_FAMILY_ID="${DOC_EXPECTED_FAMILY_ID:-document_lookup}"
+DOC_EXPECTED_LEAF_ROUTE_ID="${DOC_EXPECTED_LEAF_ROUTE_ID:-document_domain_lookup}"
+DOC_EXPECTED_ROUTE_STAGE="${DOC_EXPECTED_ROUTE_STAGE:-stage1_general}"
 
 mkdir -p "$(dirname "${REPORT_FILE}")"
 : > "${REPORT_FILE}"
@@ -334,9 +340,13 @@ validate_chat_meta() {
   local expected_route_kind="$4"
   local expected_tool="$5"
   local expected_document_id="$6"
+  local expected_family_id="$7"
+  local expected_leaf_route_id="$8"
+  local expected_route_stage="$9"
   RESPONSE="${response}" REQUEST_ID="${request_id}" EXPECTED_ROUTE_ID="${expected_route_id}" \
   EXPECTED_ROUTE_KIND="${expected_route_kind}" EXPECTED_TOOL="${expected_tool}" \
-  EXPECTED_DOCUMENT_ID="${expected_document_id}" python3 - <<'PY'
+  EXPECTED_DOCUMENT_ID="${expected_document_id}" EXPECTED_FAMILY_ID="${expected_family_id}" \
+  EXPECTED_LEAF_ROUTE_ID="${expected_leaf_route_id}" EXPECTED_ROUTE_STAGE="${expected_route_stage}" python3 - <<'PY'
 import json
 import os
 import sys
@@ -358,6 +368,14 @@ if meta.get("retrieval_route_id") != os.environ["EXPECTED_ROUTE_ID"]:
     fail(f"route_id mismatch: {meta.get('retrieval_route_id')}")
 if meta.get("retrieval_selected_route_kind") != os.environ["EXPECTED_ROUTE_KIND"]:
     fail(f"route_kind mismatch: {meta.get('retrieval_selected_route_kind')}")
+if meta.get("retrieval_business_family_id") != os.environ["EXPECTED_FAMILY_ID"]:
+    fail(f"business_family mismatch: {meta.get('retrieval_business_family_id')}")
+if meta.get("retrieval_leaf_route_id") != os.environ["EXPECTED_LEAF_ROUTE_ID"]:
+    fail(f"leaf_route_id mismatch: {meta.get('retrieval_leaf_route_id')}")
+if meta.get("retrieval_route_stage") != os.environ["EXPECTED_ROUTE_STAGE"]:
+    fail(f"route_stage mismatch: {meta.get('retrieval_route_stage')}")
+if meta.get("retrieval_validation_status") != "ok":
+    fail(f"validation_status mismatch: {meta.get('retrieval_validation_status')}")
 tools_used = meta.get("tools_used") or []
 if os.environ["EXPECTED_TOOL"] not in tools_used:
     fail(f"expected tool not used: {os.environ['EXPECTED_TOOL']} vs {tools_used}")
@@ -372,6 +390,10 @@ print(json.dumps({
     "request_id": meta.get("request_id"),
     "route_id": meta.get("retrieval_route_id"),
     "route_kind": meta.get("retrieval_selected_route_kind"),
+    "business_family_id": meta.get("retrieval_business_family_id"),
+    "leaf_route_id": meta.get("retrieval_leaf_route_id"),
+    "route_stage": meta.get("retrieval_route_stage"),
+    "validation_status": meta.get("retrieval_validation_status"),
     "selected_source": meta.get("retrieval_selected_source"),
     "tool": os.environ["EXPECTED_TOOL"],
     "document_id": meta.get("document_id") or "",
@@ -388,6 +410,9 @@ run_route_correlation_smoke() {
   local expected_source="$6"
   local expected_tool="$7"
   local expected_document_id="$8"
+  local expected_family_id="$9"
+  local expected_leaf_route_id="${10}"
+  local expected_route_stage="${11}"
 
   log "[RUN] ${scenario}: request_id=${request_id}"
   local request_body response validated trace_id actual_source actual_document_id metric_query tool_metric_query log_query
@@ -397,7 +422,7 @@ run_route_correlation_smoke() {
     -H "X-Request-Id: ${request_id}" \
     --max-time "${SMOKE_REQUEST_TIMEOUT_SECONDS}" \
     -d "${request_body}")"
-  validated="$(validate_chat_meta "${response}" "${request_id}" "${expected_route_id}" "${expected_route_kind}" "${expected_tool}" "${expected_document_id}")"
+  validated="$(validate_chat_meta "${response}" "${request_id}" "${expected_route_id}" "${expected_route_kind}" "${expected_tool}" "${expected_document_id}" "${expected_family_id}" "${expected_leaf_route_id}" "${expected_route_stage}")"
   trace_id="$(VALIDATED="${validated}" python3 - <<'PY'
 import json
 import os
@@ -416,10 +441,16 @@ import os
 print(json.loads(os.environ["VALIDATED"]).get("document_id", ""))
 PY
 )"
-  log "[OK] ${scenario}: route_id=${expected_route_id} trace_id=${trace_id} selected_source=${actual_source} document_id=${actual_document_id:-none} tool=${expected_tool}"
+  log "[OK] ${scenario}: route_id=${expected_route_id} family_id=${expected_family_id} leaf_route_id=${expected_leaf_route_id} route_stage=${expected_route_stage} trace_id=${trace_id} selected_source=${actual_source} document_id=${actual_document_id:-none} tool=${expected_tool}"
 
   metric_query="sum(last_over_time(retrieval_route_requests_total{service_name=\"core\",selected_route_id=\"${expected_route_id}\",selected_route_kind=\"${expected_route_kind}\",selected_source=\"${actual_source}\"}[15m]))"
   query_metric_positive "${metric_query}" "${SMOKE_REQUEST_TIMEOUT_SECONDS}" "${scenario} retrieval_route_requests_total"
+
+  leaf_metric_query="sum(last_over_time(retrieval_route_leaf_requests_total{service_name=\"core\",selected_route_id=\"${expected_route_id}\",selected_leaf_route_id=\"${expected_leaf_route_id}\",selected_business_family_id=\"${expected_family_id}\",route_stage=\"${expected_route_stage}\",route_arg_validation_status=\"ok\"}[15m]))"
+  query_metric_positive "${leaf_metric_query}" "${SMOKE_REQUEST_TIMEOUT_SECONDS}" "${scenario} retrieval_route_leaf_requests_total"
+
+  stage_metric_query="sum(last_over_time(retrieval_route_stage_total{service_name=\"core\",selected_business_family_id=\"${expected_family_id}\",selected_leaf_route_id=\"${expected_leaf_route_id}\",route_stage=\"${expected_route_stage}\"}[15m]))"
+  query_metric_positive "${stage_metric_query}" "${SMOKE_REQUEST_TIMEOUT_SECONDS}" "${scenario} retrieval_route_stage_total"
 
   tool_metric_query="sum(last_over_time(tool_executions_total{service_name=\"core\",tool_name=\"${expected_tool}\",selected_route_id=\"${expected_route_id}\"}[15m]))"
   query_metric_positive "${tool_metric_query}" "${SMOKE_REQUEST_TIMEOUT_SECONDS}" "${scenario} tool_executions_total"
@@ -449,8 +480,8 @@ wait_for_metric "${SMOKE_HEALTH_TIMEOUT_SECONDS}"
 
 if [[ "${SERVICE_NAME}" == "core" ]]; then
   wait_http_ok "${SMOKE_CHAT_URL%/api/chat}/health" "core health" "${SMOKE_HEALTH_TIMEOUT_SECONDS}"
-  run_route_correlation_smoke "kb_route" "${KB_REQUEST_ID}" "${KB_QUERY}" "${KB_EXPECTED_ROUTE_ID}" "${KB_EXPECTED_ROUTE_KIND}" "${KB_EXPECTED_SOURCE}" "${KB_EXPECTED_TOOL}" "${KB_EXPECTED_DOCUMENT_ID}"
-  run_route_correlation_smoke "document_route" "${DOC_REQUEST_ID}" "${DOC_QUERY}" "${DOC_EXPECTED_ROUTE_ID}" "${DOC_EXPECTED_ROUTE_KIND}" "${DOC_EXPECTED_SOURCE}" "${DOC_EXPECTED_TOOL}" "${DOC_EXPECTED_DOCUMENT_ID}"
+  run_route_correlation_smoke "kb_route" "${KB_REQUEST_ID}" "${KB_QUERY}" "${KB_EXPECTED_ROUTE_ID}" "${KB_EXPECTED_ROUTE_KIND}" "${KB_EXPECTED_SOURCE}" "${KB_EXPECTED_TOOL}" "${KB_EXPECTED_DOCUMENT_ID}" "${KB_EXPECTED_FAMILY_ID}" "${KB_EXPECTED_LEAF_ROUTE_ID}" "${KB_EXPECTED_ROUTE_STAGE}"
+  run_route_correlation_smoke "document_route" "${DOC_REQUEST_ID}" "${DOC_QUERY}" "${DOC_EXPECTED_ROUTE_ID}" "${DOC_EXPECTED_ROUTE_KIND}" "${DOC_EXPECTED_SOURCE}" "${DOC_EXPECTED_TOOL}" "${DOC_EXPECTED_DOCUMENT_ID}" "${DOC_EXPECTED_FAMILY_ID}" "${DOC_EXPECTED_LEAF_ROUTE_ID}" "${DOC_EXPECTED_ROUTE_STAGE}"
   if [[ "${RUN_INCIDENT_REPLAY_SMOKE}" == "true" ]]; then
     run_incident_replay_smoke
   fi

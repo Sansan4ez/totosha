@@ -2,7 +2,7 @@
   "uid": "harness-service-overview",
   "title": "Harness Service Overview",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "30s",
   "templating": {
     "list": [
@@ -128,42 +128,42 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Retrieval Routes",
+      "title": "Retrieval Family And Leaf Traffic",
       "datasource": {
         "type": "victoriametrics-metrics-datasource",
         "uid": "victoriametrics"
       },
       "targets": [
         {
-          "expr": "sum by (selected_route_id, selected_route_kind, selected_source) (rate(retrieval_route_requests_total{service_name=\"core\"}[5m]))"
+          "expr": "sum by (selected_business_family_id, selected_leaf_route_id, route_stage, route_arg_validation_status) (rate(retrieval_route_leaf_requests_total{service_name=\"core\"}[5m]))"
         }
       ]
     },
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Tool Executions By Route",
+      "title": "Tool Executions By Leaf",
       "datasource": {
         "type": "victoriametrics-metrics-datasource",
         "uid": "victoriametrics"
       },
       "targets": [
         {
-          "expr": "sum by (tool_name, selected_route_id) (rate(tool_executions_total{service_name=\"core\"}[5m]))"
+          "expr": "sum by (tool_name, selected_business_family_id, selected_leaf_route_id, route_stage, used_fallback_scope) (rate(tool_executions_total{service_name=\"core\"}[5m]))"
         }
       ]
     },
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Incident Route Traffic",
+      "title": "Incident Stage Traffic",
       "datasource": {
         "type": "victoriametrics-metrics-datasource",
         "uid": "victoriametrics"
       },
       "targets": [
         {
-          "expr": "sum by (selected_route_id) (rate(retrieval_route_requests_total{service_name=\"core\",selected_route_id=~\"corp_kb.company_common|corp_db.application_recommendation|corp_db.portfolio_by_sphere\"}[5m]))"
+          "expr": "sum by (selected_business_family_id, selected_leaf_route_id, route_stage) (rate(retrieval_route_stage_total{service_name=\"core\",selected_leaf_route_id=~\"company_general|application_recommendation|portfolio_projects_by_sphere\"}[5m]))"
         }
       ]
     },

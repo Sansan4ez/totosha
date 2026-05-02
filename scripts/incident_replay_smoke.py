@@ -36,6 +36,9 @@ class ChatReplayExpectation:
     expected_route_id: str
     expected_route_kind: str
     expected_tool: str
+    expected_business_family_id: str
+    expected_leaf_route_id: str
+    expected_route_stage: str
 
 
 CHAT_REPLAYS = (
@@ -45,6 +48,9 @@ CHAT_REPLAYS = (
         expected_route_id="corp_kb.company_common",
         expected_route_kind="corp_table",
         expected_tool="corp_db_search",
+        expected_business_family_id="company_info",
+        expected_leaf_route_id="series_description",
+        expected_route_stage="stage2_specialized",
     ),
     ChatReplayExpectation(
         slug="series_descriptions",
@@ -52,6 +58,9 @@ CHAT_REPLAYS = (
         expected_route_id="corp_kb.company_common",
         expected_route_kind="corp_table",
         expected_tool="corp_db_search",
+        expected_business_family_id="company_info",
+        expected_leaf_route_id="series_description",
+        expected_route_stage="stage2_specialized",
     ),
 )
 
@@ -261,6 +270,14 @@ def validate_chat_replay_response(payload: dict[str, Any], expected: ChatReplayE
         errors.append(f"{expected.slug}:route_id={meta.get('retrieval_route_id')}")
     if meta.get("retrieval_selected_route_kind") != expected.expected_route_kind:
         errors.append(f"{expected.slug}:route_kind={meta.get('retrieval_selected_route_kind')}")
+    if meta.get("retrieval_business_family_id") != expected.expected_business_family_id:
+        errors.append(f"{expected.slug}:business_family={meta.get('retrieval_business_family_id')}")
+    if meta.get("retrieval_leaf_route_id") != expected.expected_leaf_route_id:
+        errors.append(f"{expected.slug}:leaf_route_id={meta.get('retrieval_leaf_route_id')}")
+    if meta.get("retrieval_route_stage") != expected.expected_route_stage:
+        errors.append(f"{expected.slug}:route_stage={meta.get('retrieval_route_stage')}")
+    if meta.get("retrieval_validation_status") != "ok":
+        errors.append(f"{expected.slug}:validation_status={meta.get('retrieval_validation_status')}")
     if meta.get("retrieval_selected_source") != "corp_db":
         errors.append(f"{expected.slug}:selected_source={meta.get('retrieval_selected_source')}")
     tools_used = meta.get("tools_used") if isinstance(meta.get("tools_used"), list) else []
