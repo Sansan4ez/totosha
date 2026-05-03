@@ -6,33 +6,37 @@ Purpose
 
 Use this index when you need implemented, accepted, or proposed technical decisions, especially for architecture, runtime topology, and operational policy.
 
+For index readability, every RFC below is normalized to a simple status label:
+- `Implemented` — the RFC is reflected in the current repository/runtime state.
+- `Proposed` — the RFC is still a proposal for index purposes, including older draft or unstated-status documents.
+
 RFCs
 ----
 
-- `docs/rfc/RFC-001-corp-pg-db-shared-skill.md`
-- `docs/rfc/RFC-002-bench-golden-dataset.md`
-- `docs/rfc/RFC-003-corp-db-hybrid-filters-and-agent-payload.md`
-- `docs/rfc/RFC-004-corp-db-search-latency-and-observability-hardening.md`
-- `docs/rfc/RFC-005-lamp-portfolio-examples-fast-path.md`
-- `docs/rfc/RFC-006-default-corp-db-routing-for-company-facts.md`
-- `docs/rfc/RFC-007-multiformat-document-search-with-liteparse-and-tiered-promotion.md`
-- `docs/rfc/RFC-008-application-driven-lighting-recommendation-fast-path.md`
-- `docs/rfc/RFC-009-index-driven-routing-and-liteparse-first-doc-search.md`
-- `docs/rfc/RFC-010-liteparse-integration-and-document-search-optimization.md`
-- `docs/rfc/RFC-011-production-deployment-on-nixos-with-compose-and-victoria-observability.md`
-- `docs/rfc/RFC-012-benchmark-algorithmic-validation-and-comparison.md`
-- `docs/rfc/RFC-013-observability-runtime-wiring-and-trace-propagation.md`
-- `docs/rfc/RFC-014-simple-company-fact-fast-path-and-kb-ranking.md`
-- `docs/rfc/RFC-015-runtime-vs-benchmark-pipeline-separation.md`
-- `docs/rfc/RFC-016-authoritative-route-completion-and-llm-finalization.md`
-- `docs/rfc/RFC-017-source-scoped-corp-knowledge-routing.md`
-- `docs/rfc/RFC-018-unified-routing-catalog-for-tables-scripts-and-docs.md`
-- `docs/rfc/RFC-019-doc-search-domain-and-inbox-verification.md`
-- `docs/rfc/RFC-020-unified-victoria-observability-correlation.md`
-- `docs/rfc/RFC-021-runtime-llm-led-orchestration-simplification.md`
-- `docs/rfc/RFC-022-agent-web-chat-frontend-integration.md`
-- `docs/rfc/RFC-023-voice-asr-upstream-stability-and-fallbacks.md`
-- `docs/rfc/RFC-024-agent-web-abuse-controls-and-session-bounding.md`
-- `docs/rfc/RFC-025-route-card-centered-retrieval-refactor.md`
-- `docs/rfc/RFC-026-canonical-route-arguments-and-bounded-portfolio-retrieval.md`
+- `docs/rfc/RFC-001-corp-pg-db-shared-skill.md` — Proposed
+- `docs/rfc/RFC-002-bench-golden-dataset.md` — Proposed
+- `docs/rfc/RFC-003-corp-db-hybrid-filters-and-agent-payload.md` — Proposed
+- `docs/rfc/RFC-004-corp-db-search-latency-and-observability-hardening.md` — Proposed
+- `docs/rfc/RFC-005-lamp-portfolio-examples-fast-path.md` — Proposed
+- `docs/rfc/RFC-006-default-corp-db-routing-for-company-facts.md` — Proposed
+- `docs/rfc/RFC-007-multiformat-document-search-with-liteparse-and-tiered-promotion.md` — Proposed
+- `docs/rfc/RFC-008-application-driven-lighting-recommendation-fast-path.md` — Proposed
+- `docs/rfc/RFC-009-index-driven-routing-and-liteparse-first-doc-search.md` — Proposed
+- `docs/rfc/RFC-010-liteparse-integration-and-document-search-optimization.md` — Proposed
+- `docs/rfc/RFC-011-production-deployment-on-nixos-with-compose-and-victoria-observability.md` — Proposed
+- `docs/rfc/RFC-012-benchmark-algorithmic-validation-and-comparison.md` — Proposed
+- `docs/rfc/RFC-013-observability-runtime-wiring-and-trace-propagation.md` — Proposed
+- `docs/rfc/RFC-014-simple-company-fact-fast-path-and-kb-ranking.md` — Proposed
+- `docs/rfc/RFC-015-runtime-vs-benchmark-pipeline-separation.md` — Proposed
+- `docs/rfc/RFC-016-authoritative-route-completion-and-llm-finalization.md` — Proposed
+- `docs/rfc/RFC-017-source-scoped-corp-knowledge-routing.md` — Proposed
+- `docs/rfc/RFC-018-unified-routing-catalog-for-tables-scripts-and-docs.md` — Proposed
+- `docs/rfc/RFC-019-doc-search-domain-and-inbox-verification.md` — Proposed
+- `docs/rfc/RFC-020-unified-victoria-observability-correlation.md` — Proposed
+- `docs/rfc/RFC-021-runtime-llm-led-orchestration-simplification.md` — Proposed
+- `docs/rfc/RFC-022-agent-web-chat-frontend-integration.md` — Proposed
+- `docs/rfc/RFC-023-voice-asr-upstream-stability-and-fallbacks.md` — Proposed
+- `docs/rfc/RFC-024-agent-web-abuse-controls-and-session-bounding.md` — Proposed
+- `docs/rfc/RFC-025-route-card-centered-retrieval-refactor.md` — Implemented
+- `docs/rfc/RFC-026-canonical-route-arguments-and-bounded-portfolio-retrieval.md` — Proposed
 - `docs/rfc/RFC-027-three-stage-hierarchical-routing-evolution.md` — Implemented
