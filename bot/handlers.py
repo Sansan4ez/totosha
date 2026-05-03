@@ -259,21 +259,21 @@ async def handle_voice(message: Message):
     access_result = check_user_access(user_id, chat_type_str)
     if not access_result.allowed:
         if is_private:
-            await rate_limiter.safe_send(chat_id, message.reply(access_result.reason))
+            await rate_limiter.safe_send(chat_id, lambda: message.reply(access_result.reason))
         return
     
     voice = message.voice
     if voice.duration > ASR_MAX_DURATION:
         await rate_limiter.safe_send(
             chat_id,
-            message.reply(t("voice_too_long", duration=voice.duration, max=ASR_MAX_DURATION))
+            lambda: message.reply(t("voice_too_long", duration=voice.duration, max=ASR_MAX_DURATION))
         )
         return
     
     # Concurrent check
     if not rate_limiter.can_accept_user(user_id):
         await set_reaction(chat_id, message_id, "🤔")
-        await rate_limiter.safe_send(chat_id, message.reply(t("voice_busy")))
+        await rate_limiter.safe_send(chat_id, lambda: message.reply(t("voice_busy")))
         return
     
     username = message.from_user.username or message.from_user.first_name or str(user_id)
@@ -294,21 +294,21 @@ async def handle_voice(message: Message):
         print(f"[voice] Transcription error: {e}")
         if isinstance(e, ASRTranscriptionError):
             if e.code == "empty":
-                await rate_limiter.safe_send(chat_id, message.reply(t("voice_empty")))
+                await rate_limiter.safe_send(chat_id, lambda: message.reply(t("voice_empty")))
             else:
                 await rate_limiter.safe_send(
                     chat_id,
-                    message.reply(t("voice_transcribe_temporary"))
+                    lambda: message.reply(t("voice_transcribe_temporary"))
                 )
         else:
             await rate_limiter.safe_send(
                 chat_id,
-                message.reply(t("voice_transcribe_temporary"))
+                lambda: message.reply(t("voice_transcribe_temporary"))
             )
         return
     
     if not transcribed_text.strip():
-        await rate_limiter.safe_send(chat_id, message.reply(t("voice_empty")))
+        await rate_limiter.safe_send(chat_id, lambda: message.reply(t("voice_empty")))
         return
     
     # Show transcribed text
@@ -316,7 +316,7 @@ async def handle_voice(message: Message):
     preview = transcribed_text[:200] + ("..." if len(transcribed_text) > 200 else "")
     await rate_limiter.safe_send(
         chat_id,
-        message.reply(f"🎤 <i>{preview}</i>")
+        lambda: message.reply(f"🎤 <i>{preview}</i>")
     )
     
     # In groups, if not directed at bot - just show transcription, don't call agent
@@ -379,11 +379,11 @@ async def handle_voice(message: Message):
             for i, part in enumerate(parts):
                 sent = await rate_limiter.safe_send(
                     chat_id,
-                    message.reply(part) if i == 0 else bot.send_message(chat_id, part)
+                    lambda part=part, i=i: message.reply(part) if i == 0 else bot.send_message(chat_id, part)
                 )
                 if not sent and i == 0:
                     plain = re.sub(r'<[^>]+>', '', part)[:4000]
-                    await rate_limiter.safe_send(chat_id, message.reply(plain))
+                    await rate_limiter.safe_send(chat_id, lambda plain=plain: message.reply(plain))
                     break
         
         except Exception as e:
@@ -392,7 +392,7 @@ async def handle_voice(message: Message):
             print(f"[voice] Error: {e}")
             traceback.print_exc()
             await set_reaction(chat_id, message_id, "👎")
-            await rate_limiter.safe_send(chat_id, message.reply(t("error", error=str(e)[:200])))
+            await rate_limiter.safe_send(chat_id, lambda: message.reply(t("error", error=str(e)[:200])))
         
         finally:
             rate_limiter.mark_inactive(user_id)
@@ -442,13 +442,13 @@ async def handle_message(message: Message):
         # Pairing mode - show code
         if access_result.pairing_code:
             await set_reaction(chat_id, message_id, "🔐")
-            await rate_limiter.safe_send(chat_id, message.reply(access_result.reason))
+            await rate_limiter.safe_send(chat_id, lambda: message.reply(access_result.reason))
         else:
             # Admin-only or not in allowlist
             await set_reaction(chat_id, message_id, "🚫")
             # Don't spam with denial messages in groups
             if chat_type == ChatType.PRIVATE:
-                await rate_limiter.safe_send(chat_id, message.reply(access_result.reason))
+                await rate_limiter.safe_send(chat_id, lambda: message.reply(access_result.reason))
         return
     
     is_private = chat_type == ChatType.PRIVATE
@@ -508,7 +508,7 @@ async def handle_message(message: Message):
         await set_reaction(chat_id, message_id, "🤔")
         await rate_limiter.safe_send(
             chat_id,
-            message.reply(t("busy"))
+            lambda: message.reply(t("busy"))
         )
         return
     
@@ -521,7 +521,7 @@ async def handle_message(message: Message):
     if detect_prompt_injection(text):
         print(f"[SECURITY] Prompt injection from {user_id}")
         await set_reaction(chat_id, message_id, "🤨")
-        await rate_limiter.safe_send(chat_id, message.reply(t("injection")))
+        await rate_limiter.safe_send(chat_id, lambda: message.reply(t("injection")))
         return
     
     # React with 👀
@@ -584,14 +584,14 @@ async def handle_message(message: Message):
             for i, part in enumerate(parts):
                 sent = await rate_limiter.safe_send(
                     chat_id,
-                    message.reply(part) if i == 0 else bot.send_message(chat_id, part)
+                    lambda part=part, i=i: message.reply(part) if i == 0 else bot.send_message(chat_id, part)
                 )
                 
                 if not sent and i == 0:
                     # Fallback to plain text
                     import re
                     plain = re.sub(r'<[^>]+>', '', part)[:4000]
-                    await rate_limiter.safe_send(chat_id, message.reply(plain))
+                    await rate_limiter.safe_send(chat_id, lambda plain=plain: message.reply(plain))
                     break
         
         except Exception as e:
@@ -601,7 +601,7 @@ async def handle_message(message: Message):
             print(f"[bot] Error: {e}")
             traceback.print_exc()
             await set_reaction(chat_id, message_id, "👎")
-            await rate_limiter.safe_send(chat_id, message.reply(t("error", error=str(e)[:200])))
+            await rate_limiter.safe_send(chat_id, lambda: message.reply(t("error", error=str(e)[:200])))
         
         finally:
             rate_limiter.mark_inactive(user_id)
