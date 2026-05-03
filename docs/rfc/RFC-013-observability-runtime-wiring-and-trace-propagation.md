@@ -3,12 +3,22 @@
 Status
 ------
 
-Proposed
+Implemented
 
 Date
 ----
 
 2026-04-08
+
+Last updated
+------------
+
+2026-05-03
+
+Implementation note
+-------------------
+
+This RFC is now implemented in the repository/runtime. The core outcomes are visible in the base OTEL wiring, cross-service `traceparent` and `X-Request-Id` propagation, structured `HTTP request completed` correlation logs, and Victoria smoke validation artifacts. The body below is kept as the original proposal/problem statement for historical context.
 
 Summary
 -------

@@ -4,12 +4,22 @@ RFC-018 Unified Routing Catalog For Tables, Scripts, And Documents
 Status
 ------
 
-Proposed
+Implemented
 
 Date
 ----
 
 2026-04-08
+
+Last updated
+------------
+
+2026-05-03
+
+Implementation note
+-------------------
+
+This RFC is now implemented in the current routing architecture. Runtime catalog loading, merged route-manifest handling, selector payload construction, schema validation, and route ownership boundaries are documented and enforced through `core/documents/routing.py`, `core/documents/route_schema.py`, the runtime catalog path under `/data/corp_docs`, and the living architecture note in `docs/architecture/routing.md`. The body below is preserved as the original proposal context.
 
 Related RFCs
 ------------

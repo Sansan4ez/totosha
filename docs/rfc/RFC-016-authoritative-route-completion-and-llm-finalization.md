@@ -4,12 +4,22 @@ RFC-016 Authoritative Route Completion And LLM Finalization
 Status
 ------
 
-Proposed
+Implemented
 
 Date
 ----
 
 2026-04-08
+
+Last updated
+------------
+
+2026-05-03
+
+Implementation note
+-------------------
+
+This RFC is now implemented in the active runtime. Retrieval closure and finalization semantics are expressed through canonical fields such as `retrieval_phase`, `retrieval_evidence_status`, `retrieval_close_reason`, and `finalizer_mode`; sufficient authoritative evidence closes retrieval while successful final answers remain `finalizer_mode=llm`, with bounded degraded closures using explicit non-LLM modes. The body below remains as the original design intent and rollout context.
 
 Related RFCs
 ------------

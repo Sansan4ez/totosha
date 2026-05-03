@@ -25,12 +25,12 @@ RFCs
 - `docs/rfc/RFC-010-liteparse-integration-and-document-search-optimization.md` — Proposed
 - `docs/rfc/RFC-011-production-deployment-on-nixos-with-compose-and-victoria-observability.md` — Proposed
 - `docs/rfc/RFC-012-benchmark-algorithmic-validation-and-comparison.md` — Proposed
-- `docs/rfc/RFC-013-observability-runtime-wiring-and-trace-propagation.md` — Proposed
+- `docs/rfc/RFC-013-observability-runtime-wiring-and-trace-propagation.md` — Implemented
 - `docs/rfc/RFC-014-simple-company-fact-fast-path-and-kb-ranking.md` — Proposed
 - `docs/rfc/RFC-015-runtime-vs-benchmark-pipeline-separation.md` — Proposed
-- `docs/rfc/RFC-016-authoritative-route-completion-and-llm-finalization.md` — Proposed
+- `docs/rfc/RFC-016-authoritative-route-completion-and-llm-finalization.md` — Implemented
 - `docs/rfc/RFC-017-source-scoped-corp-knowledge-routing.md` — Proposed
-- `docs/rfc/RFC-018-unified-routing-catalog-for-tables-scripts-and-docs.md` — Proposed
+- `docs/rfc/RFC-018-unified-routing-catalog-for-tables-scripts-and-docs.md` — Implemented
 - `docs/rfc/RFC-019-doc-search-domain-and-inbox-verification.md` — Proposed
 - `docs/rfc/RFC-020-unified-victoria-observability-correlation.md` — Proposed
 - `docs/rfc/RFC-021-runtime-llm-led-orchestration-simplification.md` — Proposed
