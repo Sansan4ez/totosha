@@ -16,6 +16,13 @@ ensure_creds_dir_permissions() {
     chmod 755 "$CREDS_DIR"
 }
 
+verify_creds_dir_writable() {
+    local probe="$CREDS_DIR/.permission_test"
+    rm -f "$probe"
+    : > "$probe"
+    rm -f "$probe"
+}
+
 # Read secrets from Docker secrets files and export as env vars
 if [ -f /run/secrets/gdrive_client_id ]; then
     export GOOGLE_OAUTH_CLIENT_ID=$(cat /run/secrets/gdrive_client_id)
@@ -27,9 +34,15 @@ fi
 
 ensure_creds_dir_permissions
 
-# Start the MCP server
+# Verify the non-root runtime can persist OAuth credentials before starting the server.
 if [ "$(id -u)" -eq 0 ]; then
+    if ! gosu "$APP_USER:$APP_GROUP" /bin/sh -c "set -eu; probe=\"$CREDS_DIR/.permission_test\"; rm -f \"\$probe\"; : > \"\$probe\"; rm -f \"\$probe\""; then
+        echo "ERROR: credentials directory is not writable for $APP_USER:$APP_GROUP: $CREDS_DIR" >&2
+        ls -ld "$CREDS_DIR" >&2 || true
+        exit 1
+    fi
     exec gosu "$APP_USER:$APP_GROUP" uv run main.py --transport streamable-http ${TOOL_TIER:+--tool-tier "$TOOL_TIER"} ${TOOLS:+--tools $TOOLS}
 fi
 
+verify_creds_dir_writable
 exec uv run main.py --transport streamable-http ${TOOL_TIER:+--tool-tier "$TOOL_TIER"} ${TOOLS:+--tools $TOOLS}

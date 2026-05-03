@@ -339,52 +339,33 @@ CATEGORY_AWARE_ROUTE_IDS = {
 }
 ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
     "corp_kb.company_common": {
-        "kind",
         "query",
-        "profile",
-        "knowledge_route_id",
-        "source_files",
         "topic_facets",
         "limit",
     },
     "corp_kb.series_description": {
-        "kind",
         "query",
-        "profile",
-        "knowledge_route_id",
-        "source_files",
         "series",
         "topic_facets",
         "limit",
     },
     "corp_kb.luxnet": {
-        "kind",
         "query",
-        "profile",
-        "knowledge_route_id",
-        "source_files",
         "limit",
     },
     "corp_kb.lighting_norms": {
-        "kind",
         "query",
-        "profile",
-        "knowledge_route_id",
-        "source_files",
         "limit",
     },
     "corp_db.catalog_lookup": {
-        "kind",
         "query",
         "name",
         "category",
         "mounting_type",
         "limit",
         "offset",
-        "fuzzy",
     },
     "corp_db.sku_lookup": {
-        "kind",
         "lookup_direction",
         "code_system",
         "name",
@@ -395,7 +376,6 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "offset",
     },
     "corp_db.sku_codes_lookup": {
-        "kind",
         "lookup_direction",
         "code_system",
         "name",
@@ -403,23 +383,18 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "offset",
     },
     "corp_db.category_lamps": {
-        "kind",
         "category",
         "query",
         "limit",
         "offset",
-        "fuzzy",
     },
     "corp_db.showcase_lamps_by_category": {
-        "kind",
         "category",
         "query",
         "limit",
         "offset",
-        "fuzzy",
     },
     "corp_db.documents_by_lamp_name": {
-        "kind",
         "document_type",
         "name",
         "query",
@@ -427,74 +402,55 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "offset",
     },
     "corp_db.passport_by_lamp_name": {
-        "kind",
-        "document_type",
         "name",
         "query",
         "limit",
         "offset",
     },
     "corp_db.certificate_by_lamp_name": {
-        "kind",
-        "document_type",
         "name",
         "query",
         "limit",
         "offset",
     },
     "corp_db.manual_by_lamp_name": {
-        "kind",
-        "document_type",
         "name",
         "query",
         "limit",
         "offset",
     },
     "corp_db.ies_by_lamp_name": {
-        "kind",
-        "document_type",
         "name",
         "query",
         "limit",
         "offset",
     },
     "corp_db.portfolio_lookup": {
-        "kind",
         "query",
-        "profile",
-        "entity_types",
         "limit",
         "offset",
     },
     "corp_db.portfolio_by_sphere": {
-        "kind",
         "sphere",
         "query",
-        "fuzzy",
         "limit",
         "offset",
     },
     "corp_db.application_recommendation": {
-        "kind",
         "query",
         "limit_categories",
         "limit_lamps",
         "limit_portfolio",
     },
     "corp_db.sphere_curated_categories": {
-        "kind",
         "sphere",
         "query",
-        "fuzzy",
     },
     "corp_db.sphere_categories": {
-        "kind",
         "sphere",
         "query",
-        "fuzzy",
     },
     "corp_db.lamp_filters": {
-        "kind",
         "query",
         "category",
         "mounting_type",
@@ -542,23 +498,18 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "warranty_years_max",
         "limit",
         "offset",
-        "fuzzy",
     },
     "corp_db.category_mountings": {
-        "kind",
         "category",
         "series",
         "mounting_type",
         "query",
-        "fuzzy",
     },
     "corp_db.lamp_mounting_compatibility": {
-        "kind",
         "category",
         "series",
         "mounting_type",
         "query",
-        "fuzzy",
     },
 }
 ROUTE_REQUIRED_ARGUMENTS = {
@@ -749,10 +700,18 @@ def _apply_runtime_argument_overrides(route: dict[str, Any], *, sphere_context: 
     route_id = str(route.get("route_id") or "").strip()
     executor = str(route.get("executor") or route.get("tool_name") or "").strip()
     executor_args_template = dict(route.get("executor_args_template") or {})
+    locked_args = dict(route.get("locked_args") or executor_args_template)
     route["argument_schema"] = default_argument_schema(
         executor=executor,
         executor_args_template=executor_args_template,
-        locked_args=executor_args_template,
+        locked_args=locked_args,
+        selector_visible_only=True,
+    )
+    route["execution_argument_schema"] = default_argument_schema(
+        executor=executor,
+        executor_args_template=executor_args_template,
+        locked_args=locked_args,
+        selector_visible_only=False,
     )
     route["argument_schema"]["properties"] = _retain_argument_properties(
         route_id,
@@ -2894,6 +2853,7 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
         "executor_args_template": dict(route_payload.get("executor_args_template") or {}),
         "locked_args": dict(route_payload.get("locked_args") or {}),
         "argument_schema": compact_schema,
+        "execution_argument_schema": dict(route_payload.get("execution_argument_schema") or {}),
         "argument_hints": dict(route_payload.get("argument_hints") or {}),
         "evidence_policy": dict(route.get("evidence_policy") or {}),
         "fallback_route_ids": list(route.get("fallback_route_ids") or [])[:6],
@@ -2934,7 +2894,6 @@ def _selector_family_cards(routes: list[dict[str, Any]]) -> list[dict[str, Any]]
         route_id = str(route.get("route_id") or "")
         family["route_ids"].append(route_id)
         family["leaf_routes"].append(dict(route))
-    ordered.sort(key=lambda item: (ROUTE_FAMILY_ORDER.get(item[1], 999), item[0]))
     return [grouped[family_id] for _, family_id in ordered]
 
 
@@ -2949,6 +2908,69 @@ def selector_payload_leaf_routes(selector_payload: dict[str, Any]) -> list[dict[
     return routes
 
 
+def _group_routes_by_family(routes: list[dict[str, Any]]) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    family_order: list[str] = []
+    for route in routes:
+        family_id = str(route.get("family_id") or "other")
+        if family_id not in grouped:
+            grouped[family_id] = []
+            family_order.append(family_id)
+        grouped[family_id].append(route)
+    return grouped, family_order
+
+
+def _family_first_candidate_routes(
+    routes: list[dict[str, Any]],
+    *,
+    query: str,
+    intent_family: str,
+    max_routes: int,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    grouped, catalog_family_order = _group_routes_by_family(routes)
+    ranked_routes = _ordered_routes_for_intent(routes, query, intent_family)
+    ranked_family_ids: list[str] = []
+    for route in ranked_routes:
+        family_id = str(route.get("family_id") or "other")
+        if family_id not in ranked_family_ids:
+            ranked_family_ids.append(family_id)
+    for family_id in catalog_family_order:
+        if family_id not in ranked_family_ids:
+            ranked_family_ids.append(family_id)
+
+    selected_family_ids: list[str] = []
+    selected_route_count = 0
+    for family_id in ranked_family_ids:
+        family_routes = grouped.get(family_id) or []
+        if not family_routes:
+            continue
+        if selected_family_ids and (selected_route_count + len(family_routes)) > max_routes:
+            continue
+        selected_family_ids.append(family_id)
+        selected_route_count += len(family_routes)
+        if selected_route_count >= max_routes:
+            break
+
+    if not selected_family_ids and ranked_family_ids:
+        selected_family_ids = [ranked_family_ids[0]]
+
+    candidates: list[dict[str, Any]] = []
+    seen_route_ids: set[str] = set()
+    for route in ranked_routes:
+        route_id = str(route.get("route_id") or "")
+        family_id = str(route.get("family_id") or "other")
+        if family_id in selected_family_ids and route_id and route_id not in seen_route_ids:
+            seen_route_ids.add(route_id)
+            candidates.append(route)
+    for family_id in selected_family_ids:
+        for route in grouped.get(family_id) or []:
+            route_id = str(route.get("route_id") or "")
+            if route_id and route_id not in seen_route_ids:
+                seen_route_ids.add(route_id)
+                candidates.append(route)
+    return candidates, selected_family_ids
+
+
 def build_route_selector_payload(
     query: str,
     *,
@@ -2960,14 +2982,17 @@ def build_route_selector_payload(
     explicit_document_request = _is_explicit_document_request(query)
     intent_family = _infer_intent_family(query, explicit_document_request=explicit_document_request)
     max_routes = max(1, min(int(limit or SELECTOR_ROUTE_LIMIT), SELECTOR_ROUTE_LIMIT))
-    if intent_family == "catalog_lookup" and _is_series_description_query(query):
-        max_routes = min(max_routes, 1)
     if len(routes) <= max_routes:
         candidates = list(routes)
         candidate_mode = "all_visible_grouped_by_family"
     else:
-        candidates = _ordered_routes_for_intent(routes, query, intent_family)[:max_routes]
-        candidate_mode = "intent_then_catalog_order_grouped_by_family"
+        candidates, selected_family_ids = _family_first_candidate_routes(
+            routes,
+            query=query,
+            intent_family=intent_family,
+            max_routes=max_routes,
+        )
+        candidate_mode = "family_first_budgeted_by_family"
     compact_routes = [_compact_selector_route_card(route, sphere_context=sphere_context) for route in candidates]
     families = _selector_family_cards(compact_routes)
     return {

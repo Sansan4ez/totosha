@@ -260,10 +260,11 @@ def default_argument_schema(
     executor: str,
     executor_args_template: dict[str, Any],
     locked_args: dict[str, Any],
+    selector_visible_only: bool = False,
 ) -> dict[str, Any]:
     if executor == "corp_db_search":
         properties = _corp_db_argument_properties()
-        required = ["kind"]
+        required = [] if selector_visible_only else ["kind"]
     elif executor == "doc_search":
         properties = {
             "query": _string_property(500),
@@ -279,6 +280,15 @@ def default_argument_schema(
         for key, value in source.items():
             if key not in properties:
                 properties[key] = _infer_property_schema(value)
+
+    if selector_visible_only:
+        hidden_keys = set(executor_args_template).union(locked_args)
+        properties = {
+            key: value
+            for key, value in properties.items()
+            if key not in hidden_keys
+        }
+        required = [key for key in required if key in properties]
 
     return {
         "type": "object",
@@ -399,8 +409,14 @@ def _validate_value(field_path: str, value: Any, schema: dict[str, Any]) -> None
             raise RouteSelectorOutputError("invalid_tool_args", f"{field_path} is above maximum")
 
 
-def validate_tool_args(route: dict[str, Any], tool_args: dict[str, Any], *, require_required: bool) -> None:
-    schema = normalize_argument_schema(route.get("argument_schema") or {})
+def validate_tool_args(
+    route: dict[str, Any],
+    tool_args: dict[str, Any],
+    *,
+    require_required: bool,
+    schema_field: str = "argument_schema",
+) -> None:
+    schema = normalize_argument_schema(route.get(schema_field) or {})
     properties = schema["properties"]
     for key, value in tool_args.items():
         if key not in properties:
@@ -444,11 +460,12 @@ def merge_route_tool_args(
         if key in locked_args and locked_args[key] != value:
             raise RouteSelectorOutputError("unsafe_selector_output", f"tool_args.{key} attempts to override locked_args")
 
-    validate_tool_args(route, selector_args, require_required=False)
+    validate_tool_args(route, selector_args, require_required=False, schema_field="argument_schema")
     final_args = dict(route.get("executor_args_template") or {})
     final_args.update(selector_args)
     final_args.update(locked_args)
-    validate_tool_args(route, final_args, require_required=validate_required)
+    schema_field = "execution_argument_schema" if route.get("execution_argument_schema") else "argument_schema"
+    validate_tool_args(route, final_args, require_required=validate_required, schema_field=schema_field)
     return final_args
 
 
@@ -523,11 +540,23 @@ def normalize_route_card_contract(route: dict[str, Any]) -> dict[str, Any]:
             executor=executor,
             executor_args_template=executor_args_template,
             locked_args=locked_args,
+            selector_visible_only=True,
         )
     argument_schema = normalize_argument_schema(schema)
 
+    execution_schema = normalized.get("execution_argument_schema")
+    if not isinstance(execution_schema, dict) or not execution_schema:
+        execution_schema = default_argument_schema(
+            executor=executor,
+            executor_args_template=executor_args_template,
+            locked_args=locked_args,
+            selector_visible_only=False,
+        )
+    execution_argument_schema = normalize_argument_schema(execution_schema)
+
     contract_route = dict(normalized)
     contract_route["argument_schema"] = argument_schema
+    contract_route["execution_argument_schema"] = execution_argument_schema
     contract_route["locked_args"] = locked_args
     contract_route["argument_hints"] = dict(normalized.get("argument_hints") or {})
     contract_route["evidence_policy"] = _normalize_evidence_policy(contract_route)
@@ -541,8 +570,18 @@ def normalize_route_card_contract(route: dict[str, Any]) -> dict[str, Any]:
     contract_route["negative_keywords"] = _dedupe_strings(normalized.get("negative_keywords") or [])
 
     try:
-        validate_tool_args(contract_route, executor_args_template, require_required=False)
-        validate_tool_args(contract_route, locked_args, require_required=False)
+        validate_tool_args(
+            contract_route,
+            executor_args_template,
+            require_required=False,
+            schema_field="execution_argument_schema",
+        )
+        validate_tool_args(
+            contract_route,
+            locked_args,
+            require_required=False,
+            schema_field="execution_argument_schema",
+        )
     except RouteSelectorOutputError as exc:
         raise RouteCardContractError(exc.message) from exc
     final_args = dict(executor_args_template)

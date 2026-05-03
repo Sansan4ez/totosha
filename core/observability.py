@@ -758,12 +758,16 @@ def setup_observability(service_name: str) -> None:
     formatter = logging.Formatter(
         "[%(service_name)s] request_id=%(request_id)s trace_id=%(trace_id)s "
         "span_id=%(span_id)s request_source=%(request_source)s selected_route_id=%(selected_route_id)s "
-        "selected_route_family=%(selected_route_family)s selected_route_kind=%(selected_route_kind)s "
+        "selected_route_family=%(selected_route_family)s selected_business_family_id=%(selected_business_family_id)s "
+        "selected_leaf_route_id=%(selected_leaf_route_id)s route_stage=%(route_stage)s "
+        "route_arg_validation_status=%(route_arg_validation_status)s selected_route_kind=%(selected_route_kind)s "
         "selected_source=%(selected_source)s knowledge_route_id=%(knowledge_route_id)s "
         "document_id=%(document_id)s tool_name=%(tool_name)s tool_call_id=%(tool_call_id)s "
         "tool_call_seq=%(tool_call_seq)s tool_status=%(tool_status)s retrieval_phase=%(retrieval_phase)s "
         "retrieval_evidence_status=%(retrieval_evidence_status)s retrieval_close_reason=%(retrieval_close_reason)s "
-        "route_selector_status=%(route_selector_status)s routing_catalog_version=%(routing_catalog_version)s "
+        "route_selector_status=%(route_selector_status)s route_selector_confidence=%(route_selector_confidence)s "
+        "used_fallback_scope=%(used_fallback_scope)s used_fallback_route_id=%(used_fallback_route_id)s "
+        "fallback_family_id=%(fallback_family_id)s routing_catalog_version=%(routing_catalog_version)s "
         "routing_guardrail_hits=%(routing_guardrail_hits)s guardrail_blocked_tool=%(guardrail_blocked_tool)s "
         "finalizer_mode=%(finalizer_mode)s %(name)s: %(message)s"
     )

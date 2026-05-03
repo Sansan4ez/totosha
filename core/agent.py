@@ -52,7 +52,6 @@ except Exception:
 from run_meta import run_meta_append_artifact, run_meta_get, run_meta_update_llm
 from tool_output_policy import (
     EXECUTION_MODE_RUNTIME,
-    allows_deterministic_primary_finalization,
     get_bench_payload_format,
     get_runtime_payload_format,
     normalize_execution_mode,
@@ -761,6 +760,47 @@ async def _finalize_with_scoped_evidence(
     return clean_response(content)
 
 
+def _finalizer_unavailable_response(
+    routing_state: dict[str, Any],
+    *,
+    error: Exception | str,
+) -> str:
+    agent_logger.error("Route finalizer unavailable: %s", error)
+    routing_state["retrieval_phase"] = "closed"
+    routing_state["retrieval_close_reason"] = "finalizer_unavailable"
+    routing_state["finalizer_mode"] = "unavailable"
+    if routing_state.get("intent") == "company_fact":
+        routing_state["company_fact_rendered"] = False
+        routing_state["company_fact_finalizer_mode"] = "unavailable"
+    _update_routing_observability(routing_state)
+    return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
+
+
+async def _finalize_or_fail_closed(
+    *,
+    base_messages: list[dict[str, Any]],
+    tool_name: str,
+    tool_args: dict[str, Any],
+    tool_result: ToolResult,
+    route_hint: dict[str, Any] | None,
+    routing_state: dict[str, Any],
+) -> str:
+    try:
+        final_response = await _finalize_with_scoped_evidence(
+            base_messages=base_messages,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            tool_result=tool_result,
+            route_hint=route_hint,
+        )
+    except Exception as exc:
+        return _finalizer_unavailable_response(routing_state, error=exc)
+
+    if str(final_response or "").strip():
+        return final_response
+    return _finalizer_unavailable_response(routing_state, error="finalizer returned empty content")
+
+
 def _selected_company_common_route(route_hint: dict[str, Any] | None, state: dict[str, Any]) -> bool:
     route_id = str((route_hint or {}).get("route_id") or state.get("route_id") or "")
     route_args = (route_hint or {}).get("tool_args") if isinstance((route_hint or {}).get("tool_args"), dict) else {}
@@ -852,14 +892,14 @@ async def _try_controlled_portfolio_fallback(
     routing_state["retrieval_close_reason"] = "controlled_portfolio_fallback_sufficient"
     routing_state["finalizer_mode"] = "llm"
     _update_routing_observability(routing_state)
-    return await _finalize_with_scoped_evidence(
+    return await _finalize_or_fail_closed(
         base_messages=base_messages,
         tool_name=name,
         tool_args=args,
         tool_result=tool_result,
         route_hint=fallback_route_hint,
+        routing_state=routing_state,
     )
-
 
 def _family_local_failure_response(message: str, route_hint: dict[str, Any] | None) -> str:
     family_id = str((route_hint or {}).get("selected_family_id") or (route_hint or {}).get("family_id") or "")
@@ -1019,14 +1059,14 @@ async def _try_family_local_route_fallbacks(
             )
             routing_state["finalizer_mode"] = "llm"
             _update_routing_observability(routing_state)
-            return await _finalize_with_scoped_evidence(
+            return await _finalize_or_fail_closed(
                 base_messages=base_messages,
                 tool_name=fallback_tool_name,
                 tool_args=fallback_args,
                 tool_result=tool_result,
                 route_hint=fallback_route_hint,
+                routing_state=routing_state,
             )
-
         visited_route_ids.add(next_fallback_id)
         current_route = fallback_route_hint
         attempts_remaining -= 1
@@ -2996,27 +3036,28 @@ def _selector_args_shape(tool_args: dict[str, Any]) -> list[str]:
     return sorted(str(key) for key in tool_args if str(key).strip())
 
 
-def _record_route_selector_unavailable(error: str) -> None:
+def _record_route_selector_unavailable(error: str, *, status: str = "unavailable") -> None:
+    close_reason = "route_selector_disabled" if status == "disabled" else "route_selector_unavailable"
     meta = run_meta_get()
     if isinstance(meta, dict):
-        meta["route_selector_status"] = "unavailable"
+        meta["route_selector_status"] = status
         meta["route_selector_model"] = get_model()
         meta["route_selector_validation_error"] = str(error or "")[:500]
         meta["retrieval_phase"] = "closed"
         meta["retrieval_evidence_status"] = "error"
-        meta["retrieval_close_reason"] = "route_selector_unavailable"
+        meta["retrieval_close_reason"] = close_reason
     update_correlation_context(
-        route_selector_status="unavailable",
+        route_selector_status=status,
         retrieval_phase="closed",
         retrieval_evidence_status="error",
-        retrieval_close_reason="route_selector_unavailable",
+        retrieval_close_reason=close_reason,
     )
     record_span_event(
         "route_selector.unavailable",
-        route_selector_status="unavailable",
+        route_selector_status=status,
         retrieval_phase="closed",
         retrieval_evidence_status="error",
-        retrieval_close_reason="route_selector_unavailable",
+        retrieval_close_reason=close_reason,
     )
 
 
@@ -3443,20 +3484,22 @@ async def run_agent(
     
     routing_message = _routing_query_text(message) or str(message or "")
     selector_sphere_context = _prepare_selector_sphere_context(session, routing_message, current_turn_id)
+    selector_primary_execution_enabled = False
     if _route_selector_enabled():
         try:
             route_selection, route_hint, secondary_route_candidates = await _select_route_with_llm(
                 routing_message,
                 sphere_context=selector_sphere_context,
             )
+            selector_primary_execution_enabled = True
         except Exception as exc:
             agent_logger.error(f"Route selector unavailable or invalid: {exc}")
-            _record_route_selector_unavailable(str(exc))
+            _record_route_selector_unavailable(str(exc), status="unavailable")
             return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
     else:
-        error = "route selector LLM unavailable: runtime selector fallback disabled"
-        agent_logger.error(error)
-        _record_route_selector_unavailable(error)
+        error = "route selector disabled; runtime fail-closed"
+        agent_logger.warning(error)
+        _record_route_selector_unavailable(error, status="disabled")
         return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
     if route_hint:
         workspace_info += "\nRouting shortlist:"
@@ -3669,11 +3712,19 @@ async def run_agent(
     }
     _update_routing_observability(routing_state)
 
-    if _route_selector_enabled() and route_hint:
+    if selector_primary_execution_enabled and route_hint:
         primary_tool_name = _route_tool_name(route_hint)
         primary_args = _route_execution_args(route_hint, routing_message)
         if primary_tool_name:
             try:
+                if (
+                    primary_tool_name == "corp_db_search"
+                    and _has_authoritative_kb_route(routing_state)
+                    and str(primary_args.get("kind") or "hybrid_search") in {"", "hybrid_search"}
+                ):
+                    primary_args = _rewrite_authoritative_kb_search_args(primary_args, routing_message, routing_state)
+                elif primary_tool_name == "corp_db_search" and routing_state["intent"] == "company_fact":
+                    primary_args = _rewrite_company_fact_search_args(primary_args, routing_message)
                 routing_state["retrieval_tool_used"] = True
                 _record_retrieval_attempt(primary_tool_name, primary_args, routing_state)
                 primary_result = await execute_tool(
@@ -3714,23 +3765,28 @@ async def run_agent(
                 if short_circuit_response:
                     return short_circuit_response
                 if evidence_status == "sufficient":
+                    if primary_tool_name == "corp_db_search" and _is_successful_company_fact_kb_search(primary_args, primary_result.output or "", routing_message):
+                        routing_state["corp_db_company_fact_success"] = True
+                        routing_state["company_fact_payload_relevant"] = True
+                        routing_state["company_fact_finalizer_mode"] = "llm"
+                    if primary_tool_name == "corp_db_search" and _is_successful_application_recommendation(primary_args, primary_result.output or "", routing_message):
+                        routing_state["corp_db_application_success"] = True
+                    if primary_tool_name == "corp_db_search" and _is_successful_portfolio_by_sphere(primary_args, primary_result.output or "", routing_message):
+                        routing_state["corp_db_portfolio_success"] = True
+                    if _is_successful_document_lookup(primary_tool_name, primary_args, primary_result.output or "", routing_message):
+                        routing_state["doc_search_document_success"] = True
                     routing_state["retrieval_phase"] = "closed"
                     routing_state["retrieval_close_reason"] = "route_selector_payload_sufficient"
                     routing_state["finalizer_mode"] = "llm"
                     _update_routing_observability(routing_state)
-                    try:
-                        final_response = await _finalize_with_scoped_evidence(
-                            base_messages=messages,
-                            tool_name=primary_tool_name,
-                            tool_args=primary_args,
-                            tool_result=primary_result,
-                            route_hint=route_hint,
-                        )
-                    except Exception as exc:
-                        agent_logger.error(f"Route finalizer unavailable: {exc}")
-                        return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
-                    if final_response:
-                        return final_response
+                    return await _finalize_or_fail_closed(
+                        base_messages=messages,
+                        tool_name=primary_tool_name,
+                        tool_args=primary_args,
+                        tool_result=primary_result,
+                        route_hint=route_hint,
+                        routing_state=routing_state,
+                    )
                 else:
                     fallback_response = await _try_controlled_portfolio_fallback(
                         base_messages=messages,
@@ -3813,20 +3869,12 @@ async def run_agent(
                 })
                 continue  # Don't break, continue the loop
             else:
-                fallback_response = await _deterministic_empty_response_fallback(
-                    message=message,
-                    route_hint=route_hint,
-                    routing_state=routing_state,
-                    tool_ctx=tool_ctx,
-                    iteration=iteration,
-                )
-                if fallback_response:
-                    agent_logger.warning(f"[iter {iteration}] Empty response from model, deterministic fallback succeeded")
-                    final_response = fallback_response
-                    break
                 agent_logger.warning(f"[iter {iteration}] Empty response from model")
-                content = "(no response)"
-                break
+                routing_state["finalizer_mode"] = "unavailable"
+                if routing_state.get("intent") == "company_fact":
+                    routing_state["company_fact_finalizer_mode"] = "unavailable"
+                _update_routing_observability(routing_state)
+                return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
         
         # Log what we got
         agent_logger.info(f"[iter {iteration}] finish_reason={finish_reason}, tool_calls={len(tool_calls)}, content={len(content) if content else 0} chars")
@@ -3987,22 +4035,7 @@ async def run_agent(
                     if evidence_status == "sufficient":
                         routing_state["retrieval_phase"] = "closed"
                         routing_state["retrieval_close_reason"] = "authoritative_payload_sufficient"
-                        if (
-                            not routing_state["explicit_wiki_request"]
-                            and allows_deterministic_primary_finalization(execution_mode)
-                        ):
-                            if routing_state["intent"] == "company_fact":
-                                rendered = _render_deterministic_tool_output(name, args, tool_result.output or "", message)
-                            else:
-                                rendered = _render_generic_kb_payload(_parse_json_object(tool_result.output or ""))
-                            if rendered:
-                                routing_state["finalizer_mode"] = "deterministic_primary"
-                                _update_routing_observability(routing_state)
-                                final_response = rendered
-                            else:
-                                routing_state["finalizer_mode"] = "llm"
-                        else:
-                            routing_state["finalizer_mode"] = "llm"
+                        routing_state["finalizer_mode"] = "llm"
                     else:
                         routing_state["retrieval_phase"] = "open"
                     _update_routing_observability(routing_state)
@@ -4026,27 +4059,12 @@ async def run_agent(
                     if not routing_state["explicit_wiki_request"]:
                         routing_state["retrieval_phase"] = "closed"
                         routing_state["retrieval_close_reason"] = routing_state.get("retrieval_close_reason") or "authoritative_payload_sufficient"
-                        routing_state["company_fact_fast_path"] = True
+                        routing_state["company_fact_fast_path"] = False
                         routing_state["company_fact_fallback_reason"] = ""
-                        if allows_deterministic_primary_finalization(execution_mode):
-                            rendered = _render_deterministic_tool_output(name, args, tool_result.output or "", message)
-                            if rendered:
-                                routing_state["company_fact_rendered"] = True
-                                routing_state["company_fact_finalizer_mode"] = "deterministic_primary"
-                                routing_state["finalizer_mode"] = "deterministic_primary"
-                                _update_routing_observability(routing_state)
-                                final_response = rendered
-                            else:
-                                routing_state["company_fact_fast_path"] = False
-                                routing_state["company_fact_rendered"] = False
-                                routing_state["company_fact_finalizer_mode"] = "llm"
-                                routing_state["finalizer_mode"] = "llm"
-                                _update_routing_observability(routing_state)
-                        else:
-                            routing_state["company_fact_rendered"] = False
-                            routing_state["company_fact_finalizer_mode"] = "llm"
-                            routing_state["finalizer_mode"] = "llm"
-                            _update_routing_observability(routing_state)
+                        routing_state["company_fact_rendered"] = False
+                        routing_state["company_fact_finalizer_mode"] = "llm"
+                        routing_state["finalizer_mode"] = "llm"
+                        _update_routing_observability(routing_state)
                 if name == "corp_db_search" and _is_successful_application_recommendation(args, tool_result.output or "", message):
                     routing_state["corp_db_application_success"] = True
                     routing_state["selected_source"] = "corp_db"

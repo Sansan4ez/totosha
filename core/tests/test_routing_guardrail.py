@@ -446,9 +446,9 @@ class RoutingGuardrailTests(unittest.TestCase):
 
         self.assertEqual(
             set(properties),
-            {"kind", "query", "limit_categories", "limit_lamps", "limit_portfolio"},
+            {"query", "limit_categories", "limit_lamps", "limit_portfolio"},
         )
-        self.assertEqual(route["argument_schema"]["required"], ["kind", "query"])
+        self.assertEqual(route["argument_schema"]["required"], ["query"])
 
     def test_document_subtype_selector_payload_stays_inside_documents_family(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -467,6 +467,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(selection["selected_family_id"], "documents")
         self.assertEqual(payload["candidate_route_ids"][0], "corp_db.passport_by_lamp_name")
         self.assertEqual(route["locked_args"]["document_type"], "passport")
+        self.assertNotIn("document_type", route["argument_schema"]["properties"])
         self.assertEqual(
             route["fallback_policy"]["same_family_route_ids"],
             ["corp_db.documents_by_lamp_name"],
@@ -566,7 +567,11 @@ class RoutingGuardrailTests(unittest.TestCase):
     def test_route_selector_llm_outage_returns_temporary_unavailable(self):
         response, exec_mock, meta = self._run_flow(
             user_message="какие есть сертификаты?",
-            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+            corp_db_payload={
+                "status": "success",
+                "kind": "hybrid_search",
+                "results": [{"heading": "Сертификация", "preview": "Сертификаты и декларации соответствия."}],
+            },
             llm_responses_override=[{"error": "selector upstream unavailable"}],
             route_selector_enabled=True,
         )
@@ -581,16 +586,20 @@ class RoutingGuardrailTests(unittest.TestCase):
     def test_selector_disabled_runtime_fails_closed_without_tool_execution(self):
         response, exec_mock, meta = self._run_flow(
             user_message="какие есть сертификаты?",
-            corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "unexpected"}]},
+            corp_db_payload={
+                "status": "success",
+                "kind": "hybrid_search",
+                "results": [{"heading": "Сертификация", "preview": "Сертификаты и декларации соответствия."}],
+            },
             route_selector_enabled=False,
         )
 
         self.assertEqual(response, _MODULE.ROUTE_SELECTOR_UNAVAILABLE_MESSAGE)
         self.assertEqual(exec_mock.await_count, 0)
-        self.assertEqual(meta["route_selector_status"], "unavailable")
+        self.assertEqual(meta["route_selector_status"], "disabled")
         self.assertEqual(meta["retrieval_evidence_status"], "error")
-        self.assertEqual(meta["retrieval_close_reason"], "route_selector_unavailable")
-        self.assertIn("fallback disabled", meta["route_selector_validation_error"])
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_disabled")
+        self.assertIn("runtime fail-closed", meta["route_selector_validation_error"])
 
     def test_route_selector_messages_use_compact_payload_under_context_budget(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -606,9 +615,10 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("corp_kb.series_description", messages[1]["content"])
         self.assertIn("selected_family_id", messages[0]["content"])
         self.assertIn("company_info", messages[1]["content"])
-        self.assertNotIn("corp_db.catalog_lookup", messages[1]["content"])
+        self.assertIn("corp_kb.company_common", messages[1]["content"])
         self.assertNotIn("\"candidate_route_ids\"", messages[1]["content"])
         self.assertNotIn("executor_args_template", messages[1]["content"])
+        self.assertNotIn("execution_argument_schema", messages[1]["content"])
         self.assertNotIn("evidence_policy", messages[1]["content"])
         self.assertLess(sum(len(message.get("content") or "") for message in messages), 40000)
 
@@ -712,8 +722,8 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(response, _MODULE.ROUTE_SELECTOR_UNAVAILABLE_MESSAGE)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
-        self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
-        self.assertEqual(meta["finalizer_mode"], "llm")
+        self.assertEqual(meta["retrieval_close_reason"], "finalizer_unavailable")
+        self.assertEqual(meta["finalizer_mode"], "unavailable")
 
     def test_route_selector_documents_fallback_stays_inside_documents_family(self):
         selector_response = {
@@ -987,6 +997,115 @@ class RoutingGuardrailTests(unittest.TestCase):
             ]
         }
 
+    def _is_tool_call_response(self, response: dict) -> bool:
+        choices = response.get("choices") or []
+        message = (choices[0].get("message") or {}) if choices else {}
+        return bool(message.get("tool_calls"))
+
+    def _looks_like_selector_response(self, response: dict) -> bool:
+        try:
+            choices = response.get("choices") or []
+            message = (choices[0].get("message") or {}) if choices else {}
+            if message.get("tool_calls"):
+                return False
+            content = str(message.get("content") or "")
+            payload = json.loads(content)
+        except Exception:
+            return False
+        return isinstance(payload, dict) and bool(payload.get("selected_route_id") or payload.get("selected_family_id"))
+
+    def _selection_for_planned_tool(self, user_message: str, tool_name: str, planned_args: dict) -> dict:
+        selection = _MODULE.select_route(user_message)
+        try:
+            candidate_routes = _MODULE.selector_payload_leaf_routes(_MODULE.build_route_selector_payload(user_message))
+            catalog_routes = list((_MODULE.load_routing_index().get("routes") or []))
+        except Exception:
+            return selection
+        matched_route = None
+        for route in [*candidate_routes, *catalog_routes]:
+            if not isinstance(route, dict):
+                continue
+            executor = str(route.get("tool_name") or route.get("executor") or "")
+            if executor != tool_name:
+                continue
+            route_args = dict(route.get("tool_args") or {})
+            if tool_name == "corp_db_search":
+                discriminator_keys = {
+                    "knowledge_route_id",
+                    "document_type",
+                    "profile",
+                }
+                discriminating_kind = str(planned_args.get("kind") or "") not in {"", "hybrid_search"}
+                has_discriminator = discriminating_kind or any(planned_args.get(key) not in (None, "") for key in discriminator_keys)
+                if not has_discriminator:
+                    continue
+                for key in ("kind", "knowledge_route_id", "document_type", "profile"):
+                    expected = planned_args.get(key)
+                    actual = route_args.get(key)
+                    if expected not in (None, "") and actual not in (None, "") and expected != actual:
+                        break
+                else:
+                    matched_route = dict(route)
+                    break
+            elif tool_name == "doc_search":
+                expected_docs = set(planned_args.get("preferred_document_ids") or [])
+                actual_docs = set(route_args.get("preferred_document_ids") or [])
+                if expected_docs and actual_docs and not expected_docs.intersection(actual_docs):
+                    continue
+                matched_route = dict(route)
+                break
+        if matched_route is not None and hasattr(_MODULE, "_compact_selector_route_card"):
+            try:
+                matched_route = _MODULE._compact_selector_route_card(matched_route)
+            except Exception:
+                matched_route = dict(matched_route)
+        if matched_route is None:
+            return selection
+        selection = dict(selection)
+        selection["selected"] = matched_route
+        selection["selected_family_id"] = str(matched_route.get("family_id") or selection.get("selected_family_id") or "")
+        selection["selected_leaf_route_id"] = str(matched_route.get("leaf_route_id") or matched_route.get("route_id") or "")
+        selection["selected_route_stage"] = str(matched_route.get("route_stage") or selection.get("selected_route_stage") or "")
+        return selection
+
+    def _selector_response(self, selection: dict, *, tool_args_override: dict | None = None) -> dict:
+        selected = dict(selection.get("selected") or {})
+        argument_schema = selected.get("argument_schema") if isinstance(selected.get("argument_schema"), dict) else {}
+        allowed_keys = set((argument_schema.get("properties") or {}).keys()) if isinstance(argument_schema.get("properties"), dict) else set()
+        selected_tool_args = dict(selected.get("tool_args") or {})
+        merged_tool_args = dict(selected_tool_args)
+        if isinstance(tool_args_override, dict):
+            merged_tool_args.update(tool_args_override)
+        selector_tool_args = {
+            key: value
+            for key, value in merged_tool_args.items()
+            if not allowed_keys or key in allowed_keys
+        }
+        payload = {
+            "selected_family_id": str(
+                selection.get("selected_family_id")
+                or selected.get("selected_family_id")
+                or selected.get("family_id")
+                or ""
+            ),
+            "selected_route_id": str(selected.get("route_id") or ""),
+            "confidence": "high",
+            "reason": "test selector default",
+            "tool_args": selector_tool_args,
+        }
+        fallback_route_ids = list(selected.get("fallback_route_ids") or [])
+        if fallback_route_ids:
+            payload["fallback_route_ids"] = fallback_route_ids
+        return {
+            "choices": [
+                {
+                    "message": {"content": json.dumps(payload, ensure_ascii=False)},
+                    "finish_reason": "stop",
+                }
+            ],
+            "model": "selector-test-model",
+        }
+
     def _run_flow(
         self,
         *,
@@ -1002,7 +1121,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         llm_responses_override: list[dict] | None = None,
         execution_mode: str = "runtime",
         skill_mentions: str = "",
-        route_selector_enabled: bool = False,
+        route_selector_enabled: bool = True,
     ) -> tuple[str, AsyncMock, dict]:
         meta: dict = {}
         remaining_corp_db_payloads = list(corp_db_payloads or [])
@@ -1041,16 +1160,19 @@ class RoutingGuardrailTests(unittest.TestCase):
                 wiki_tool_args or {"path": "/data/corp_docs/live/doc_123.json"},
             ),
         ]
-        llm_responses = list(
-            llm_responses_override
-            or [self._tool_call_response(name, args) for name, args in (tool_call_sequence or default_sequence)]
-        )
-        if llm_responses_override is None:
-            llm_responses.append(self._final_response("Официальный сайт: https://ladzavod.ru"))
         llm_calls: list[list[dict]] = []
 
         async def fake_call_llm(messages, tool_definitions, model_override="", purpose="agent_loop"):
             llm_calls.append(messages)
+            if str(purpose).startswith("route_selector"):
+                if not selector_llm_responses:
+                    raise AssertionError("unexpected extra route_selector call_llm invocation")
+                return selector_llm_responses.pop(0)
+            if purpose == "finalizer":
+                for index, response in enumerate(llm_responses):
+                    if not self._is_tool_call_response(response) and not self._looks_like_selector_response(response):
+                        return llm_responses.pop(index)
+                raise AssertionError("unexpected finalizer call_llm invocation without final response")
             if not llm_responses:
                 raise AssertionError("unexpected extra call_llm invocation")
             return llm_responses.pop(0)
@@ -1103,6 +1225,11 @@ class RoutingGuardrailTests(unittest.TestCase):
                 route_dir = Path(tmpdir) / "corp_docs" / "manifests" / "routes"
                 route_dir.mkdir(parents=True, exist_ok=True)
                 (route_dir / "index.json").write_text(json.dumps(route_index, ensure_ascii=False), encoding="utf-8")
+            default_llm_responses = [self._tool_call_response(name, args) for name, args in (tool_call_sequence or default_sequence)]
+            if llm_responses_override is None:
+                default_llm_responses.append(self._final_response("Официальный сайт: https://ladzavod.ru"))
+            llm_responses = list(llm_responses_override or default_llm_responses)
+            selector_llm_responses: list[dict] = []
             with patch.dict(
                 os.environ,
                 {
@@ -1135,6 +1262,19 @@ class RoutingGuardrailTests(unittest.TestCase):
             ), patch.object(
                 _MODULE, "run_meta_get", lambda: meta
             ):
+                if route_selector_enabled:
+                    if llm_responses and (self._looks_like_selector_response(llm_responses[0]) or "error" in llm_responses[0]):
+                        while llm_responses and (self._looks_like_selector_response(llm_responses[0]) or "error" in llm_responses[0]):
+                            selector_llm_responses.append(llm_responses.pop(0))
+                    else:
+                        planned_tool_name, planned_tool_args = (tool_call_sequence or default_sequence)[0]
+                        selection = self._selection_for_planned_tool(user_message, planned_tool_name, planned_tool_args)
+                        selector_llm_responses = [
+                            self._selector_response(
+                                selection,
+                                tool_args_override=planned_tool_args if isinstance(planned_tool_args, dict) else None,
+                            )
+                        ]
                 _MODULE.sessions.sessions.clear()
                 response = asyncio.run(
                     _MODULE.run_agent(

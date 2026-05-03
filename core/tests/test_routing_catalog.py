@@ -752,8 +752,9 @@ class RoutingCatalogTests(unittest.TestCase):
                         self.assertEqual(selection["selected_leaf_route_id"], "series_description")
                         self.assertEqual(selection["selected_route_stage"], "stage2_specialized")
                         self.assertEqual(selection["primary_candidate"]["route_id"], "corp_kb.series_description")
-                        self.assertEqual(payload["candidate_route_ids"], ["corp_kb.series_description"])
-                        self.assertEqual(payload["candidate_family_ids"], ["company_info"])
+                        self.assertEqual(payload["candidate_route_ids"][0], "corp_kb.series_description")
+                        self.assertIn("corp_kb.company_common", payload["candidate_route_ids"])
+                        self.assertIn("company_info", payload["candidate_family_ids"])
                         self.assertNotIn("corp_db.catalog_lookup", payload["candidate_route_ids"])
 
     def test_select_route_prefers_curated_sphere_categories_for_broad_category_questions(self):
@@ -940,7 +941,8 @@ class RoutingCatalogTests(unittest.TestCase):
             route = routes[route_id]
             self.assertEqual(route["executor"], "corp_db_search")
             self.assertIn("kind", route["locked_args"])
-            self.assertIn("kind", route["argument_schema"]["properties"])
+            self.assertNotIn("kind", route["argument_schema"]["properties"])
+            self.assertIn("kind", route["execution_argument_schema"]["properties"])
             self.assertTrue(route["evidence_policy"])
             self.assertTrue(route["table_scopes"])
 
@@ -980,15 +982,15 @@ class RoutingCatalogTests(unittest.TestCase):
         )
         self.assertEqual(
             routes["corp_db.portfolio_lookup"]["argument_schema"]["required"],
-            ["kind", "query"],
+            ["query"],
         )
         self.assertEqual(
             routes["corp_db.portfolio_by_sphere"]["argument_schema"]["required"],
-            ["kind", "sphere"],
+            ["sphere"],
         )
         self.assertEqual(
             routes["corp_db.sphere_curated_categories"]["argument_schema"]["required"],
-            ["kind", "sphere"],
+            ["sphere"],
         )
         self.assertNotIn("sphere", routes["corp_db.portfolio_lookup"]["argument_schema"]["properties"])
         self.assertNotIn("category", routes["corp_db.sphere_curated_categories"]["argument_schema"]["properties"])
@@ -997,7 +999,7 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertEqual(routes["corp_kb.series_description"]["leaf_route_id"], "series_description")
         self.assertEqual(routes["corp_db.documents_by_lamp_name"]["family_id"], "documents")
         self.assertEqual(routes["corp_db.documents_by_lamp_name"]["route_stage"], "stage1_general")
-        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["argument_schema"]["required"], ["kind", "name"])
+        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["argument_schema"]["required"], ["name"])
         self.assertEqual(
             routes["corp_db.documents_by_lamp_name"]["argument_schema"]["properties"]["document_type"]["enum"],
             ["passport", "certificate", "manual", "ies"],
@@ -1023,7 +1025,7 @@ class RoutingCatalogTests(unittest.TestCase):
             list(("etm", "oracl", "sku", "article", "catalog_identifier", "mixed")),
         )
         self.assertIn("name", routes["corp_db.sku_lookup"]["argument_schema"]["properties"])
-        self.assertEqual(routes["corp_db.sku_codes_lookup"]["argument_schema"]["required"], ["kind", "name"])
+        self.assertEqual(routes["corp_db.sku_codes_lookup"]["argument_schema"]["required"], ["name"])
         self.assertEqual(
             routes["corp_db.sku_codes_lookup"]["argument_schema"]["properties"]["lookup_direction"]["enum"],
             list(("by_name", "by_code")),
@@ -1043,7 +1045,7 @@ class RoutingCatalogTests(unittest.TestCase):
             routes["corp_db.sku_codes_lookup"]["fallback_policy"]["cross_family_route_ids"],
             ["corp_db.catalog_lookup"],
         )
-        self.assertEqual(routes["corp_db.showcase_lamps_by_category"]["argument_schema"]["required"], ["kind", "category"])
+        self.assertEqual(routes["corp_db.showcase_lamps_by_category"]["argument_schema"]["required"], ["category"])
 
     def test_default_corp_db_routes_expose_stage1_general_leaf_per_major_family(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -1140,11 +1142,13 @@ class RoutingCatalogTests(unittest.TestCase):
 
         routes = {route["route_id"]: route for route in selector_payload_leaf_routes(payload)}
         passport_route = routes["corp_db.passport_by_lamp_name"]
+        general_documents_route = routes["corp_db.documents_by_lamp_name"]
         self.assertEqual(payload["candidate_route_ids"][0], "corp_db.passport_by_lamp_name")
         self.assertEqual(passport_route["family_id"], "documents")
         self.assertEqual(passport_route["locked_args"]["document_type"], "passport")
+        self.assertNotIn("document_type", passport_route["argument_schema"]["properties"])
         self.assertEqual(
-            passport_route["argument_schema"]["properties"]["document_type"]["enum"],
+            general_documents_route["argument_schema"]["properties"]["document_type"]["enum"],
             ["passport", "certificate", "manual", "ies"],
         )
         self.assertEqual(

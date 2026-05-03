@@ -153,6 +153,8 @@ Design principles
    - Route choice remains an LLM task.
    - Argument generation remains an LLM task.
    - Validation and canonicalization remain runtime responsibilities.
+   - Every user-visible final answer should also be produced by the LLM finalization step; deterministic renderers must not become a second answer path.
+   - If the selector LLM or finalizer LLM is unavailable, the request fails closed with a bounded temporary-unavailable response.
 
 3. No brittle mandatory keyword shortlist
    - Deterministic logic may enrich context, resolve canonical aliases, or reduce obvious ambiguity.

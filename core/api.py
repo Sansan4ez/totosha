@@ -2,8 +2,14 @@
 
 import os
 import aiohttp
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from opentelemetry import trace
+
+try:
+    from fastapi import Response
+except Exception:  # pragma: no cover - lightweight test stubs may omit Response
+    class Response:  # type: ignore[override]
+        status_code: int = 200
 from pydantic import BaseModel
 from time import perf_counter
 from typing import Optional
