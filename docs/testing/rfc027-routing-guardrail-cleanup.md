@@ -43,6 +43,18 @@ python3 -m unittest -q core.tests.test_routing_guardrail
 - mixed-source doc-first company-fact routing;
 - unrestricted generic `doc_search` fallback after weak company-fact payload.
 
+## Follow-up fixes after the initial cleanup
+
+После первичного cleanup были дополнительно исправлены два post-audit gap'а:
+
+- восстановлен intended same-family fallback для `passport/certificate/manual/ies -> documents_by_lamp_name` после stage3 promotion документов;
+- удалён legacy deterministic-finalizer tail из `core/agent.py` (obsolete helper path и старые mode labels `deterministic_fallback` / `deterministic_error`).
+
+Теперь:
+- успешные routed-ответы остаются `finalizer_mode=llm`;
+- bounded route-closure ответы маркируются как `bounded_failure` / `bounded_error`;
+- finalizer LLM outage по-прежнему fail-closed через temporary-unavailable response.
+
 ## Regression command set
 
 ```bash

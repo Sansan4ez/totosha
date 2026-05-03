@@ -257,17 +257,6 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(industrial_args["kind"], "portfolio_by_sphere")
         self.assertIn("промышленных объектов", industrial_args["sphere"].lower())
 
-        fallback = _MODULE._build_deterministic_fallback_call(
-            "Расскажи про Белый Раст",
-            {
-                "route_id": "corp_kb.company_common",
-                "tool_name": "corp_db_search",
-                "tool_args": {"kind": "hybrid_search", "knowledge_route_id": "corp_kb.company_common"},
-            },
-            {"intent": "company_fact", "knowledge_route_id": "corp_kb.company_common"},
-        )
-        self.assertIsNotNone(fallback)
-        self.assertEqual(fallback[1]["profile"], "entity_resolver")
 
     def test_portfolio_entity_resolver_is_intermediate_evidence(self):
         tool_result = _ToolResult(
@@ -351,29 +340,6 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIsNotNone(context)
         self.assertEqual(context["sphere_id"], 5)
         self.assertEqual(context["sphere_name"], "РЖД")
-
-    def test_portfolio_entity_payload_renders_projects(self):
-        output = json.dumps(
-            {
-                "status": "success",
-                "results": [
-                    {
-                        "entity_type": "portfolio",
-                        "title": "Высокомощные светильники для ТЛЦ Белый Раст",
-                        "metadata": {"sphere_name": "логистический центр", "url": "https://example.test/project"},
-                    }
-                ],
-            },
-            ensure_ascii=False,
-        )
-        rendered = _MODULE._render_deterministic_tool_output(
-            "corp_db_search",
-            {"kind": "hybrid_search", "profile": "entity_resolver", "entity_types": ["portfolio", "sphere"]},
-            output,
-            "Белый Раст",
-        )
-        self.assertIn("Белый Раст", rendered)
-        self.assertIn("https://example.test/project", rendered)
 
     def test_llm_route_selector_validates_route_and_tool_args(self):
         selector_response = {
@@ -766,19 +732,20 @@ class RoutingGuardrailTests(unittest.TestCase):
         second_args = exec_mock.await_args_list[1].args[1]
         self.assertEqual(first_args["kind"], "lamp_documents_index")
         self.assertEqual(first_args["document_type"], "passport")
-        self.assertEqual(second_args["kind"], "lamp_exact")
+        self.assertEqual(second_args["kind"], "lamp_documents_index")
+        self.assertEqual(second_args["name"], "NL Nova")
         self.assertNotIn("document_type", second_args)
-        self.assertEqual(meta["retrieval_business_family_id"], "catalog")
-        self.assertEqual(meta["retrieval_route_stage"], "stage1_general")
+        self.assertEqual(meta["retrieval_business_family_id"], "documents")
+        self.assertEqual(meta["retrieval_route_stage"], "stage3_optimized")
         self.assertEqual(meta["retrieval_validation_status"], "ok")
         self.assertEqual(meta["retrieval_fallback_route_count"], 1)
         self.assertEqual(meta["retrieval_family_local_fallback_count"], 1)
         self.assertEqual(meta["retrieval_cross_family_fallback_count"], 0)
         self.assertEqual(meta["retrieval_attempted_fallback_count"], 1)
-        self.assertEqual(meta["retrieval_used_fallback_route_id"], "corp_db.catalog_lookup")
-        self.assertEqual(meta["retrieval_used_fallback_scope"], "cross_family")
-        self.assertFalse(meta["retrieval_used_fallback_local"])
-        self.assertEqual(meta["retrieval_close_reason"], "cross_family_fallback_sufficient")
+        self.assertEqual(meta["retrieval_used_fallback_route_id"], "corp_db.documents_by_lamp_name")
+        self.assertEqual(meta["retrieval_used_fallback_scope"], "family_local")
+        self.assertTrue(meta["retrieval_used_fallback_local"])
+        self.assertEqual(meta["retrieval_close_reason"], "family_local_fallback_sufficient")
 
     def test_route_selector_codes_fallback_stays_inside_codes_family(self):
         selector_response = {
@@ -877,6 +844,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_validation_status"], "ok")
         self.assertEqual(meta["retrieval_fallback_route_count"], 0)
         self.assertEqual(meta["retrieval_close_reason"], "family_local_fallback_exhausted")
+        self.assertEqual(meta["finalizer_mode"], "bounded_failure")
         self.assertEqual(meta["retrieval_used_fallback_route_id"], "")
 
     def test_route_selector_empty_portfolio_lookup_does_not_drift_into_catalog(self):
@@ -942,25 +910,6 @@ class RoutingGuardrailTests(unittest.TestCase):
                 "Найди пожарный сертификат LINE и покажи фрагмент",
             )
         )
-
-    def test_deterministic_fallback_prefers_route_hint_args_for_doc_routes(self):
-        tool_name, args = _MODULE._build_deterministic_fallback_call(
-            "Найди пожарный сертификат LINE и покажи фрагмент",
-            {
-                "route_id": "doc_search.doc_fire_line",
-                "tool_name": "doc_search",
-                "tool_args": {"preferred_document_ids": ["doc_fire_line"]},
-            },
-            {
-                "intent": "document_lookup",
-                "knowledge_route_id": "",
-            },
-        )
-
-        self.assertEqual(tool_name, "doc_search")
-        self.assertEqual(args["preferred_document_ids"], ["doc_fire_line"])
-        self.assertEqual(args["query"], "Найди пожарный сертификат LINE и покажи фрагмент")
-        self.assertEqual(args["top"], 5)
 
     def _tool_call_response(self, tool_name: str, args: dict) -> dict:
         return {
@@ -2140,29 +2089,6 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["routing_guardrail_hits"], 2)
         self.assertEqual(meta["retrieval_phase"], "open")
 
-    def test_render_generic_kb_payload_keeps_series_chunk_text(self):
-        payload = {
-            "status": "success",
-            "kind": "hybrid_search",
-            "results": [
-                {
-                    "document_title": "Общая информация о компании ЛАДзавод светотехники",
-                    "heading": "Доступные серии освещения",
-                    "content": (
-                        "- Серия LAD LED R500 - Эффективный светодиодный светильник.\n"
-                        "- Серия LAD LED R700 - Светодиодные светильники для наружного освещения.\n"
-                        "- Серия LAD LED LINE - Линейные светодиодные светильники для промышленного, складского, "
-                        "торгового и общего освещения."
-                    ),
-                }
-            ],
-        }
-
-        rendered = _MODULE._render_generic_kb_payload(payload)
-
-        self.assertIn("LAD LED LINE", rendered)
-        self.assertIn("линейные светодиодные светильники", rendered.lower())
-
     def test_application_recommendation_runtime_answer_does_not_leak_compact_preview(self):
         response, exec_mock, meta = self._run_flow(
             user_message="Подбери освещение для спортивного стадиона",
@@ -2263,6 +2189,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_args_list[0].args[1]["kind"], "application_recommendation")
         self.assertEqual(meta["application_recovery_outcome"], "bounded_application_fallback")
         self.assertEqual(meta["retrieval_close_reason"], "bounded_application_fallback")
+        self.assertEqual(meta["finalizer_mode"], "bounded_failure")
         self.assertEqual(meta["retrieval_evidence_status"], "empty")
 
     def test_application_replay_for_rzd_records_primary_error_stop(self):
@@ -2294,6 +2221,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(meta["application_recovery_outcome"], "stopped_after_primary_error")
         self.assertEqual(meta["retrieval_close_reason"], "stopped_after_primary_error")
+        self.assertEqual(meta["finalizer_mode"], "bounded_error")
         self.assertEqual(meta["retrieval_evidence_status"], "error")
 
     def test_document_lookup_runtime_answer_does_not_leak_compact_preview(self):

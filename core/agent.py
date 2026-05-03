@@ -626,9 +626,10 @@ def _build_fallback_route_args(
         and key not in locked_args
     }
     if (
-        str(target_route.get("route_stage") or "") == "stage1_general"
-        and str(target_route.get("family_id") or "") == str(source_route_hint.get("selected_family_id") or source_route_hint.get("family_id") or "")
-        and "document_type" not in (target_route.get("locked_args") or {})
+        str(target_route.get("family_id") or "") == "documents"
+        and str(target_route.get("family_id") or "")
+        == str(source_route_hint.get("selected_family_id") or source_route_hint.get("family_id") or "")
+        and "document_type" not in locked_args
     ):
         seed_args.pop("document_type", None)
     if "query" in properties and not str(seed_args.get("query") or "").strip():
@@ -1441,30 +1442,6 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
                     state.get("retrieval_route_family") or "",
                     state.get("selected_route_kind") or "",
                 )
-        elif str(state.get("finalizer_mode") or "") == "deterministic_fallback":
-            event_signature = f"fallback:{state.get('finalizer_mode') or ''}:{state.get('retrieval_phase') or ''}"
-            if state.get("_last_observability_event") != event_signature:
-                state["_last_observability_event"] = event_signature
-                record_span_event(
-                    "retrieval.fallback_finalizer",
-                    selected_route_id=str(state.get("route_id") or ""),
-                    selected_route_family=str(state.get("retrieval_route_family") or ""),
-                    selected_route_kind=str(state.get("selected_route_kind") or ""),
-                    selected_source=str(state.get("selected_source") or "unknown"),
-                    knowledge_route_id=str(state.get("knowledge_route_id") or ""),
-                    document_id=str(state.get("document_id") or ""),
-                    finalizer_mode=str(state.get("finalizer_mode") or ""),
-                    retrieval_phase=str(state.get("retrieval_phase") or ""),
-                    route_selector_status=str(state.get("route_selector_status") or ""),
-                    routing_catalog_version=str(state.get("routing_catalog_version") or ""),
-                )
-                agent_logger.warning(
-                    "Routing event=fallback_finalizer mode=%s route_id=%s route_family=%s route_kind=%s",
-                    state.get("finalizer_mode") or "",
-                    state.get("route_id") or "",
-                    state.get("retrieval_route_family") or "",
-                    state.get("selected_route_kind") or "",
-                )
     except Exception:
         return None
 
@@ -1703,186 +1680,6 @@ def _render_application_payload(payload: dict[str, Any]) -> str:
     if follow_up:
         lines.append(follow_up)
     return "\n".join(lines)
-
-
-def _render_deterministic_tool_output(name: str, args: dict[str, Any], output: str, message: str) -> str:
-    payload = _parse_json_object(output)
-    if not payload:
-        return ""
-    if name == "doc_search":
-        return _render_document_payload(payload)
-    if name != "corp_db_search":
-        return ""
-    kind = str(args.get("kind") or payload.get("kind") or "")
-    if kind == "hybrid_search":
-        knowledge_route_id = str(args.get("knowledge_route_id") or "")
-        if str(args.get("profile") or "") == "entity_resolver":
-            entity_types = args.get("entity_types")
-            if isinstance(entity_types, list) and any(str(item) in {"portfolio", "sphere"} for item in entity_types):
-                return _render_portfolio_entity_payload(payload)
-        if knowledge_route_id in {"corp_kb.luxnet", "corp_kb.lighting_norms"}:
-            return _render_generic_kb_payload(payload)
-        return _render_company_fact_payload(payload, message)
-    if kind == "application_recommendation":
-        return _render_application_payload(payload)
-    if kind == "portfolio_by_sphere":
-        return _render_portfolio_payload(payload)
-    return ""
-
-
-def _build_deterministic_fallback_call(
-    message: str,
-    route_hint: dict[str, Any] | None,
-    routing_state: dict[str, Any],
-) -> tuple[str, dict[str, Any]] | None:
-    intent = str(routing_state.get("intent") or "other")
-    if _is_portfolio_lookup_intent(message):
-        name, args, _ = _portfolio_lookup_fallback_call(message)
-        return name, args
-    if str(routing_state.get("knowledge_route_id") or ""):
-        return (
-            "corp_db_search",
-            _rewrite_authoritative_kb_search_args({}, message, routing_state),
-        )
-    if route_hint:
-        tool_name = str(route_hint.get("tool_name") or "").strip()
-        if tool_name:
-            args = dict(route_hint.get("tool_args") or {})
-            if tool_name == "doc_search":
-                args.setdefault("query", message)
-                args.setdefault("top", 5)
-            elif tool_name == "corp_db_search":
-                kind = str(args.get("kind") or "")
-                if kind == "hybrid_search":
-                    if str(routing_state.get("knowledge_route_id") or ""):
-                        args = _rewrite_authoritative_kb_search_args(args, message, routing_state)
-                    elif intent == "company_fact":
-                        args = _rewrite_company_fact_search_args(args, message)
-                    else:
-                        args.setdefault("query", message)
-                elif kind in {"application_recommendation", "portfolio_by_sphere", "lamp_exact"}:
-                    args["query"] = message
-                    if kind == "portfolio_by_sphere":
-                        args.setdefault("fuzzy", True)
-            return tool_name, args
-    if intent == "company_fact":
-        return (
-            "corp_db_search",
-            _rewrite_company_fact_search_args({}, message),
-        )
-    if intent == "document_lookup":
-        return ("doc_search", {"query": message, "top": 5})
-    if intent == "portfolio_lookup":
-        name, args, _ = _portfolio_lookup_fallback_call(message)
-        return name, args
-    if intent == "application_recommendation":
-        return ("corp_db_search", {"kind": "application_recommendation", "query": message})
-    return None
-
-
-async def _deterministic_empty_response_fallback(
-    *,
-    message: str,
-    route_hint: dict[str, Any] | None,
-    routing_state: dict[str, Any],
-    tool_ctx: ToolContext,
-    iteration: int,
-) -> str:
-    fallback = _build_deterministic_fallback_call(message, route_hint, routing_state)
-    if not fallback:
-        return ""
-
-    name, args = fallback
-    agent_logger.warning(
-        "[iter %s] Empty LLM completion, executing deterministic fallback %s with args=%s",
-        iteration,
-        name,
-        json.dumps(args, ensure_ascii=False),
-    )
-    if routing_state.get("intent") == "company_fact":
-        routing_state["company_fact_fallback_reason"] = "empty_llm_completion"
-    tool_result = await execute_tool(
-        name,
-        args,
-        tool_ctx,
-        tool_call_id=f"fallback-{iteration}-{name}",
-        tool_call_seq=0,
-    )
-    if not tool_result.success:
-        agent_logger.warning(
-            "[iter %s] Deterministic fallback tool failed: %s",
-            iteration,
-            tool_result.error or "unknown_error",
-        )
-        return ""
-
-    bench_artifact = tool_result.metadata.get("bench_artifact") if isinstance(tool_result.metadata, dict) else None
-    if isinstance(bench_artifact, dict):
-        run_meta_append_artifact(bench_artifact)
-    _record_tool_output_contract(name, tool_result, routing_state)
-    if name == "doc_search":
-        document_id = _document_identifier(args, tool_result.output or "")
-        if document_id and not routing_state.get("document_id"):
-            routing_state["document_id"] = document_id
-            _update_routing_observability(routing_state)
-
-    rendered = _render_deterministic_tool_output(name, args, tool_result.output or "", message)
-    if not rendered and name == "corp_db_search" and _looks_like_contact_intent(message):
-        routing_state["company_fact_fallback_reason"] = "weak_contact_payload"
-        doc_args = {"query": _contact_doc_search_query(message), "top": 5}
-        agent_logger.warning(
-            "[iter %s] Empty contact payload after corp_db fallback, executing doc_search with args=%s",
-            iteration,
-            json.dumps(doc_args, ensure_ascii=False),
-        )
-        doc_result = await execute_tool(
-            "doc_search",
-            doc_args,
-            tool_ctx,
-            tool_call_id=f"fallback-{iteration}-doc_search",
-            tool_call_seq=0,
-        )
-        if doc_result.success:
-            bench_artifact = doc_result.metadata.get("bench_artifact") if isinstance(doc_result.metadata, dict) else None
-            if isinstance(bench_artifact, dict):
-                run_meta_append_artifact(bench_artifact)
-            _record_tool_output_contract("doc_search", doc_result, routing_state)
-            document_id = _document_identifier(doc_args, doc_result.output or "")
-            if document_id and not routing_state.get("document_id"):
-                routing_state["document_id"] = document_id
-                _update_routing_observability(routing_state)
-            rendered = _render_deterministic_tool_output("doc_search", doc_args, doc_result.output or "", message)
-            if rendered:
-                routing_state["selected_source"] = "doc_search"
-                routing_state["doc_search_document_success"] = True
-                routing_state["company_fact_fast_path"] = True
-                routing_state["company_fact_rendered"] = True
-                routing_state["company_fact_finalizer_mode"] = "deterministic_fallback"
-                routing_state["finalizer_mode"] = "deterministic_fallback"
-                _update_routing_observability(routing_state)
-                return rendered
-    if not rendered:
-        return ""
-
-    if name == "doc_search":
-        routing_state["selected_source"] = "doc_search"
-        routing_state["doc_search_document_success"] = True
-    elif name == "corp_db_search":
-        kind = str(args.get("kind") or "")
-        routing_state["selected_source"] = "corp_db"
-        if kind == "hybrid_search":
-            routing_state["corp_db_company_fact_success"] = True
-            routing_state["company_fact_payload_relevant"] = True
-            routing_state["company_fact_fast_path"] = True
-            routing_state["company_fact_rendered"] = True
-            routing_state["company_fact_finalizer_mode"] = "deterministic_fallback"
-            routing_state["finalizer_mode"] = "deterministic_fallback"
-        elif kind == "application_recommendation":
-            routing_state["corp_db_application_success"] = True
-        elif kind == "portfolio_by_sphere":
-            routing_state["corp_db_portfolio_success"] = True
-    _update_routing_observability(routing_state)
-    return rendered
 
 
 async def _check_userbot_available() -> bool:
@@ -3287,7 +3084,7 @@ def _short_circuit_application_failure(
     routing_state["retrieval_evidence_status"] = "error" if outcome == "stopped_after_primary_error" else (status or "empty")
     routing_state["retrieval_phase"] = "closed"
     routing_state["retrieval_close_reason"] = outcome
-    routing_state["finalizer_mode"] = "deterministic_error" if outcome == "stopped_after_primary_error" else "deterministic_fallback"
+    routing_state["finalizer_mode"] = "bounded_error" if outcome == "stopped_after_primary_error" else "bounded_failure"
     _update_routing_observability(routing_state)
     if outcome == "stopped_after_primary_error":
         return _application_primary_error_response(message, args, tool_result)
@@ -3816,7 +3613,7 @@ async def run_agent(
                             if str(routing_state.get("retrieval_used_fallback_scope") or "") == "cross_family"
                             else "family_local_fallback_exhausted"
                         )
-                        routing_state["finalizer_mode"] = "deterministic_fallback"
+                        routing_state["finalizer_mode"] = "bounded_failure"
                         _update_routing_observability(routing_state)
                         return _family_local_failure_response(routing_message, route_hint)
                     routing_state["retrieval_phase"] = "open"
