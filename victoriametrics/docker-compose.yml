@@ -3,6 +3,7 @@ name: ${OBSERVABILITY_PROJECT_NAME:-repo-harness-observability}
 services:
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.128.0
+    restart: unless-stopped
     container_name: victoriametrics
     command:
       - "--storageDataPath=/storage"
@@ -16,6 +17,7 @@ services:
 
   victorialogs:
     image: victoriametrics/victoria-logs:v1.36.1
+    restart: unless-stopped
     container_name: victorialogs
     command:
       - "--storageDataPath=/vlogs"
@@ -28,6 +30,7 @@ services:
 
   victoriatraces:
     image: victoriametrics/victoria-traces:v0.4.0
+    restart: unless-stopped
     container_name: victoriatraces
     command:
       - "--storageDataPath=/vtraces"
@@ -40,6 +43,7 @@ services:
 
   otel-collector:
     image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.133.0
+    restart: unless-stopped
     container_name: otel-collector
     command: ["--config=/etc/otel-collector-config.yml"]
     ports:
@@ -58,6 +62,7 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
     container_name: alertmanager
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
@@ -70,6 +75,7 @@ services:
 
   vmalert:
     image: victoriametrics/vmalert:v1.128.0
+    restart: unless-stopped
     container_name: vmalert
     command:
       - "-rule=/etc/vmalert/rules/vmalert-rules.yaml"
@@ -90,6 +96,7 @@ services:
 
   grafana:
     image: grafana/grafana:12.2.0
+    restart: unless-stopped
     container_name: grafana
     ports:
       - "${GRAFANA_PORT:-3003}:3000"
