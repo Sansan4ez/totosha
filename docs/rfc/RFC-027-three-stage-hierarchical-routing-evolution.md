@@ -4,7 +4,7 @@ RFC-027 Three-Stage Hierarchical Routing Evolution
 Status
 ------
 
-Proposed
+Implemented
 
 Date
 ----
@@ -26,6 +26,16 @@ As of 2026-05-03, the first concrete `stage3_optimized` routes are implemented i
 - `corp_db.sku_lookup` / `corp_db.sku_codes_lookup` → optimized `lamp_code_lookup`
 
 The family/leaf selector contract remains stable while the executor layer now uses route-specific optimized data paths for these flows.
+
+As of this update, the core RFC-027 contract is implemented in runtime and tests:
+
+- family-first selector payloads and `selected_family_id` validation;
+- strict route-local selector/execution schema split;
+- route identity observability for family / leaf / stage / fallback / finalizer mode;
+- fail-closed selector/finalizer outage behavior;
+- cleaned post-rollout guardrails and bounded non-LLM closure modes (`bounded_failure` / `bounded_error`).
+
+Further stage-3 expansion to additional families remains an optimization roadmap item, not a blocker for marking RFC-027 implemented.
 
 Related RFCs
 ------------

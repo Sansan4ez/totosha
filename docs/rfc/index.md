@@ -4,7 +4,7 @@ RFC Index
 Purpose
 -------
 
-Use this index when you need accepted or proposed technical decisions, especially for architecture, runtime topology, and operational policy.
+Use this index when you need implemented, accepted, or proposed technical decisions, especially for architecture, runtime topology, and operational policy.
 
 RFCs
 ----
@@ -35,4 +35,4 @@ RFCs
 - `docs/rfc/RFC-024-agent-web-abuse-controls-and-session-bounding.md`
 - `docs/rfc/RFC-025-route-card-centered-retrieval-refactor.md`
 - `docs/rfc/RFC-026-canonical-route-arguments-and-bounded-portfolio-retrieval.md`
-- `docs/rfc/RFC-027-three-stage-hierarchical-routing-evolution.md`
+- `docs/rfc/RFC-027-three-stage-hierarchical-routing-evolution.md` — Implemented
