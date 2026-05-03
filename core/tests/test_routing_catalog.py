@@ -807,7 +807,7 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertEqual(selection["intent_family"], "document_lookup")
         self.assertEqual(selection["selected"]["route_id"], "corp_db.documents_by_lamp_name")
         self.assertEqual(selection["selected_family_id"], "documents")
-        self.assertEqual(selection["selected_route_stage"], "stage1_general")
+        self.assertEqual(selection["selected_route_stage"], "stage3_optimized")
 
     def test_select_route_prefers_document_subtype_leaf_for_lamp_name_queries(self):
         cases = (
@@ -829,7 +829,7 @@ class RoutingCatalogTests(unittest.TestCase):
                         self.assertEqual(selection["intent_family"], "document_lookup")
                         self.assertEqual(selection["selected"]["route_id"], expected_route_id)
                         self.assertEqual(selection["selected_family_id"], "documents")
-                        self.assertEqual(selection["selected_route_stage"], "stage2_specialized")
+                        self.assertEqual(selection["selected_route_stage"], "stage3_optimized")
                         self.assertEqual(selection["selected"]["locked_args"]["document_type"], expected_document_type)
 
     def test_select_route_prefers_stage1_general_leaf_for_generic_family_queries(self):
@@ -856,9 +856,10 @@ class RoutingCatalogTests(unittest.TestCase):
 
                         self.assertEqual(selection["selected"]["route_id"], expected_route_id)
                         self.assertEqual(selection["selected_family_id"], expected_family_id)
-                        self.assertEqual(selection["selected_route_stage"], "stage1_general")
+                        expected_stage = "stage3_optimized" if expected_family_id in {"documents", "codes_and_sku"} else "stage1_general"
+                        self.assertEqual(selection["selected_route_stage"], expected_stage)
                         self.assertEqual(routes[expected_route_id]["family_id"], expected_family_id)
-                        self.assertEqual(routes[expected_route_id]["route_stage"], "stage1_general")
+                        self.assertEqual(routes[expected_route_id]["route_stage"], expected_stage)
 
     def test_select_route_prefers_sku_codes_lookup_for_by_name_code_questions(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -872,7 +873,7 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertEqual(selection["intent_family"], "catalog_lookup")
         self.assertEqual(selection["selected"]["route_id"], "corp_db.sku_codes_lookup")
         self.assertEqual(selection["selected_family_id"], "codes_and_sku")
-        self.assertEqual(selection["selected_route_stage"], "stage2_specialized")
+        self.assertEqual(selection["selected_route_stage"], "stage3_optimized")
 
     def test_select_route_prefers_sku_lookup_for_reverse_code_questions(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -886,7 +887,7 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertEqual(selection["intent_family"], "catalog_lookup")
         self.assertEqual(selection["selected"]["route_id"], "corp_db.sku_lookup")
         self.assertEqual(selection["selected_family_id"], "codes_and_sku")
-        self.assertEqual(selection["selected_route_stage"], "stage1_general")
+        self.assertEqual(selection["selected_route_stage"], "stage3_optimized")
 
     def test_select_route_prefers_showcase_lamps_by_category_for_example_queries(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -998,7 +999,7 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertEqual(routes["corp_kb.series_description"]["family_id"], "company_info")
         self.assertEqual(routes["corp_kb.series_description"]["leaf_route_id"], "series_description")
         self.assertEqual(routes["corp_db.documents_by_lamp_name"]["family_id"], "documents")
-        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["route_stage"], "stage1_general")
+        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["route_stage"], "stage3_optimized")
         self.assertEqual(routes["corp_db.documents_by_lamp_name"]["argument_schema"]["required"], ["name"])
         self.assertEqual(
             routes["corp_db.documents_by_lamp_name"]["argument_schema"]["properties"]["document_type"]["enum"],
@@ -1016,20 +1017,14 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertEqual(routes["corp_db.certificate_by_lamp_name"]["locked_args"]["document_type"], "certificate")
         self.assertEqual(routes["corp_db.manual_by_lamp_name"]["locked_args"]["document_type"], "manual")
         self.assertEqual(routes["corp_db.ies_by_lamp_name"]["locked_args"]["document_type"], "ies")
-        self.assertEqual(
-            routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["lookup_direction"]["enum"],
-            list(("by_name", "by_code")),
-        )
+        self.assertEqual(routes["corp_db.sku_lookup"]["locked_args"]["lookup_direction"], "by_code")
         self.assertEqual(
             routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["code_system"]["enum"],
             list(("etm", "oracl", "sku", "article", "catalog_identifier", "mixed")),
         )
         self.assertIn("name", routes["corp_db.sku_lookup"]["argument_schema"]["properties"])
         self.assertEqual(routes["corp_db.sku_codes_lookup"]["argument_schema"]["required"], ["name"])
-        self.assertEqual(
-            routes["corp_db.sku_codes_lookup"]["argument_schema"]["properties"]["lookup_direction"]["enum"],
-            list(("by_name", "by_code")),
-        )
+        self.assertEqual(routes["corp_db.sku_codes_lookup"]["locked_args"]["lookup_direction"], "by_name")
         self.assertEqual(
             routes["corp_db.sku_codes_lookup"]["argument_schema"]["properties"]["code_system"]["enum"],
             list(("etm", "oracl", "sku", "article", "catalog_identifier", "mixed")),
@@ -1046,8 +1041,15 @@ class RoutingCatalogTests(unittest.TestCase):
             ["corp_db.catalog_lookup"],
         )
         self.assertEqual(routes["corp_db.showcase_lamps_by_category"]["argument_schema"]["required"], ["category"])
+        self.assertEqual(routes["corp_db.showcase_lamps_by_category"]["route_stage"], "stage3_optimized")
+        self.assertEqual(routes["corp_db.showcase_lamps_by_category"]["locked_args"]["kind"], "showcase_category_lamps")
+        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["locked_args"]["kind"], "lamp_documents_index")
+        self.assertEqual(routes["corp_db.sku_lookup"]["route_stage"], "stage3_optimized")
+        self.assertEqual(routes["corp_db.sku_lookup"]["locked_args"]["kind"], "lamp_code_lookup")
+        self.assertEqual(routes["corp_db.sku_codes_lookup"]["route_stage"], "stage3_optimized")
+        self.assertEqual(routes["corp_db.sku_codes_lookup"]["locked_args"]["kind"], "lamp_code_lookup")
 
-    def test_default_corp_db_routes_expose_stage1_general_leaf_per_major_family(self):
+    def test_default_corp_db_routes_expose_general_or_optimized_leaf_per_major_family(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             with patch.dict(
                 os.environ,
@@ -1056,10 +1058,10 @@ class RoutingCatalogTests(unittest.TestCase):
             ):
                 payload = load_routing_index()
 
-        stage1_families = {
+        covered_families = {
             route["family_id"]
             for route in payload["routes"]
-            if route["route_stage"] == "stage1_general"
+            if route["route_stage"] in {"stage1_general", "stage3_optimized"}
         }
         self.assertTrue(
             {
@@ -1070,7 +1072,7 @@ class RoutingCatalogTests(unittest.TestCase):
                 "sphere_category_mapping",
                 "portfolio",
                 "mountings",
-            }.issubset(stage1_families)
+            }.issubset(covered_families)
         )
 
     def test_selector_payload_uses_compact_route_specific_enums(self):
@@ -1170,10 +1172,7 @@ class RoutingCatalogTests(unittest.TestCase):
         sku_codes_route = routes["corp_db.sku_codes_lookup"]
         self.assertEqual(payload["candidate_route_ids"][0], "corp_db.sku_codes_lookup")
         self.assertEqual(sku_codes_route["family_id"], "codes_and_sku")
-        self.assertEqual(
-            sku_codes_route["argument_schema"]["properties"]["lookup_direction"]["enum"],
-            ["by_name", "by_code"],
-        )
+        self.assertEqual(sku_codes_route["locked_args"]["lookup_direction"], "by_name")
         self.assertEqual(
             sku_codes_route["argument_schema"]["properties"]["code_system"]["enum"],
             ["etm", "oracl", "sku", "article", "catalog_identifier", "mixed"],

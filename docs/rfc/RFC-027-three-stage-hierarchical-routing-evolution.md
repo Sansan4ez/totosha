@@ -14,7 +14,18 @@ Date
 Last updated
 ------------
 
-2026-04-27
+2026-05-03
+
+Implementation note
+-------------------
+
+As of 2026-05-03, the first concrete `stage3_optimized` routes are implemented in the repo:
+
+- `corp_db.showcase_lamps_by_category` → optimized `showcase_category_lamps`
+- `corp_db.documents_by_lamp_name` and subtype leafs → optimized `lamp_documents_index`
+- `corp_db.sku_lookup` / `corp_db.sku_codes_lookup` → optimized `lamp_code_lookup`
+
+The family/leaf selector contract remains stable while the executor layer now uses route-specific optimized data paths for these flows.
 
 Related RFCs
 ------------

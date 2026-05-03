@@ -84,7 +84,7 @@ class Rfc027ObservabilityTests(unittest.TestCase):
             selected_route_family="corp_db.documents_by_lamp_name",
             selected_business_family_id="documents",
             selected_leaf_route_id="certificate_by_lamp_name",
-            route_stage="stage2_specialized",
+            route_stage="stage3_optimized",
             route_arg_validation_status="ok",
             selected_route_kind="corp_table",
             selected_source="corp_db",
@@ -109,7 +109,7 @@ class Rfc027ObservabilityTests(unittest.TestCase):
 
         self.assertEqual(record.selected_business_family_id, "documents")
         self.assertEqual(record.selected_leaf_route_id, "certificate_by_lamp_name")
-        self.assertEqual(record.route_stage, "stage2_specialized")
+        self.assertEqual(record.route_stage, "stage3_optimized")
         self.assertEqual(record.route_arg_validation_status, "ok")
         self.assertEqual(record.route_selector_confidence, "high")
         self.assertEqual(record.used_fallback_scope, "family_local")

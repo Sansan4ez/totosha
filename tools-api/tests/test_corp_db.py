@@ -88,6 +88,30 @@ class LampExactConn:
                     },
                 }
             ]
+        if "FROM corp.catalog_lamp_documents" in sql:
+            return [
+                {
+                    "lamp_id": 2014,
+                    "instruction_url": "https://ladzavod.ru/pdf-product?product_id=2014",
+                    "passport_url": "https://ladzavod.ru/storage/passport-2014.pdf",
+                    "certificate_url": "https://ladzavod.ru/storage/certificate-2014.pdf",
+                    "ies_url": "https://ladzavod.ru/storage/2014.ies",
+                    "complete_docs_url": "https://ladzavod.ru/zip-product?product_id=2014",
+                }
+            ]
+        if "FROM corp.etm_oracl_catalog_sku" in sql:
+            return [
+                {
+                    "sku_id": 301,
+                    "lamp_id": 2014,
+                    "etm_code": "ETM-2014",
+                    "oracl_code": "ORACL-2014",
+                    "catalog_1c": "1C-2014",
+                    "short_box_name_wms": "ART-2014",
+                    "box_name": "R500-2014",
+                    "is_active": True,
+                }
+            ]
         return []
 
 
@@ -857,6 +881,63 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertIn("led r500-9-30-6-650lzd", variants)
         self.assertIn("r500-9-30-6-650lzd", variants)
         self.assertEqual(core_name, "r500-9-30-6-650lzd")
+
+    def test_lamp_documents_index_returns_filtered_document_entries(self):
+        conn = LampExactConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "lamp_documents_index", "name": "LAD LED R500-9-30-6-650LZD", "document_type": "passport"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["kind"], "lamp_documents_index")
+        self.assertEqual(payload["results"][0]["document_count"], 1)
+        self.assertEqual(payload["results"][0]["primary_document"]["document_type"], "passport")
+        self.assertEqual(payload["results"][0]["documents"][0]["url"], "https://ladzavod.ru/storage/passport-2014.pdf")
+
+    def test_lamp_code_lookup_returns_primary_codes_for_name_route(self):
+        conn = LampExactConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "lamp_code_lookup", "lookup_direction": "by_name", "name": "LAD LED R500-9-30-6-650LZD", "code_system": "mixed"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["kind"], "lamp_code_lookup")
+        self.assertEqual(payload["filters"]["lookup_direction"], "by_name")
+        self.assertEqual(payload["results"][0]["primary_codes"]["etm"], "ETM-2014")
+        self.assertEqual(payload["results"][0]["primary_codes"]["oracl"], "ORACL-2014")
+
+    def test_showcase_category_lamps_returns_compact_representative_rows(self):
+        conn = RoutingConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "showcase_category_lamps", "category": "Прожекторы", "fuzzy": True, "limit": 2},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["kind"], "showcase_category_lamps")
+        self.assertEqual(payload["filters"]["selection_strategy"], "showcase_representative")
+        self.assertLessEqual(len(payload["results"]), 2)
+        self.assertIn("name", payload["results"][0])
+        self.assertIn("preview", payload["results"][0])
 
     def test_portfolio_examples_by_lamp_returns_compact_grouped_payload(self):
         conn = PortfolioExamplesConn()

@@ -19,6 +19,14 @@ python3 -m unittest -q \
   core.tests.test_api_correlation
 ```
 
+Дополнительный cleanup/compatibility suite для legacy guardrail expectations:
+
+```bash
+python3 -m unittest -q core.tests.test_routing_guardrail
+```
+
+См. также: `docs/testing/rfc027-routing-guardrail-cleanup.md`.
+
 ## Scenario map
 
 | Scenario | Coverage |

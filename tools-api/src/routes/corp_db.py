@@ -446,6 +446,9 @@ class CorpDbSearchRequest(BaseModel):
         "lamp_exact",
         "lamp_suggest",
         "sku_by_code",
+        "lamp_code_lookup",
+        "lamp_documents_index",
+        "showcase_category_lamps",
         "application_recommendation",
         "category_lamps",
         "portfolio_by_sphere",
@@ -470,6 +473,9 @@ class CorpDbSearchRequest(BaseModel):
     name: Optional[str] = None
     etm: Optional[str] = None
     oracl: Optional[str] = None
+    document_type: Optional[Literal["passport", "certificate", "manual", "ies"]] = None
+    lookup_direction: Optional[Literal["by_name", "by_code"]] = None
+    code_system: Optional[Literal["etm", "oracl", "sku", "article", "catalog_identifier", "mixed"]] = None
     category: Optional[str] = None
     series: Optional[str] = None
     sphere: Optional[str] = None
@@ -521,6 +527,25 @@ class CorpDbSearchRequest(BaseModel):
     height_mm_max: Optional[float] = None
     warranty_years_min: Optional[int] = None
     warranty_years_max: Optional[int] = None
+
+
+DOCUMENT_URL_FIELDS = {
+    "passport": ("passport_url", "Паспорт"),
+    "certificate": ("certificate_url", "Сертификат"),
+    "manual": ("instruction_url", "Инструкция"),
+    "ies": ("ies_url", "IES"),
+}
+EXTRA_DOCUMENT_URL_FIELDS = {
+    "blueprint": ("blueprint_url", "Чертёж"),
+    "complete_docs": ("complete_docs_url", "Архив документов"),
+}
+CODE_SYSTEM_FIELD_PRIORITY = [
+    ("etm", "etm_code"),
+    ("oracl", "oracl_code"),
+    ("catalog_identifier", "catalog_1c"),
+    ("article", "short_box_name_wms"),
+    ("sku", "sku_id"),
+]
 
 
 def _read_secret(path: str) -> str:
@@ -731,6 +756,92 @@ def _serialize_lamp_row(
     if sku is not None:
         payload["sku"] = sku
     return payload
+
+
+def _normalize_document_type(value: str | None) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"passport", "certificate", "manual", "ies"}:
+        return text
+    return ""
+
+
+def _document_entries(documents: dict[str, Any] | None, *, document_type: str = "") -> list[dict[str, Any]]:
+    if not isinstance(documents, dict):
+        return []
+    entries: list[dict[str, Any]] = []
+    for doc_type, (field_name, title) in DOCUMENT_URL_FIELDS.items():
+        if document_type and doc_type != document_type:
+            continue
+        url = str(documents.get(field_name) or "").strip()
+        if not url:
+            continue
+        entries.append({"document_type": doc_type, "title": title, "url": url})
+    if not document_type:
+        for doc_type, (field_name, title) in EXTRA_DOCUMENT_URL_FIELDS.items():
+            url = str(documents.get(field_name) or "").strip()
+            if not url:
+                continue
+            entries.append({"document_type": doc_type, "title": title, "url": url})
+    return entries
+
+
+def _code_system_entries(sku_rows: list[dict[str, Any]] | None, *, code_system: str = "") -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    requested = str(code_system or "").strip().lower()
+    for row in sku_rows or []:
+        for system_name, field_name in CODE_SYSTEM_FIELD_PRIORITY:
+            if requested and requested not in {"mixed", system_name}:
+                continue
+            value = row.get(field_name)
+            if value in (None, ""):
+                continue
+            entries.append(
+                {
+                    "code_system": system_name,
+                    "value": str(value),
+                    "sku_id": row.get("sku_id"),
+                    "is_active": bool(row.get("is_active")),
+                }
+            )
+    return entries
+
+
+def _primary_code_map(entries: list[dict[str, Any]]) -> dict[str, str]:
+    primary: dict[str, str] = {}
+    for entry in entries:
+        system_name = str(entry.get("code_system") or "")
+        value = str(entry.get("value") or "")
+        if system_name and value and system_name not in primary:
+            primary[system_name] = value
+    return primary
+
+
+def _showcase_result_rows(rows: list[asyncpg.Record] | list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    seen_names: set[str] = set()
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        name = str(_row_get(row, "name") or "").strip().lower()
+        if not name or name in seen_names:
+            continue
+        seen_names.add(name)
+        payload = _serialize_lamp_row(row)
+        results.append(
+            {
+                "lamp_id": payload["lamp_id"],
+                "name": payload["name"],
+                "category_id": payload.get("category_id"),
+                "category_name": payload.get("category_name"),
+                "url": payload.get("url"),
+                "image_url": payload.get("image_url"),
+                "preview": payload.get("preview"),
+                "agent_summary": payload.get("agent_summary"),
+                "facts": payload.get("facts", {}),
+                "metadata": payload.get("metadata", {}),
+            }
+        )
+        if len(results) >= limit:
+            break
+    return results
 
 
 def _hybrid_row_from_lamp_payload(payload: dict[str, Any], score: float, strategy: str) -> dict[str, Any]:
@@ -3005,6 +3116,184 @@ async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, li
     )
 
 
+async def _showcase_category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
+    category = _req_str(req.category, "category")
+    showcase_limit = max(1, min(limit, 6))
+    fetch_limit = max(showcase_limit * 4, showcase_limit)
+    exact_display_categories = await _resolve_exact_display_categories(conn, category=category)
+    if exact_display_categories:
+        display_categories = await _enrich_display_categories_with_executables(conn, exact_display_categories)
+        executable_category_ids = _ordered_unique_ints(
+            [
+                executable_id
+                for row in display_categories
+                for executable_id in row.get("executable_category_ids", [row["category_id"]])
+            ]
+        )
+        executable_req = _request_like(req, category=None)
+        rows = await _fetch_category_lamps_by_ids(
+            conn,
+            category_ids=executable_category_ids,
+            req=executable_req,
+            limit=fetch_limit,
+            offset=offset,
+        )
+        return _success(
+            "showcase_category_lamps",
+            query=category,
+            filters={
+                "category_query_semantics": "display_category_to_executable",
+                "display_category_ids": [row["category_id"] for row in display_categories],
+                "executable_category_ids": executable_category_ids,
+                "selection_strategy": "showcase_representative",
+            },
+            results=_showcase_result_rows(rows, limit=showcase_limit),
+        )
+
+    rows = await conn.fetch(
+        """
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
+        WHERE CASE
+            WHEN $1 THEN coalesce(l.category_name, '') ILIKE ('%' || $2 || '%')
+            ELSE lower(coalesce(l.category_name, '')) = lower($2)
+        END
+        ORDER BY l.name
+        LIMIT $3 OFFSET $4
+        """,
+        req.fuzzy,
+        category,
+        fetch_limit,
+        offset,
+    )
+    return _success(
+        "showcase_category_lamps",
+        query=category,
+        filters={
+            "category_query_semantics": "executable_category_name",
+            "selection_strategy": "showcase_representative",
+        },
+        results=_showcase_result_rows(rows, limit=showcase_limit),
+    )
+
+
+async def _lamp_documents_index(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
+    name = _req_str(req.name, "name")
+    document_type = _normalize_document_type(req.document_type)
+    rows = await _fetch_lamp_exact_rows(conn, name=name, limit=limit, offset=offset)
+    lamp_ids = [row["lamp_id"] for row in rows]
+    docs_by_lamp: dict[int, dict[str, Any]] = {}
+    if lamp_ids:
+        doc_rows = await conn.fetch(
+            "SELECT * FROM corp.catalog_lamp_documents WHERE lamp_id = ANY($1::bigint[])",
+            lamp_ids,
+        )
+        docs_by_lamp = {row["lamp_id"]: dict(row) for row in doc_rows}
+
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        entries = _document_entries(docs_by_lamp.get(row["lamp_id"]), document_type=document_type)
+        if not entries:
+            continue
+        payload = _serialize_lamp_row(row)
+        payload["documents"] = entries
+        payload["document_count"] = len(entries)
+        payload["primary_document"] = entries[0]
+        results.append(payload)
+
+    return _success(
+        "lamp_documents_index",
+        query=name,
+        filters={
+            "lookup_direction": "by_name",
+            "document_type": document_type or "all_documents",
+        },
+        results=results,
+    )
+
+
+async def _lamp_code_lookup(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
+    lookup_direction = str(req.lookup_direction or "").strip() or ("by_code" if req.etm or req.oracl else "by_name")
+    requested_code_system = str(req.code_system or "").strip().lower()
+
+    if lookup_direction == "by_code":
+        code_query = (req.query or req.etm or req.oracl or "").strip()
+        rows = await conn.fetch(
+            """
+            SELECT s.*, l.name AS lamp_name, l.category_id, l.category_name, l.url, l.image_url
+            FROM corp.etm_oracl_catalog_sku s
+            LEFT JOIN corp.catalog_lamps l ON l.lamp_id = s.lamp_id
+            WHERE ($1::text IS NOT NULL AND s.etm_code = $1)
+               OR ($2::text IS NOT NULL AND s.oracl_code = $2)
+               OR ($3::text IS NOT NULL AND (
+                    s.catalog_1c = $3
+                    OR s.short_box_name_wms = $3
+                    OR lower(coalesce(s.box_name, '')) = lower($3)
+               ))
+            ORDER BY s.is_active DESC, s.sku_id
+            LIMIT $4 OFFSET $5
+            """,
+            (req.etm or "").strip() or None,
+            (req.oracl or "").strip() or None,
+            code_query or None,
+            limit,
+            offset,
+        )
+        results = []
+        for row in rows:
+            serialized = {
+                "sku_id": row.get("sku_id"),
+                "lamp_id": row.get("lamp_id"),
+                "lamp_name": row.get("lamp_name"),
+                "category_id": row.get("category_id"),
+                "category_name": row.get("category_name"),
+                "url": row.get("url"),
+                "image_url": row.get("image_url"),
+                "codes": _code_system_entries([dict(row)], code_system=requested_code_system),
+            }
+            serialized["primary_codes"] = _primary_code_map(serialized["codes"])
+            results.append(serialized)
+        return _success(
+            "lamp_code_lookup",
+            query=code_query,
+            filters={"lookup_direction": "by_code", "code_system": requested_code_system or "mixed"},
+            results=results,
+        )
+
+    name = _req_str(req.name, "name")
+    rows = await _fetch_lamp_exact_rows(conn, name=name, limit=limit, offset=offset)
+    lamp_ids = [row["lamp_id"] for row in rows]
+    skus_by_lamp: dict[int, list[dict[str, Any]]] = {}
+    if lamp_ids:
+        sku_rows = await conn.fetch(
+            """
+            SELECT sku_id, lamp_id, etm_code, oracl_code, short_box_name_wms, catalog_1c, box_name, is_active
+            FROM corp.etm_oracl_catalog_sku
+            WHERE lamp_id = ANY($1::bigint[])
+            ORDER BY is_active DESC, sku_id
+            """,
+            lamp_ids,
+        )
+        for row in sku_rows:
+            skus_by_lamp.setdefault(row["lamp_id"], []).append(dict(row))
+
+    results = []
+    for row in rows:
+        code_entries = _code_system_entries(skus_by_lamp.get(row["lamp_id"]), code_system=requested_code_system)
+        if not code_entries:
+            continue
+        payload = _serialize_lamp_row(row)
+        payload["codes"] = code_entries
+        payload["primary_codes"] = _primary_code_map(code_entries)
+        results.append(payload)
+    return _success(
+        "lamp_code_lookup",
+        query=name,
+        filters={"lookup_direction": "by_name", "code_system": requested_code_system or "mixed"},
+        results=results,
+    )
+
+
 async def _portfolio_by_sphere(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     sphere = _req_str(req.sphere, "sphere")
     async def _fetch_rows(*, sphere_query: str, fuzzy: bool) -> list[asyncpg.Record]:
@@ -3610,6 +3899,12 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
                 result["kind"] = "lamp_suggest"
             elif req.kind == "sku_by_code":
                 result = await _sku_by_code(conn, req, limit, offset)
+            elif req.kind == "lamp_code_lookup":
+                result = await _lamp_code_lookup(conn, req, limit, offset)
+            elif req.kind == "lamp_documents_index":
+                result = await _lamp_documents_index(conn, req, limit, offset)
+            elif req.kind == "showcase_category_lamps":
+                result = await _showcase_category_lamps(conn, req, limit, offset)
             elif req.kind == "application_recommendation":
                 result = await _application_recommendation(conn, req, limit, offset)
             elif req.kind == "sphere_curated_categories":

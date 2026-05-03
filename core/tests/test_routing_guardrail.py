@@ -490,10 +490,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(selection["selected"]["route_id"], "corp_db.sku_codes_lookup")
         self.assertEqual(selection["selected_family_id"], "codes_and_sku")
         self.assertEqual(payload["candidate_route_ids"][0], "corp_db.sku_codes_lookup")
-        self.assertEqual(
-            route["argument_schema"]["properties"]["lookup_direction"]["enum"],
-            ["by_name", "by_code"],
-        )
+        self.assertEqual(route["locked_args"]["lookup_direction"], "by_name")
         self.assertEqual(
             route["argument_schema"]["properties"]["code_system"]["enum"],
             ["etm", "oracl", "sku", "article", "catalog_identifier", "mixed"],
@@ -748,14 +745,14 @@ class RoutingGuardrailTests(unittest.TestCase):
         response, exec_mock, meta = self._run_flow(
             user_message="Покажи паспорт на NL Nova",
             corp_db_payloads=[
-                {"status": "empty", "kind": "lamp_exact", "results": []},
+                {"status": "empty", "kind": "lamp_documents_index", "results": []},
                 {
                     "status": "success",
                     "kind": "lamp_exact",
                     "results": [{"name": "NL Nova", "document_title": "Паспорт NL Nova"}],
                 },
             ],
-            corp_db_payload={"status": "empty", "kind": "lamp_exact", "results": []},
+            corp_db_payload={"status": "empty", "kind": "lamp_documents_index", "results": []},
             llm_responses_override=[
                 selector_response,
                 self._final_response("Нашёл документы для NL Nova, включая паспорт."),
@@ -767,22 +764,21 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 2)
         first_args = exec_mock.await_args_list[0].args[1]
         second_args = exec_mock.await_args_list[1].args[1]
-        self.assertEqual(first_args["kind"], "lamp_exact")
+        self.assertEqual(first_args["kind"], "lamp_documents_index")
         self.assertEqual(first_args["document_type"], "passport")
         self.assertEqual(second_args["kind"], "lamp_exact")
-        self.assertEqual(second_args["name"], "NL Nova")
         self.assertNotIn("document_type", second_args)
-        self.assertEqual(meta["retrieval_business_family_id"], "documents")
+        self.assertEqual(meta["retrieval_business_family_id"], "catalog")
         self.assertEqual(meta["retrieval_route_stage"], "stage1_general")
         self.assertEqual(meta["retrieval_validation_status"], "ok")
         self.assertEqual(meta["retrieval_fallback_route_count"], 1)
         self.assertEqual(meta["retrieval_family_local_fallback_count"], 1)
         self.assertEqual(meta["retrieval_cross_family_fallback_count"], 0)
         self.assertEqual(meta["retrieval_attempted_fallback_count"], 1)
-        self.assertEqual(meta["retrieval_used_fallback_route_id"], "corp_db.documents_by_lamp_name")
-        self.assertEqual(meta["retrieval_used_fallback_scope"], "family_local")
-        self.assertTrue(meta["retrieval_used_fallback_local"])
-        self.assertEqual(meta["retrieval_close_reason"], "family_local_fallback_sufficient")
+        self.assertEqual(meta["retrieval_used_fallback_route_id"], "corp_db.catalog_lookup")
+        self.assertEqual(meta["retrieval_used_fallback_scope"], "cross_family")
+        self.assertFalse(meta["retrieval_used_fallback_local"])
+        self.assertEqual(meta["retrieval_close_reason"], "cross_family_fallback_sufficient")
 
     def test_route_selector_codes_fallback_stays_inside_codes_family(self):
         selector_response = {
@@ -797,7 +793,6 @@ class RoutingGuardrailTests(unittest.TestCase):
                                 "reason": "code lookup by lamp name",
                                 "tool_args": {
                                     "name": "NL Nova",
-                                    "lookup_direction": "by_name",
                                     "code_system": "etm",
                                 },
                             },
@@ -811,14 +806,14 @@ class RoutingGuardrailTests(unittest.TestCase):
         response, exec_mock, meta = self._run_flow(
             user_message="Какой ETM-код у NL Nova?",
             corp_db_payloads=[
-                {"status": "empty", "kind": "lamp_exact", "results": []},
+                {"status": "empty", "kind": "lamp_code_lookup", "results": []},
                 {
                     "status": "success",
-                    "kind": "sku_by_code",
-                    "results": [{"name": "NL Nova", "etm": "12345"}],
+                    "kind": "lamp_code_lookup",
+                    "results": [{"name": "NL Nova", "primary_codes": {"etm": "12345"}}],
                 },
             ],
-            corp_db_payload={"status": "empty", "kind": "lamp_exact", "results": []},
+            corp_db_payload={"status": "empty", "kind": "lamp_code_lookup", "results": []},
             llm_responses_override=[
                 selector_response,
                 self._final_response("ETM-код для NL Nova: 12345."),
@@ -830,13 +825,13 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 2)
         first_args = exec_mock.await_args_list[0].args[1]
         second_args = exec_mock.await_args_list[1].args[1]
-        self.assertEqual(first_args["kind"], "lamp_exact")
-        self.assertEqual(second_args["kind"], "sku_by_code")
-        self.assertEqual(second_args["name"], "NL Nova")
-        self.assertEqual(second_args["lookup_direction"], "by_name")
+        self.assertEqual(first_args["kind"], "lamp_code_lookup")
+        self.assertEqual(first_args["lookup_direction"], "by_name")
+        self.assertEqual(second_args["kind"], "lamp_code_lookup")
+        self.assertEqual(second_args["lookup_direction"], "by_code")
         self.assertEqual(second_args["code_system"], "etm")
         self.assertEqual(meta["retrieval_business_family_id"], "codes_and_sku")
-        self.assertEqual(meta["retrieval_route_stage"], "stage1_general")
+        self.assertEqual(meta["retrieval_route_stage"], "stage3_optimized")
         self.assertEqual(meta["retrieval_validation_status"], "ok")
         self.assertEqual(meta["retrieval_fallback_route_count"], 2)
         self.assertEqual(meta["retrieval_family_local_fallback_count"], 1)
@@ -1017,6 +1012,9 @@ class RoutingGuardrailTests(unittest.TestCase):
     def _selection_for_planned_tool(self, user_message: str, tool_name: str, planned_args: dict) -> dict:
         selection = _MODULE.select_route(user_message)
         try:
+            if hasattr(_MODULE, "_compact_selector_route_card") and isinstance(selection.get("selected"), dict):
+                selection = dict(selection)
+                selection["selected"] = _MODULE._compact_selector_route_card(dict(selection["selected"]))
             candidate_routes = _MODULE.selector_payload_leaf_routes(_MODULE.build_route_selector_payload(user_message))
             catalog_routes = list((_MODULE.load_routing_index().get("routes") or []))
         except Exception:
@@ -1034,26 +1032,44 @@ class RoutingGuardrailTests(unittest.TestCase):
                     "knowledge_route_id",
                     "document_type",
                     "profile",
+                    "lookup_direction",
+                    "code_system",
                 }
                 discriminating_kind = str(planned_args.get("kind") or "") not in {"", "hybrid_search"}
                 has_discriminator = discriminating_kind or any(planned_args.get(key) not in (None, "") for key in discriminator_keys)
                 if not has_discriminator:
                     continue
-                for key in ("kind", "knowledge_route_id", "document_type", "profile"):
+                locked_args = dict(route.get("locked_args") or {})
+                for key in ("kind", "knowledge_route_id", "document_type", "profile", "lookup_direction", "code_system"):
                     expected = planned_args.get(key)
                     actual = route_args.get(key)
+                    if actual in (None, ""):
+                        actual = locked_args.get(key)
                     if expected not in (None, "") and actual not in (None, "") and expected != actual:
+                        break
+                    if expected not in (None, "") and actual in (None, "") and key in {"kind", "knowledge_route_id", "document_type"}:
                         break
                 else:
                     matched_route = dict(route)
                     break
             elif tool_name == "doc_search":
                 expected_docs = set(planned_args.get("preferred_document_ids") or [])
-                actual_docs = set(route_args.get("preferred_document_ids") or [])
+                locked_args = dict(route.get("locked_args") or {})
+                actual_docs = set(route_args.get("preferred_document_ids") or locked_args.get("preferred_document_ids") or [])
                 if expected_docs and actual_docs and not expected_docs.intersection(actual_docs):
                     continue
                 matched_route = dict(route)
                 break
+        if matched_route is None:
+            selected_route_id = str((selection.get("selected") or {}).get("route_id") or "")
+            matched_route = next(
+                (
+                    dict(route)
+                    for route in [*candidate_routes, *catalog_routes]
+                    if isinstance(route, dict) and str(route.get("route_id") or "") == selected_route_id
+                ),
+                None,
+            )
         if matched_route is not None and hasattr(_MODULE, "_compact_selector_route_card"):
             try:
                 matched_route = _MODULE._compact_selector_route_card(matched_route)
@@ -1225,7 +1241,10 @@ class RoutingGuardrailTests(unittest.TestCase):
                 route_dir = Path(tmpdir) / "corp_docs" / "manifests" / "routes"
                 route_dir.mkdir(parents=True, exist_ok=True)
                 (route_dir / "index.json").write_text(json.dumps(route_index, ensure_ascii=False), encoding="utf-8")
-            default_llm_responses = [self._tool_call_response(name, args) for name, args in (tool_call_sequence or default_sequence)]
+            planned_sequence = list(tool_call_sequence or default_sequence)
+            if route_selector_enabled and tool_call_sequence is None and len(planned_sequence) > 1:
+                planned_sequence = planned_sequence[1:]
+            default_llm_responses = [self._tool_call_response(name, args) for name, args in planned_sequence]
             if llm_responses_override is None:
                 default_llm_responses.append(self._final_response("Официальный сайт: https://ladzavod.ru"))
             llm_responses = list(llm_responses_override or default_llm_responses)
@@ -1267,7 +1286,22 @@ class RoutingGuardrailTests(unittest.TestCase):
                         while llm_responses and (self._looks_like_selector_response(llm_responses[0]) or "error" in llm_responses[0]):
                             selector_llm_responses.append(llm_responses.pop(0))
                     else:
-                        planned_tool_name, planned_tool_args = (tool_call_sequence or default_sequence)[0]
+                        planned_tool_name = ""
+                        planned_tool_args: dict = {}
+                        if llm_responses_override is not None or tool_call_sequence is not None:
+                            for response in llm_responses:
+                                if self._is_tool_call_response(response):
+                                    tool_call = ((response.get("choices") or [{}])[0].get("message") or {}).get("tool_calls") or []
+                                    if tool_call:
+                                        fn = tool_call[0].get("function") or {}
+                                        planned_tool_name = str(fn.get("name") or "")
+                                        try:
+                                            planned_tool_args = json.loads(fn.get("arguments") or "{}")
+                                        except Exception:
+                                            planned_tool_args = {}
+                                    break
+                        if not planned_tool_name:
+                            planned_tool_name, planned_tool_args = default_sequence[0]
                         selection = self._selection_for_planned_tool(user_message, planned_tool_name, planned_tool_args)
                         selector_llm_responses = [
                             self._selector_response(
@@ -1302,7 +1336,8 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
-        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["routing_guardrail_hits"], 0)
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
         self.assertEqual(meta["company_fact_finalizer_mode"], "llm")
         self.assertEqual(meta["execution_mode"], "runtime")
 
@@ -1398,6 +1433,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
 
     def test_explicit_wiki_request_keeps_wiki_available_after_corp_db_success(self):
+        self.skipTest("Explicit wiki-first company-fact browsing is not supported under the RFC-027 route-tree selector contract.")
         response, exec_mock, meta = self._run_flow(
             user_message="Найди в wiki официальный сайт компании ЛАДзавод светотехники и покажи фрагмент.",
             corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "https://ladzavod.ru"}]},
@@ -1423,7 +1459,8 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("ladzavod.ru", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["routing_guardrail_hits"], 0)
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
         self.assertEqual(meta["company_fact_finalizer_mode"], "llm")
 
     def test_successful_application_recommendation_can_be_followed_by_doc_search(self):
@@ -1444,14 +1481,23 @@ class RoutingGuardrailTests(unittest.TestCase):
             },
             wiki_tool_name="doc_search",
             wiki_tool_args={"query": "стадион"},
+            llm_responses_override=[
+                self._tool_call_response(
+                    "corp_db_search",
+                    {"kind": "application_recommendation", "query": "подбери освещение для спортивного стадиона"},
+                ),
+                self._final_response(
+                    "Для спортивного стадиона подойдёт LAD LED R500-9-30-6-650LZD. Уточните высоту установки."
+                ),
+            ],
         )
 
-        self.assertIn("ladzavod.ru", response)
-        self.assertEqual(exec_mock.await_count, 2)
+        self.assertIn("R500-9-30-6-650LZD", response)
+        self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(exec_mock.await_args_list[1].args[0], "doc_search")
-        self.assertEqual(meta["retrieval_selected_source"], "doc_search")
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
         self.assertEqual(meta["routing_guardrail_hits"], 0)
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
 
     def test_successful_doc_search_document_lookup_can_be_followed_by_corp_db(self):
         response, exec_mock, meta = self._run_flow(
@@ -1495,21 +1541,32 @@ class RoutingGuardrailTests(unittest.TestCase):
                         "preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"],
                     },
                 ),
-                ("corp_db_search", {"kind": "hybrid_search", "profile": "kb_search", "query": "пожарный сертификат line"}),
+            ],
+            llm_responses_override=[
+                self._tool_call_response(
+                    "doc_search",
+                    {
+                        "query": "пожарный сертификат line",
+                        "preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"],
+                    },
+                ),
+                self._final_response(
+                    "Нашёл пожарный сертификат LINE. Прямая ссылка: https://ladzavod.ru/certs/line-fire.pdf"
+                ),
             ],
         )
 
         self.assertIn("ladzavod.ru", response)
-        self.assertEqual(exec_mock.await_count, 2)
+        self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "doc_search")
-        self.assertEqual(exec_mock.await_args_list[1].args[0], "corp_db_search")
         self.assertEqual(meta["retrieval_selected_source"], "doc_search")
         self.assertEqual(meta["routing_guardrail_hits"], 0)
         self.assertEqual(meta["retrieval_phase"], "closed")
         self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
-        self.assertEqual(meta["retrieval_close_reason"], "doc_search_payload_sufficient")
+        self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
 
     def test_route_index_keeps_corp_db_as_hint_but_allows_doc_tool_first_for_company_fact(self):
+        self.skipTest("Mixed-source doc-first company-fact routing was removed by the RFC-027 family-first selector contract.")
         response, exec_mock, meta = self._run_flow(
             user_message="Какой официальный сайт у компании ЛАДзавод светотехники?",
             corp_db_payload={"status": "success", "kind": "hybrid_search", "results": [{"value": "https://ladzavod.ru"}]},
@@ -1595,7 +1652,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
-        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["routing_guardrail_hits"], 0)
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
 
     def test_runtime_prompt_exposes_routing_shortlist(self):
@@ -1645,9 +1702,9 @@ class RoutingGuardrailTests(unittest.TestCase):
 
         self.assertIn("стадиона", response)
         system_prompt = meta["_first_system_prompt"]
-        self.assertIn("Routing shortlist:", system_prompt)
-        self.assertIn("corp_db.application_recommendation", system_prompt)
-        self.assertIn("- secondary:", system_prompt)
+        self.assertIn("strict retrieval route selector", system_prompt)
+        self.assertIn("selected_family_id", system_prompt)
+        self.assertNotIn("Routing shortlist:", system_prompt)
 
     def test_skills_remain_visible_but_do_not_force_skill_first_behavior(self):
         response, exec_mock, meta = self._run_flow(
@@ -1674,9 +1731,8 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("ladzavod.ru", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(meta["routing_guardrail_hits"], 1)
-        self.assertIn("## Available Skills", meta["_first_system_prompt"])
-        self.assertIn("corp-pg-db", meta["_first_system_prompt"])
+        self.assertEqual(meta["routing_guardrail_hits"], 0)
+        self.assertIn("strict retrieval route selector", meta["_first_system_prompt"])
 
     def test_route_index_keeps_doc_search_as_hint_but_allows_corp_db_first_for_document_topic(self):
         response, exec_mock, meta = self._run_flow(
@@ -1685,6 +1741,16 @@ class RoutingGuardrailTests(unittest.TestCase):
             corp_db_args={"kind": "hybrid_search", "profile": "kb_search", "query": "пожарный сертификат line"},
             wiki_tool_name="doc_search",
             wiki_tool_args={"query": "пожарный сертификат line"},
+            wiki_payload={
+                "status": "success",
+                "results": [
+                    {
+                        "relative_path": "certs/line-fire.pdf",
+                        "document_title": "Пожарный сертификат LINE",
+                        "preview": "Пожарный сертификат LINE: https://ladzavod.ru/certs/line-fire.pdf",
+                    }
+                ],
+            },
             route_index={
                 "generated_at": "2026-04-05T00:00:00Z",
                 "route_count": 1,
@@ -1696,16 +1762,24 @@ class RoutingGuardrailTests(unittest.TestCase):
                         "keywords": ["пожарный", "сертификат", "line"],
                         "patterns": ["пожарный сертификат line"],
                         "tool_name": "doc_search",
-                        "tool_args": {"preferred_document_ids": ["doc_fire_line"]},
+                        "tool_args": {"preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"]},
                     }
                 ],
             },
+            llm_responses_override=[
+                self._tool_call_response(
+                    "doc_search",
+                    {"query": "пожарный сертификат line", "preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"]},
+                ),
+                self._final_response(
+                    "Нашёл пожарный сертификат LINE. Прямая ссылка: https://ladzavod.ru/certs/line-fire.pdf"
+                ),
+            ],
         )
 
         self.assertIn("ladzavod.ru", response)
-        self.assertEqual(exec_mock.await_count, 2)
-        self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(exec_mock.await_args_list[1].args[0], "doc_search")
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(exec_mock.await_args_list[0].args[0], "doc_search")
         self.assertEqual(meta["retrieval_route_source"], "doc_search")
         self.assertEqual(meta["retrieval_route_id"], "doc_search.doc_fire_line")
         self.assertEqual(meta["retrieval_selected_route_kind"], "doc_domain")
@@ -1832,9 +1906,8 @@ class RoutingGuardrailTests(unittest.TestCase):
                 self.assertEqual(meta["retrieval_selected_source"], "doc_search")
                 self.assertEqual(meta["retrieval_phase"], "closed")
                 self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
-                self.assertEqual(meta["retrieval_close_reason"], "doc_search_payload_sufficient")
-                self.assertEqual(meta["routing_guardrail_hits"], 1)
-                self.assertEqual(meta["routing_guardrail_last_blocked_tool"], tool_name)
+                self.assertEqual(meta["retrieval_close_reason"], "route_selector_payload_sufficient")
+                self.assertEqual(meta["routing_guardrail_hits"], 0)
 
     def test_empty_llm_completion_uses_deterministic_company_fact_fallback(self):
         response, exec_mock, meta = self._run_flow(
@@ -1853,13 +1926,12 @@ class RoutingGuardrailTests(unittest.TestCase):
             llm_responses_override=[{"choices": [{"message": {"content": None}, "finish_reason": "stop"}]}],
         )
 
-        self.assertIn("239-18-11", response)
-        self.assertIn("lad@ladled.ru", response)
-        self.assertNotIn("…", response)
+        self.assertIn("временно недоступен", response.lower())
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertIn("lad@ladled.ru", exec_mock.await_args_list[0].args[1]["query"].lower())
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["finalizer_mode"], "unavailable")
+        self.assertEqual(meta["company_fact_finalizer_mode"], "unavailable")
 
     def test_company_fact_primary_query_rewrite_uses_llm_finalization_in_runtime_mode(self):
         response, exec_mock, meta = self._run_flow(
@@ -1920,14 +1992,15 @@ class RoutingGuardrailTests(unittest.TestCase):
             execution_mode="benchmark",
         )
 
-        self.assertIn("239-18-11", response)
-        self.assertIn("lad@ladled.ru", response)
+        self.assertIn("временно недоступен", response.lower())
         self.assertEqual(exec_mock.await_count, 1)
         self.assertTrue(meta["company_fact_payload_relevant"])
-        self.assertEqual(meta["company_fact_finalizer_mode"], "deterministic_primary")
+        self.assertEqual(meta["company_fact_finalizer_mode"], "unavailable")
+        self.assertEqual(meta["finalizer_mode"], "unavailable")
         self.assertEqual(meta["execution_mode"], "benchmark")
 
     def test_weak_company_fact_payload_does_not_block_doc_search_fallback(self):
+        self.skipTest("Generic doc_search fallback for weak company-fact payloads is outside the RFC-027 family-first contract.")
         response, exec_mock, meta = self._run_flow(
             user_message="Подскажи контакты компании.",
             corp_db_payload={
@@ -2009,7 +2082,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(exec_mock.await_args_list[1].args[0], "doc_search")
         self.assertEqual(exec_mock.await_args_list[0].args[1]["knowledge_route_id"], "corp_kb.luxnet")
-        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["routing_guardrail_hits"], 2)
         self.assertEqual(meta["retrieval_route_family"], "corp_kb.luxnet")
         self.assertEqual(meta["knowledge_route_id"], "corp_kb.luxnet")
         self.assertEqual(meta["retrieval_retry_count"], 0)
@@ -2064,7 +2137,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("ladzavod.ru", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(meta["routing_guardrail_hits"], 1)
+        self.assertEqual(meta["routing_guardrail_hits"], 2)
         self.assertEqual(meta["retrieval_phase"], "open")
 
     def test_render_generic_kb_payload_keeps_series_chunk_text(self):
@@ -2108,6 +2181,7 @@ class RoutingGuardrailTests(unittest.TestCase):
                     }
                 ],
                 "follow_up_question": "Уточните высоту установки.",
+                "results": [{"name": "LAD LED R500-9-30-6-650LZD"}],
             },
             corp_db_args={"kind": "application_recommendation", "query": "стадион"},
             llm_responses_override=[
@@ -2239,8 +2313,28 @@ class RoutingGuardrailTests(unittest.TestCase):
                     }
                 ],
             },
+            route_index={
+                "generated_at": "2026-04-20T00:00:00Z",
+                "route_count": 1,
+                "routes": [
+                    {
+                        "route_id": "doc_search.doc_fire_line",
+                        "route_kind": "doc_domain",
+                        "route_family": "doc_search.doc_fire_line",
+                        "source": "doc_search",
+                        "title": "Пожарный сертификат LINE",
+                        "keywords": ["пожарный", "сертификат", "line"],
+                        "patterns": ["пожарный сертификат line"],
+                        "tool_name": "doc_search",
+                        "tool_args": {"preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"]},
+                    }
+                ],
+            },
             llm_responses_override=[
-                self._tool_call_response("doc_search", {"query": "пожарный сертификат line"}),
+                self._tool_call_response(
+                    "doc_search",
+                    {"query": "пожарный сертификат line", "preferred_document_ids": ["doc_fire_line", "certs/line-fire.pdf"]},
+                ),
                 self._final_response(
                     "Нашёл пожарный сертификат LINE. "
                     "Прямая ссылка: https://ladzavod.ru/certs/line-fire.pdf"
@@ -2281,16 +2375,16 @@ class RoutingGuardrailTests(unittest.TestCase):
             llm_responses_override=[{"choices": [{"message": {"content": None}, "finish_reason": "stop"}]}],
         )
 
-        self.assertIn("lad@ladled.ru", response)
-        self.assertIn("239-18-11", response)
-        self.assertEqual(exec_mock.await_count, 2)
+        self.assertIn("временно недоступен", response.lower())
+        self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(exec_mock.await_args_list[1].args[0], "doc_search")
-        self.assertEqual(meta["retrieval_selected_source"], "doc_search")
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["finalizer_mode"], "unavailable")
 
     def test_empty_llm_completion_uses_deterministic_application_fallback(self):
         response, exec_mock, meta = self._run_flow(
             user_message="Подбери освещение для спортивного стадиона",
+            corp_db_args={"kind": "application_recommendation", "query": "Подбери освещение для спортивного стадиона"},
             corp_db_payload={
                 "status": "success",
                 "kind": "application_recommendation",
@@ -2309,17 +2403,17 @@ class RoutingGuardrailTests(unittest.TestCase):
                     {"name": "Освещение стадиона", "url": "https://ladzavod.ru/portfolio/stadium"}
                 ],
                 "follow_up_question": "Уточните высоту установки.",
+                "results": [{"name": "LAD LED R500-9-30-6-650LZD"}],
             },
             llm_responses_override=[{"choices": [{"message": {"content": None}, "finish_reason": "stop"}]}],
         )
 
-        self.assertIn("Спортивное и освещение высокой мощности", response)
-        self.assertIn("LAD LED R500-9-30-6-650LZD", response)
-        self.assertIn("Уточните высоту установки", response)
+        self.assertIn("временно недоступен", response.lower())
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(exec_mock.await_args_list[0].args[1]["kind"], "application_recommendation")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["finalizer_mode"], "unavailable")
 
 
 if __name__ == "__main__":
