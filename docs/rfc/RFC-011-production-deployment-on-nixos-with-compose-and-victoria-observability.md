@@ -4,7 +4,12 @@ RFC-011 Simple And Stable Production Deployment On NixOS
 Status
 ------
 
-Draft (2026-04-05)
+Proposed
+
+Date
+----
+
+2026-04-05
 
 Context and motivation
 ----------------------

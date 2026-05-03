@@ -1,6 +1,16 @@
 RFC-005 Lamp Portfolio Examples Fast Path
 =========================================
 
+Status
+------
+
+Proposed
+
+Date
+----
+
+2026-04-02
+
 Context and motivation
 ----------------------
 

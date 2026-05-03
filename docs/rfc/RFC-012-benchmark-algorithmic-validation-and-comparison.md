@@ -4,7 +4,12 @@ RFC-012 Benchmark Algorithmic Validation And Comparison
 Status
 ------
 
-Draft (2026-04-05)
+Proposed
+
+Date
+----
+
+2026-04-05
 
 Context and motivation
 ----------------------

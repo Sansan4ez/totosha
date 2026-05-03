@@ -4,7 +4,12 @@ RFC: Shared Skill `corp-pg-db` для корпоративных данных (P
 Status
 ------
 
-Draft (2026-03-23)
+Proposed
+
+Date
+----
+
+2026-03-23
 
 Context and motivation
 ----------------------

@@ -1,6 +1,16 @@
 RFC-007 Multiformat Document Search With LiteParse And Tiered Promotion
 ========================================================================
 
+Status
+------
+
+Proposed
+
+Date
+----
+
+2026-04-05
+
 Context and motivation
 ----------------------
 

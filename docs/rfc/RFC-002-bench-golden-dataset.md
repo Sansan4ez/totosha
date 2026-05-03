@@ -4,7 +4,12 @@ RFC: Bench по `docs/questions.md` (Golden Dataset + Runner + Eval + Observabil
 Status
 ------
 
-Draft (2026-03-29)
+Proposed
+
+Date
+----
+
+2026-03-29
 
 Context and motivation
 ----------------------

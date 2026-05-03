@@ -1,6 +1,16 @@
 RFC-006 Default Corp DB Routing For Company Facts
 =================================================
 
+Status
+------
+
+Proposed
+
+Date
+----
+
+2026-04-05
+
 Context and motivation
 ----------------------
 

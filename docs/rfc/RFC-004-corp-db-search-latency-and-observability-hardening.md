@@ -1,6 +1,16 @@
 RFC-004 Corp DB Search Latency And Observability Hardening
 ==========================================================
 
+Status
+------
+
+Proposed
+
+Date
+----
+
+2026-03-30
+
 Context and motivation
 ----------------------
 

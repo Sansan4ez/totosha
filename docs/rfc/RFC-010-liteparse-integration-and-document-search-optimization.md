@@ -1,6 +1,16 @@
 RFC-010 LiteParse Integration And Document Search Optimization
 ==============================================================
 
+Status
+------
+
+Proposed
+
+Date
+----
+
+2026-04-05
+
 Context and motivation
 ----------------------
 

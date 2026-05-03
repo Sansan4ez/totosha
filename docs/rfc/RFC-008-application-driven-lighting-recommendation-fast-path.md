@@ -1,6 +1,16 @@
 RFC-008 Application-Driven Lighting Recommendation Fast Path
 =============================================================
 
+Status
+------
+
+Proposed
+
+Date
+----
+
+2026-04-05
+
 Context and motivation
 ----------------------
 

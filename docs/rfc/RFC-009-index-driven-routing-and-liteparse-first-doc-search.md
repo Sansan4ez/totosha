@@ -1,6 +1,16 @@
 RFC-009 Index-Driven Routing And LiteParse-First Doc Search
 ===========================================================
 
+Status
+------
+
+Proposed
+
+Date
+----
+
+2026-04-05
+
 Context and motivation
 ----------------------
 

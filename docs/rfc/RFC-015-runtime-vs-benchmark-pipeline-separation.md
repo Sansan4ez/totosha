@@ -1,6 +1,16 @@
 RFC-015 Runtime vs Benchmark Pipeline Separation
 ================================================
 
+Status
+------
+
+Proposed
+
+Date
+----
+
+2026-04-08
+
 Context and motivation
 ----------------------
 
