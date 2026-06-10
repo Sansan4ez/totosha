@@ -1,0 +1,23 @@
+{
+  "status": "ok",
+  "source": "repo_inbox",
+  "repo_root": "/home/admin/totosha",
+  "inbox": "/home/admin/totosha/doc-corpus/inbox",
+  "result_count": 1,
+  "counts": {
+    "ingested": 1,
+    "duplicate": 0,
+    "rejected": 0,
+    "skipped": 0
+  },
+  "results": [
+    {
+      "status": "ingested",
+      "document_id": "doc_d535db29801e363a",
+      "sha256": "d535db29801e363afbb46eb12e99a9316fceb348abe475945b5a9eb829a28d20",
+      "relative_path": "part_440.1325800.2023.doc",
+      "metadata_present": true
+    }
+  ],
+  "generated_at": "2026-04-09T18:47:06Z"
+}

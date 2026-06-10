@@ -1,3 +1,5 @@
+name: totosha
+
 services:
   # ============ PROXY - holds all API secrets ============
   proxy:
@@ -10,17 +12,31 @@ services:
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - LOG_RAW=${LOG_RAW:-false}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=proxy
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     volumes:
       - ./workspace/_shared:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - agent-net
+      - cliproxy-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     secrets:
       - base_url
       - api_key
       - zai_api_key
       - model_name
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3200/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3200/ready')"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -31,17 +47,68 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # ============ CLIPROXYAPI - Local OAuth proxy (Codex/Claude/Gemini) ============
+  cli-proxy-api:
+    build: ../CLIProxyAPI-fork
+    image: eceasy/cli-proxy-api:latest
+    container_name: cli-proxy-api
+    user: "${CLI_PROXY_UID:-1001}:${CLI_PROXY_GID:-1001}"
+    restart: unless-stopped
+    profiles:
+      - cliproxy
+    # Local-only bind for Web UI + local testing. Use SSH tunnel for remote access.
+    ports:
+      - "127.0.0.1:8317:8317"
+    volumes:
+      - ../CLIProxyAPI-fork/config.yaml:/CLIProxyAPI/config.yaml
+      - ../CLIProxyAPI-fork/auths:/CLIProxyAPI/auths
+      - ../CLIProxyAPI-fork/static:/CLIProxyAPI/static
+      - ../CLIProxyAPI-fork/logs:/CLIProxyAPI/logs
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - cliproxy-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
   # ============ TOOLS API - Single source of truth for tools ============
   tools-api:
-    build: ./tools-api
+    build:
+      context: ./tools-api
+      args:
+        BUILD_GIT_SHA: ${BUILD_GIT_SHA:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     container_name: tools-api
     restart: unless-stopped
+    depends_on:
+      proxy:
+        condition: service_healthy
+      corp-db:
+        condition: service_healthy
+      corp-db-migrator:
+        condition: service_completed_successfully
     # Uncomment to expose port (set TOOLS_API_PORT in .env):
     # ports:
     #   - "${TOOLS_API_PORT:-8100}:8100"
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - WORKSPACE_ROOT=/workspace
+      - PROXY_URL=http://proxy:3200/v1
+      - CORP_DB_STATEMENT_TIMEOUT_MS=${CORP_DB_STATEMENT_TIMEOUT_MS:-10000}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=tools-api
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+    secrets:
+      - corp_db_ro_dsn
     volumes:
       - ./workspace/_shared:/data
       - ./workspace:/workspace:ro  # Read-only access to scan for skills
@@ -52,12 +119,136 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 90s
     deploy:
       resources:
         limits:
           cpus: '0.3'
           memory: 192M
+
+  # ============ CORP DB - Internal PostgreSQL with pgvector ============
+  corp-db:
+    build: ./db
+    container_name: corp-db
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - POSTGRES_DB=${CORP_DB_NAME:-corp_pg_db}
+      - POSTGRES_USER=${CORP_DB_ADMIN_USER:-postgres}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+    secrets:
+      - postgres_password
+      - corp_db_rw_dsn
+      - corp_db_ro_dsn
+    volumes:
+      - corp-db-data:/var/lib/postgresql/data
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CORP_DB_ADMIN_USER:-postgres} -d ${CORP_DB_NAME:-corp_pg_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # ============ CORP DB MIGRATOR - idempotent live schema/data upgrades ============
+  corp-db-migrator:
+    build:
+      context: ./db
+      dockerfile: worker.Dockerfile
+    container_name: corp-db-migrator
+    restart: "no"
+    depends_on:
+      corp-db:
+        condition: service_healthy
+    command: ["--sources-dir", "/db", "ensure-rfc026"]
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - CORP_DB_NAME=${CORP_DB_NAME:-corp_pg_db}
+      - CORP_DB_ADMIN_USER=${CORP_DB_ADMIN_USER:-postgres}
+      - CORP_DB_ADMIN_HOST=corp-db
+      - OTEL_SERVICE_NAME=corp-db-migrator
+    secrets:
+      - postgres_password
+    volumes:
+      - ./db:/db:ro
+    networks:
+      - agent-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ============ CORP DB WORKER - Operator-only rebuild flow ============
+  corp-db-worker:
+    build:
+      context: ./db
+      dockerfile: worker.Dockerfile
+    container_name: corp-db-worker
+    profiles:
+      - operator
+    depends_on:
+      proxy:
+        condition: service_healthy
+      corp-db:
+        condition: service_healthy
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - PROXY_URL=http://proxy:3200/v1
+      - CORP_DB_RW_STATEMENT_TIMEOUT_MS=${CORP_DB_RW_STATEMENT_TIMEOUT_MS:-120000}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=corp-db-worker
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+    secrets:
+      - corp_db_rw_dsn
+    volumes:
+      - ./workspace/_shared:/data:ro
+    networks:
+      - agent-net
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ============ DOC WORKER - Operator-only document ingestion/normalization ============
+  doc-worker:
+    build:
+      context: .
+      dockerfile: doc-worker/Dockerfile
+    container_name: doc-worker
+    profiles:
+      - operator
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - DOC_REPO_ROOT=/repo
+      - CORP_DOCS_ROOT=/data/corp_docs
+      - DOC_SEARCH_OCR_ENABLED=0
+      - DOC_SEARCH_COMMAND_TIMEOUT_S=120
+      - DOC_SEARCH_MAX_MEMORY_MB=900
+      - DOC_SEARCH_ENABLE_LEGACY_OFFICE=1
+    volumes:
+      - .:/repo:ro
+      - ./workspace/_shared:/data
+    networks:
+      - agent-net
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
 
   # ============ MCP TEST SERVER ============
   mcp-test:
@@ -91,6 +282,13 @@ services:
       - DATA_DIR=/data
       - CORE_URL=http://core:4000
       - BOT_URL=http://bot:4001
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=scheduler
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     volumes:
       - ./workspace/_shared:/data  # Persistent task storage
     networks:
@@ -122,7 +320,7 @@ services:
       - TOOL_TIER=core
       # OAuth handled via Admin UI with user-configured credentials
     volumes:
-      - ./workspace/_shared/google_creds:/app/store_creds
+      - google-workspace-creds:/app/store_creds
     networks:
       - agent-net
     healthcheck:
@@ -161,12 +359,15 @@ services:
 
   # ============ CORE - Agent + Tools + HTTP API ============
   core:
-    build: ./core
+    build:
+      context: ./core
+      args:
+        BUILD_GIT_SHA: ${BUILD_GIT_SHA:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     container_name: core
     restart: unless-stopped
-    # Uncomment to expose port (set CORE_PORT in .env):
-    # ports:
-    #   - "${CORE_PORT:-4000}:4000"
+    ports:
+      - "127.0.0.1:${CORE_PORT:-4000}:4000"
     depends_on:
       proxy:
         condition: service_healthy
@@ -181,6 +382,7 @@ services:
       - SCHEDULER_URL=http://scheduler:8400
       - WORKSPACE=/workspace
       - WORKSPACE_HOST_PATH=${PWD}/workspace
+      - SANDBOX_NETWORK=${SANDBOX_NETWORK:-totosha_agent-net}
       - EXPOSED_PORTS=5000-5099
       - AGENT_CWD=/workspace
       - API_PORT=4000
@@ -189,13 +391,25 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - ADMIN_USER_ID=${ADMIN_USER_ID:-809532582}
       - ACCESS_MODE=${ACCESS_MODE:-public}
+      - MODEL_NAME=${MODEL_NAME:-gpt-5.4}
+      - DOC_SEARCH_OCR_ENABLED=0
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=core
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
+      - AGENT_WEB_SESSION_TTL_S=${AGENT_WEB_SESSION_TTL_S:-900}
     secrets:
       - model_name
     volumes:
       - ./workspace:/workspace
       - ./workspace/_shared:/data  # Skills, shared data, and admin config
+      - ./db:/db:ro
+      - ./docs:/docs:ro
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./workspace/_shared/google_creds:/data/google_creds  # Share Google credentials with MCP
+      - google-workspace-creds:/data/google_creds  # Share Google credentials with MCP
     networks:
       - agent-net
     cap_drop:
@@ -223,7 +437,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
 
   # ============ BOT - Telegram Bot (Telegraf) ============
   bot:
@@ -251,6 +465,13 @@ services:
       - ASR_MAX_DURATION=${ASR_MAX_DURATION:-120}
       - ASR_TIMEOUT=${ASR_TIMEOUT:-60}
       - ASR_LANGUAGE=${ASR_LANGUAGE:-ru}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      - OTEL_SERVICE_NAME=bot
+      - OTEL_SERVICE_NAMESPACE=${OTEL_SERVICE_NAMESPACE:-totosha}
+      - OTEL_DEPLOYMENT_ENVIRONMENT=${OTEL_DEPLOYMENT_ENVIRONMENT:-local}
+      - OTEL_TRACES_SAMPLER=${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}
+      - OTEL_TRACES_SAMPLER_ARG=${OTEL_TRACES_SAMPLER_ARG:-1.0}
     secrets:
       - telegram_token
       - model_name
@@ -338,6 +559,70 @@ services:
           cpus: '0.2'
           memory: 128M
 
+  # ============ AGENT-WEB - Embedded iframe widget ============
+  agent-web:
+    build:
+      context: ./agent-web
+      args:
+        AGENT_WEB_ALLOWED_FRAME_ANCESTORS: ${AGENT_WEB_ALLOWED_FRAME_ANCESTORS:-'self' https://ladzavod.ru https://www.ladzavod.ru}
+    container_name: agent-web
+    restart: unless-stopped
+    expose:
+      - "3003"
+    depends_on:
+      core:
+        condition: service_healthy
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - CORE_API_URL=http://core:4000
+      - AGENT_WEB_SESSION_TTL_S=${AGENT_WEB_SESSION_TTL_S:-900}
+      - AGENT_WEB_MAX_ANON_SESSIONS=${AGENT_WEB_MAX_ANON_SESSIONS:-256}
+      - AGENT_WEB_MAX_ANON_SESSIONS_PER_IP=${AGENT_WEB_MAX_ANON_SESSIONS_PER_IP:-4}
+      - AGENT_WEB_ALLOWED_FRAME_ANCESTORS=${AGENT_WEB_ALLOWED_FRAME_ANCESTORS:-'self' https://ladzavod.ru https://www.ladzavod.ru}
+      - NEXT_PUBLIC_AGENT_WEB_SSE=${NEXT_PUBLIC_AGENT_WEB_SSE:-1}
+    networks:
+      - agent-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+    healthcheck:
+      test: ["CMD-SHELL", "IP=$$(hostname -i | awk '{print $$1}'); wget -qO- http://$$IP:3003/api/web/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+
+  # ============ CADDY - public reverse proxy for embedded web widget ============
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - agent-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 192M
+
 # ============ SECRETS ============
 secrets:
   telegram_token:
@@ -362,8 +647,25 @@ secrets:
     file: ./secrets/model_name.txt
   admin_password:
     file: ./secrets/admin_password.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  corp_db_rw_dsn:
+    file: ./secrets/corp_db_rw_dsn.txt
+  corp_db_ro_dsn:
+    file: ./secrets/corp_db_ro_dsn.txt
+
+volumes:
+  corp-db-data:
+  google-workspace-creds:
+  caddy_data:
+  caddy_config:
 
 networks:
   agent-net:
+    driver: bridge
+    internal: false
+
+  # Dedicated network for CLIProxyAPI (only proxy + cli-proxy-api should join)
+  cliproxy-net:
     driver: bridge
     internal: false

@@ -38,6 +38,7 @@ class Config:
     
     # Messages
     max_length: int = 4000
+    send_timeout: float = 20.0
     
     # Bot behavior
     typing_interval: float = 4.0

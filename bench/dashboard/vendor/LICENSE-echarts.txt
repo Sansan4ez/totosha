@@ -1,0 +1,15 @@
+Apache ECharts (echarts.min.js)
+===============================
+
+This dashboard vendors Apache ECharts for offline / firewall-friendly usage.
+
+- Project: Apache ECharts
+- Version: 5.6.0
+- License: Apache License 2.0
+
+Source package:
+  echarts@5.6.0 (dist/echarts.min.js)
+
+Full license text:
+  https://www.apache.org/licenses/LICENSE-2.0
+

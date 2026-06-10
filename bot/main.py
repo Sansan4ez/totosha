@@ -5,10 +5,12 @@ Entry point - orchestrates all modules
 """
 
 import asyncio
+import logging
 from aiogram import types
 from aiohttp import web
 
 from config import TELEGRAM_TOKEN, CORE_URL, BOT_PORT, CONFIG
+from observability import setup_observability
 import state
 from state import bot, dp
 from server import create_http_app
@@ -17,10 +19,13 @@ from thoughts import start_thoughts_task
 # Import handlers to register them with dispatcher
 import handlers  # noqa: F401
 
+setup_observability("bot")
+logger = logging.getLogger("bot")
+
 
 async def main():
     if not TELEGRAM_TOKEN:
-        print("Missing TELEGRAM_TOKEN")
+        logger.error("Missing TELEGRAM_TOKEN")
         return
     
     # Get bot info
@@ -28,16 +33,11 @@ async def main():
     state.bot_username = me.username or ""
     state.bot_id = me.id
     
-    print("")
-    print("=" * 50)
-    print("LocalTopSH Bot (Python)")
-    print("=" * 50)
-    print(f"Bot: @{state.bot_username} ({state.bot_id})")
-    print(f"Core: {CORE_URL}")
-    print(f"HTTP: http://0.0.0.0:{BOT_PORT}")
-    print(f"Max concurrent: {CONFIG.max_concurrent}")
-    print("=" * 50)
-    print("")
+    logger.info("LocalTopSH Bot (Python)")
+    logger.info("Bot: @%s (%s)", state.bot_username, state.bot_id)
+    logger.info("Core: %s", CORE_URL)
+    logger.info("HTTP: http://0.0.0.0:%s", BOT_PORT)
+    logger.info("Max concurrent: %s", CONFIG.max_concurrent)
     
     # Set commands
     await bot.set_my_commands([
@@ -52,14 +52,14 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", BOT_PORT)
     await site.start()
-    print(f"[bot] HTTP server on http://0.0.0.0:{BOT_PORT}")
+    logger.info("HTTP server on http://0.0.0.0:%s", BOT_PORT)
     
     # Start autonomous thoughts
     thoughts_task = start_thoughts_task()
-    print(f"[bot] Thoughts task started")
+    logger.info("Thoughts task started")
     
     # Start polling
-    print(f"[bot] Started, connecting to core at {CORE_URL}")
+    logger.info("Started, connecting to core at %s", CORE_URL)
     await dp.start_polling(bot)
 
 

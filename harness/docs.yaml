@@ -1,0 +1,17 @@
+version: 1
+entrypoint: docs/index.md
+domain_indexes:
+  architecture: docs/architecture/index.md
+  operations: docs/operations/index.md
+  requirements: docs/requirements/index.md
+  plans: docs/plans/index.md
+  generated: docs/generated/index.md
+  specs: specs/index.md
+generated_dir: docs/generated
+service_hub_dir: docs/services
+c4:
+  l1: docs/architecture/c4/l1-system-context.md
+  l2: docs/architecture/c4/l2-containers.md
+  l3_dir: docs/architecture/c4/services
+rules:
+  require_reachability: false

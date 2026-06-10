@@ -1,0 +1,164 @@
+{
+    "mountingTypes": [
+        {
+            "id": 34,
+            "name": "консольное",
+            "mark": "LAD LED K",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 35,
+            "name": "регулируемая консоль",
+            "mark": "LAD LED KR",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 36,
+            "name": "П-образная лира",
+            "mark": "LAD LED L",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 37,
+            "name": "П-образная лира для установки на трос через рым-болт",
+            "mark": "LAD LED LEB",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 38,
+            "name": "П-образная лира для установки на тросе",
+            "mark": "LAD LED LC",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 39,
+            "name": "крепление на цепях по спецзаказу",
+            "mark": "LAD LED LCH",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 40,
+            "name": "крепление на цепях по спецзаказу LCH1",
+            "mark": "LAD LED LCH1",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 41,
+            "name": "карабин",
+            "mark": "LAD LED LCB",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 42,
+            "name": "вертикальная лира по спецзаказу",
+            "mark": "LAD LED VL",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 43,
+            "name": "косая лира по спецзаказу",
+            "mark": "LAD LED KL",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 44,
+            "name": "двутавр по спецзаказу",
+            "mark": "LAD LED 7UKL",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 45,
+            "name": "крепление на жесткую поперечину",
+            "mark": "LAD LED ZD",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 46,
+            "name": "крепление дюбель-гвоздь",
+            "mark": "LAD LED DG",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 47,
+            "name": "П-образная лира для установки на стене",
+            "mark": "LAD LED L-WALL",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 48,
+            "name": "П-образная лира для установки на потолок",
+            "mark": "LAD LED L-CEILING",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 49,
+            "name": "крепление на рым-болт",
+            "mark": "LAD LED RB",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 50,
+            "name": "накладной корпус",
+            "mark": "NL Nova N",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 51,
+            "name": "установка на тросе по спецзаказу",
+            "mark": "NL Nova NT",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 52,
+            "name": "встриваемый корпус",
+            "mark": "NL Nova V",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        },
+        {
+            "id": 53,
+            "name": "накладной корпус NL VEGA",
+            "mark": "NL VEGA N",
+            "description": null,
+            "image_url": null,
+            "url": "https://ladzavod.ru/download/katalog-kreplenij"
+        }
+    ]
+}

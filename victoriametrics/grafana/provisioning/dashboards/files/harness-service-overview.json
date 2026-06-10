@@ -1,0 +1,199 @@
+{
+  "uid": "harness-service-overview",
+  "title": "Harness Service Overview",
+  "schemaVersion": 39,
+  "version": 5,
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": {
+          "type": "victoriametrics-metrics-datasource",
+          "uid": "victoriametrics"
+        },
+        "query": "label_values(http_server_duration_milliseconds_count, service_name)",
+        "current": {
+          "text": "tools-api",
+          "value": "tools-api"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "HTTP Throughput",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=\"$service\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "HTTP p95 Latency",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route, method, status) (rate(http_server_duration_milliseconds_bucket{service_name=\"$service\"}[5m])))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "HTTP 5xx Ratio",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=\"$service\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_duration_milliseconds_count{service_name=\"$service\"}[5m])), 0.0001)"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Corp DB Search p95",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, kind, profile, status) (rate(corp_db_search_duration_milliseconds_bucket{service_name=\"tools-api\"}[5m])))"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Corp DB Search Phases",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (phase, status) (rate(corp_db_search_phase_duration_milliseconds_count{service_name=\"tools-api\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Core vs Tools Route p95",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{service_name=\"core\",route=\"/api/chat\"}[5m])))",
+          "legendFormat": "core /api/chat"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_duration_milliseconds_bucket{service_name=\"tools-api\",route=\"/corp-db/search\"}[5m])))",
+          "legendFormat": "tools-api /corp-db/search"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Telemetry Pipeline Checks",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=\"$service\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Retrieval Family And Leaf Traffic",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (selected_business_family_id, selected_leaf_route_id, route_stage, route_arg_validation_status) (rate(retrieval_route_leaf_requests_total{service_name=\"core\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Tool Executions By Leaf",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool_name, selected_business_family_id, selected_leaf_route_id, route_stage, used_fallback_scope) (rate(tool_executions_total{service_name=\"core\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Incident Stage Traffic",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (selected_business_family_id, selected_leaf_route_id, route_stage) (rate(retrieval_route_stage_total{service_name=\"core\",selected_leaf_route_id=~\"company_general|application_recommendation|portfolio_projects_by_sphere\"}[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Proxy User Path p95",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_server_duration_milliseconds_bucket{service_name=\"proxy\",route=~\"/transcribe|/v1/.*\",status!~\"5..\"}[5m])))"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Proxy User Path 5xx Ratio",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(http_server_duration_milliseconds_count{service_name=\"proxy\",route=~\"/transcribe|/v1/.*\",status=~\"5..\"}[5m])) / clamp_min(sum by (route) (rate(http_server_duration_milliseconds_count{service_name=\"proxy\",route=~\"/transcribe|/v1/.*\"}[5m])), 0.0001)"
+        }
+      ]
+    }
+  ]
+}

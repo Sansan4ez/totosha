@@ -192,18 +192,17 @@ class SkillsManager:
     
     def get_skill_mentions(self) -> str:
         """Get skill mentions for system prompt (name + description only)
-        
-        Agent should use list_directory/read_file to load full instructions when needed.
-        Skills are available at /data/skills/{name}/ or user workspace /workspace/{user_id}/skills/
+
+        Skills stay visible in runtime, but they are a secondary capability layer.
+        High-level corporate tools should be preferred when they already fit the request.
         """
         if not self.skills:
             return ""
         
         lines = ["## Available Skills", ""]
-        lines.append("When user requests something that matches a skill, load its instructions:")
-        lines.append("1. `list_directory` on `/data/skills/{skill_name}/`")
-        lines.append("2. `read_file` the SKILL.md or relevant .md files")
-        lines.append("3. Follow the loaded instructions")
+        lines.append("Use a skill when the task genuinely needs specialized capability or no standard corporate tool fits.")
+        lines.append("Do not start ordinary company retrieval by browsing skill files.")
+        lines.append("If a skill is needed, inspect its instructions and then follow them.")
         lines.append("")
         lines.append("| Skill | Description |")
         lines.append("|-------|-------------|")

@@ -57,6 +57,7 @@ class Config:
     # Callbacks
     bot_url: str = "http://bot:4001"
     userbot_url: str = "http://userbot:8080"
+    web_enabled: bool = False
 
 
 def _load_admin_config() -> dict:
@@ -80,6 +81,23 @@ def get_agent_config(key: str, default: Any = None) -> Any:
     return agent_cfg.get(key, default)
 
 
+def get_access_mode() -> str:
+    """Return effective core access mode.
+
+    Priority: admin_config.json > env > default.
+    """
+    admin_cfg = _load_admin_config()
+    access_cfg = admin_cfg.get("access", {})
+    mode = access_cfg.get("mode")
+    if mode:
+        return mode
+
+    env_mode = os.getenv("ACCESS_MODE", "admin_only")
+    if env_mode == "admin":
+        return "admin_only"
+    return env_mode
+
+
 # Base config from env/secrets (defaults)
 _base_model = read_secret("model_name", os.getenv("MODEL_NAME", "gpt-4"))
 
@@ -91,6 +109,7 @@ CONFIG = Config(
     workspace=os.getenv("WORKSPACE", "/workspace"),
     bot_url=os.getenv("BOT_URL", "http://bot:4001"),
     userbot_url=os.getenv("USERBOT_URL", "http://userbot:8080"),
+    web_enabled=os.getenv("WEB_ENABLED", "false").lower() == "true",
 )
 
 

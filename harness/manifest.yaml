@@ -1,0 +1,32 @@
+version: 1
+services:
+- id: core
+  kind: service
+  path: core
+  compose_service: core
+  otel_service_name: core
+  health_url: http://127.0.0.1:4000/health
+- id: tools-api
+  kind: service
+  path: tools-api
+  compose_service: tools-api
+  otel_service_name: tools-api
+  health_url: http://127.0.0.1:8100/health
+- id: proxy
+  kind: service
+  path: proxy
+  compose_service: proxy
+  otel_service_name: proxy
+  health_url: http://127.0.0.1:3200/health
+- id: bot
+  kind: service
+  path: bot
+  compose_service: bot
+  otel_service_name: bot
+  health_url: http://127.0.0.1:4001/health
+- id: scheduler
+  kind: service
+  path: scheduler
+  compose_service: scheduler
+  otel_service_name: scheduler
+  health_url: http://127.0.0.1:8400/health

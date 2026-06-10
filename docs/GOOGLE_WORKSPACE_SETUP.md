@@ -134,11 +134,11 @@ docker compose restart core
 
 ### Токен истёк
 - Токены обновляются автоматически
-- При проблемах удалите credentials: `docker volume rm localtopsh_google_workspace_creds`
+- При проблемах удалите credentials volume проекта, например: `docker volume rm totosha_google-workspace-creds`
 
 ## Безопасность
 
-- OAuth токены хранятся в Docker volume `google_workspace_creds`
+- OAuth токены хранятся в Docker volume `google-workspace-creds` (в compose-проекте `totosha` это обычно `totosha_google-workspace-creds`)
 - Токены шифруются
 - Доступ только к разрешённым scope
 - Рекомендуется использовать отдельный Google аккаунт для тестирования

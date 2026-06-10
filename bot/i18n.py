@@ -21,6 +21,7 @@ STRINGS = {
         "voice_too_long": "🎤 Слишком длинное голосовое ({duration}с, макс {max}с)",
         "voice_busy": "⏳ Сервер занят, попробуй через минуту",
         "voice_transcribe_fail": "🎤 Не удалось распознать: {error}",
+        "voice_transcribe_temporary": "🎤 Временная ошибка распознавания речи на стороне сервиса. Попробуйте ещё раз или отправьте текстом.",
         "voice_empty": "🎤 Не удалось распознать речь",
         "voice_prefix": "[Голосовое сообщение, распознанный текст:]",
 
@@ -28,7 +29,7 @@ STRINGS = {
         "busy": "⏳ Сервер занят, попробуй через минуту",
         "injection": "Хорошая попытка 😏",
         "error": "❌ Ошибка: {error}",
-        "no_response": "(нет ответа)",
+        "no_response": "⏳ Сервис временно недоступен. Попробуйте ещё раз чуть позже.",
 
         # Access
         "access_denied": "🔒 Доступ запрещён",
@@ -52,6 +53,7 @@ STRINGS = {
         "voice_too_long": "🎤 Voice too long ({duration}s, max {max}s)",
         "voice_busy": "⏳ Server busy, try again in a minute",
         "voice_transcribe_fail": "🎤 Failed to transcribe: {error}",
+        "voice_transcribe_temporary": "🎤 Temporary speech recognition error on the service side. Try again or send text instead.",
         "voice_empty": "🎤 Could not recognize speech",
         "voice_prefix": "[Voice message, transcribed text:]",
 
@@ -59,7 +61,7 @@ STRINGS = {
         "busy": "⏳ Server busy, try again in a minute",
         "injection": "Nice try 😏",
         "error": "❌ Error: {error}",
-        "no_response": "(no response)",
+        "no_response": "⏳ The service is temporarily unavailable. Please try again a bit later.",
 
         # Access
         "access_denied": "🔒 Access denied",

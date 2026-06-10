@@ -24,6 +24,7 @@ SANDBOX_IMAGE = "python:3.11-slim"
 CONTAINER_PREFIX = "sandbox_"
 # WORKSPACE_HOST_PATH is the host path to mount into sandbox containers
 WORKSPACE_HOST = os.getenv("WORKSPACE_HOST_PATH", "/home/ubuntu/LocalTopSH/workspace")
+SANDBOX_NETWORK = os.getenv("SANDBOX_NETWORK", "totosha_agent-net")
 WORKSPACE_LIMIT_MB = 500
 COMMAND_TIMEOUT = 120  # seconds
 USER_INACTIVITY_TTL = 10  # minutes
@@ -163,7 +164,7 @@ async def get_or_create_container(user_id: str) -> Optional[UserContainer]:
             cpu_period=100000,
             cpu_quota=50000,  # 50% CPU
             pids_limit=100,
-            network_mode="localtopsh_agent-net",  # Same network as other services
+            network_mode=SANDBOX_NETWORK,  # Same network as core/tools services
             security_opt=["no-new-privileges"],
         )
         

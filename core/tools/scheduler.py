@@ -8,6 +8,7 @@ import os
 import aiohttp
 from logger import scheduler_logger
 from models import ToolResult, ToolContext
+from observability import inject_trace_context
 
 # Scheduler service URL
 SCHEDULER_URL = os.getenv("SCHEDULER_URL", "http://scheduler:8400")
@@ -20,7 +21,7 @@ async def _call_scheduler(method: str, path: str, json_data: dict = None) -> tup
             url = f"{SCHEDULER_URL}{path}"
             
             if method == "GET":
-                async with session.get(url, timeout=10) as resp:
+                async with session.get(url, headers=inject_trace_context(), timeout=10) as resp:
                     if resp.status == 200:
                         return True, await resp.json()
                     else:
@@ -28,7 +29,7 @@ async def _call_scheduler(method: str, path: str, json_data: dict = None) -> tup
                         return False, {"error": text}
             
             elif method == "POST":
-                async with session.post(url, json=json_data, timeout=10) as resp:
+                async with session.post(url, json=json_data, headers=inject_trace_context(), timeout=10) as resp:
                     if resp.status == 200:
                         return True, await resp.json()
                     else:
@@ -36,7 +37,7 @@ async def _call_scheduler(method: str, path: str, json_data: dict = None) -> tup
                         return False, {"error": text}
             
             elif method == "DELETE":
-                async with session.delete(url, timeout=10) as resp:
+                async with session.delete(url, headers=inject_trace_context(), timeout=10) as resp:
                     if resp.status == 200:
                         return True, await resp.json()
                     else:

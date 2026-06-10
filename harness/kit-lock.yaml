@@ -1,0 +1,23 @@
+version: 1
+kit:
+  name: repo-harness-kit
+  version: 1.0.0
+modules:
+- docs
+- observability
+- traceability
+applied_at: '2026-03-22T23:13:33Z'
+managed_files:
+  .github/workflows/harness-docs.yml: 6dd06db5f215f72f1613f44d91e7678ea285d5b019faebbcbd41401b0617ca48
+  .github/workflows/harness-observability-smoke.yml: a6a2965457b591cc84c7e60c521992e9b70e8997127bfc80aeb4575163db502b
+  .github/workflows/harness-traceability.yml: dc1defdc9fca896592cb6ca546aaa078c0cb92fbd77ec3b315d8a8afffcdf59b
+  harness/required-checks.yaml: 4661c22202d9a4ed12bcf22ebc0d5d43ce5294719c5bf45961e64d55d0a876e6
+  victoriametrics/alertmanager.yml: f2a10d2d7c9f2a4f3aec1bd1979eee2b7b91cef394bf44f3723ad1ca0122043a
+  victoriametrics/alerts/minimum-alerts.yaml: 611df124c62b2528f0767c24bee14d4792980d43ae8c46f6e4e12dcbe987acbd
+  victoriametrics/alerts/vmalert-rules.yaml: 688697d8eec3b55fb8cf052fa0f3419ea22396552e1f788e579c5da8cde53dcd
+  victoriametrics/docker-compose.yml: a4723d1d76afd2884f3f96c1239e4aba66c29880afa06ef0739fab1a53c25bac
+  victoriametrics/grafana/provisioning/dashboards/dashboards.yaml: 749a1211b9f2dec08708626fbd4c414c41e8b020e0ef339c2344e181058c77f9
+  victoriametrics/grafana/provisioning/dashboards/files/harness-service-overview.json: c5222c1dce2e7e746bb58da7e498a5a8efca33d66d6486c79a1ebd49878158bd
+  victoriametrics/grafana/provisioning/datasources/datasources.yaml: b528ee9425a53f008118cb2636a0efe6883bcb3457181c30f43c853439be0ca3
+  victoriametrics/otel-collector-config.yml: a9243ddad184ca645dcecc8a9cfadb129f76657b4957a750ab120e5fdc373a43
+  victoriametrics/smoke_test.sh: f98e9f3ab30942c38e10a71c149b01292a2a1bf5e72a14fe5522371b213dd6a3

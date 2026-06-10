@@ -1,0 +1,21 @@
+{
+  "status": "ok",
+  "source": "repo_inbox",
+  "repo_root": "/home/admin/totosha",
+  "inbox": "/home/admin/totosha/doc-corpus/inbox",
+  "result_count": 1,
+  "counts": {
+    "ingested": 0,
+    "duplicate": 0,
+    "rejected": 1,
+    "skipped": 0
+  },
+  "results": [
+    {
+      "status": "rejected",
+      "reason": "legacy_office_binary_requires_doc_worker_runtime",
+      "relative_path": "part_440.1325800.2023.doc"
+    }
+  ],
+  "generated_at": "2026-04-09T18:46:18Z"
+}

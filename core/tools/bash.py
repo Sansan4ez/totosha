@@ -5,7 +5,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
-from config import CONFIG
+from config import CONFIG, get_access_mode
 from security import check_command, sanitize_output
 from logger import tool_logger
 from models import ToolResult, ToolContext
@@ -60,10 +60,17 @@ async def tool_run_command(args: dict, ctx: ToolContext) -> ToolResult:
                 return ToolResult(True, output=output or "(empty output)")
             else:
                 return ToolResult(False, error=output)
-        
-        # Fallback to local if sandbox failed
+
+        if get_access_mode() == "public":
+            tool_logger.warning(f"Sandbox unavailable for {user_id}; local shell is disabled in public mode")
+            return ToolResult(False, error="Shell временно недоступен: в публичном режиме требуется sandbox")
+
         tool_logger.warning(f"Sandbox unavailable for {user_id}, using local execution")
-    
+
+    elif get_access_mode() == "public":
+        tool_logger.warning(f"Sandbox disabled for {user_id}; local shell is disabled in public mode")
+        return ToolResult(False, error="Shell временно недоступен: в публичном режиме требуется sandbox")
+
     # Local execution (fallback or no sandbox)
     try:
         proc = await asyncio.create_subprocess_shell(

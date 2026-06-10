@@ -1,0 +1,7 @@
+**
+!.dockerignore
+!core/
+!core/documents/
+!core/documents/**
+!doc-worker/
+!doc-worker/**

@@ -1,0 +1,637 @@
+{
+    "spheres": [
+        {
+            "name": "Промышленное освещение",
+            "url": "https://ladzavod.ru/catalog/promyshlennoe-osveshchenie",
+            "id": 1,
+            "categoriesId": [
+                {
+                    "id": 39
+                },
+                {
+                    "id": 83
+                },
+                {
+                    "id": 86
+                },
+                {
+                    "id": 81
+                },
+                {
+                    "id": 37
+                },
+                {
+                    "id": 23
+                },
+                {
+                    "id": 24
+                },
+                {
+                    "id": 25
+                },
+                {
+                    "id": 26
+                },
+                {
+                    "id": 27
+                },
+                {
+                    "id": 28
+                },
+                {
+                    "id": 29
+                },
+                {
+                    "id": 30
+                },
+                {
+                    "id": 31
+                },
+                {
+                    "id": 19
+                },
+                {
+                    "id": 20
+                },
+                {
+                    "id": 22
+                },
+                {
+                    "id": 34
+                },
+                {
+                    "id": 84
+                },
+                {
+                    "id": 82
+                },
+                {
+                    "id": 85
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 37,
+                    "position": 1
+                },
+                {
+                    "id": 34,
+                    "position": 2
+                },
+                {
+                    "id": 39,
+                    "position": 3
+                }
+            ]
+        },
+        {
+            "name": "Тяжелые условия эксплуатации",
+            "url": "https://ladzavod.ru/catalog/tyazhelye-usloviya-ekspluatacii",
+            "id": 2,
+            "categoriesId": [
+                {
+                    "id": 105
+                },
+                {
+                    "id": 102
+                },
+                {
+                    "id": 104
+                },
+                {
+                    "id": 107
+                },
+                {
+                    "id": 103
+                },
+                {
+                    "id": 32
+                },
+                {
+                    "id": 106
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 32,
+                    "position": 1
+                }
+            ]
+        },
+        {
+            "name": "Складские помещения",
+            "url": "https://ladzavod.ru/catalog/skladskie-pomeshcheniya",
+            "id": 3,
+            "categoriesId": [
+                {
+                    "id": 89
+                },
+                {
+                    "id": 87
+                },
+                {
+                    "id": 39
+                },
+                {
+                    "id": 83
+                },
+                {
+                    "id": 81
+                },
+                {
+                    "id": 110
+                },
+                {
+                    "id": 88
+                },
+                {
+                    "id": 37
+                },
+                {
+                    "id": 23
+                },
+                {
+                    "id": 24
+                },
+                {
+                    "id": 19
+                },
+                {
+                    "id": 20
+                },
+                {
+                    "id": 22
+                },
+                {
+                    "id": 34
+                },
+                {
+                    "id": 33
+                },
+                {
+                    "id": 111
+                },
+                {
+                    "id": 82
+                },
+                {
+                    "id": 108
+                },
+                {
+                    "id": 109
+                },
+                {
+                    "id": 13
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 37,
+                    "position": 1
+                },
+                {
+                    "id": 34,
+                    "position": 2
+                },
+                {
+                    "id": 39,
+                    "position": 3
+                },
+                {
+                    "id": 33,
+                    "position": 4
+                },
+                {
+                    "id": 13,
+                    "position": 5
+                }
+            ]
+        },
+        {
+            "name": "Спортивное и освещение высокой мощности",
+            "url": "https://ladzavod.ru/catalog/sportivnoe-osveshchenie",
+            "id": 6,
+            "categoriesId": [
+                {
+                    "id": 169
+                },
+                {
+                    "id": 100
+                },
+                {
+                    "id": 91
+                },
+                {
+                    "id": 90
+                },
+                {
+                    "id": 98
+                },
+                {
+                    "id": 95
+                },
+                {
+                    "id": 94
+                },
+                {
+                    "id": 101
+                },
+                {
+                    "id": 37
+                },
+                {
+                    "id": 24
+                },
+                {
+                    "id": 25
+                },
+                {
+                    "id": 26
+                },
+                {
+                    "id": 27
+                },
+                {
+                    "id": 28
+                },
+                {
+                    "id": 29
+                },
+                {
+                    "id": 30
+                },
+                {
+                    "id": 31
+                },
+                {
+                    "id": 33
+                },
+                {
+                    "id": 97
+                },
+                {
+                    "id": 93
+                },
+                {
+                    "id": 99
+                },
+                {
+                    "id": 92
+                },
+                {
+                    "id": 96
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 169,
+                    "position": 1
+                },
+                {
+                    "id": 33,
+                    "position": 2
+                },
+                {
+                    "id": 37,
+                    "position": 3
+                }
+            ]
+        },
+        {
+            "name": "РЖД",
+            "url": "https://ladzavod.ru/catalog/rzhd",
+            "id": 5,
+            "categoriesId": [
+                {
+                    "id": 68
+                },
+                {
+                    "id": 66
+                },
+                {
+                    "id": 178
+                },
+                {
+                    "id": 63
+                },
+                {
+                    "id": 64
+                },
+                {
+                    "id": 67
+                },
+                {
+                    "id": 65
+                },
+                {
+                    "id": 69
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 63,
+                    "position": 1
+                },
+                {
+                    "id": 64,
+                    "position": 2
+                }
+            ]
+        },
+        {
+            "name": "Периметральное и охранное освещение",
+            "url": "https://ladzavod.ru/catalog/perimetralnoe-i-ohrannoe-osveshchenie",
+            "id": 159,
+            "categoriesId": [
+                {
+                    "id": 168
+                },
+                {
+                    "id": 177
+                },
+                {
+                    "id": 167
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 168,
+                    "position": 1
+                },
+                {
+                    "id": 177,
+                    "position": 2
+                }
+            ]
+        },
+        {
+            "name": "Наружное, уличное и дорожное освещение",
+            "url": "https://ladzavod.ru/catalog/ulichnoe-i-dorozhnoe",
+            "id": 7,
+            "categoriesId": [
+                {
+                    "id": 161
+                },
+                {
+                    "id": 163
+                },
+                {
+                    "id": 79
+                },
+                {
+                    "id": 19
+                },
+                {
+                    "id": 20
+                },
+                {
+                    "id": 22
+                },
+                {
+                    "id": 162
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 161,
+                    "position": 1
+                },
+                {
+                    "id": 163,
+                    "position": 2
+                },
+                {
+                    "id": 162,
+                    "position": 3
+                }
+            ]
+        },
+        {
+            "name": "Офисное, торговое, ЖКХ и АБК освещение",
+            "url": "https://ladzavod.ru/catalog/ofisnoe-torgovoe-i-zhkh",
+            "id": 8,
+            "categoriesId": [
+                {
+                    "id": 14
+                },
+                {
+                    "id": 39
+                },
+                {
+                    "id": 110
+                },
+                {
+                    "id": 114
+                },
+                {
+                    "id": 179
+                },
+                {
+                    "id": 171
+                },
+                {
+                    "id": 172
+                },
+                {
+                    "id": 170
+                },
+                {
+                    "id": 111
+                },
+                {
+                    "id": 108
+                },
+                {
+                    "id": 109
+                },
+                {
+                    "id": 13
+                },
+                {
+                    "id": 112
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 14,
+                    "position": 1
+                },
+                {
+                    "id": 13,
+                    "position": 2
+                },
+                {
+                    "id": 170,
+                    "position": 3
+                }
+            ]
+        },
+        {
+            "name": "Взрывозащищенное оборудование",
+            "url": "https://ladzavod.ru/catalog/vzryvozashchishchennoe-oborudovanie",
+            "id": 9,
+            "categoriesId": [
+                {
+                    "id": 149
+                },
+                {
+                    "id": 181
+                },
+                {
+                    "id": 155
+                },
+                {
+                    "id": 184
+                },
+                {
+                    "id": 182
+                },
+                {
+                    "id": 146
+                },
+                {
+                    "id": 186
+                },
+                {
+                    "id": 156
+                },
+                {
+                    "id": 185
+                },
+                {
+                    "id": 183
+                },
+                {
+                    "id": 147
+                },
+                {
+                    "id": 187
+                },
+                {
+                    "id": 188
+                },
+                {
+                    "id": 150
+                },
+                {
+                    "id": 120
+                },
+                {
+                    "id": 180
+                },
+                {
+                    "id": 121
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 120,
+                    "position": 1
+                },
+                {
+                    "id": 121,
+                    "position": 2
+                },
+                {
+                    "id": 146,
+                    "position": 3
+                },
+                {
+                    "id": 147,
+                    "position": 4
+                }
+            ]
+        },
+        {
+            "name": "Низковольтное оборудование",
+            "url": "https://ladzavod.ru/catalog/nizkovoltnoe-oborudovanie",
+            "id": 10,
+            "categoriesId": [
+                {
+                    "id": 75
+                },
+                {
+                    "id": 147
+                },
+                {
+                    "id": 172
+                },
+                {
+                    "id": 170
+                },
+                {
+                    "id": 74
+                },
+                {
+                    "id": 121
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 74,
+                    "position": 1
+                },
+                {
+                    "id": 121,
+                    "position": 2
+                },
+                {
+                    "id": 147,
+                    "position": 3
+                }
+            ]
+        },
+        {
+            "name": "Светильники специального назначения",
+            "url": "https://ladzavod.ru/catalog/svetilniki-specialnogo-naznacheniya",
+            "id": 11,
+            "categoriesId": [
+                {
+                    "id": 164
+                },
+                {
+                    "id": 190
+                },
+                {
+                    "id": 189
+                },
+                {
+                    "id": 166
+                },
+                {
+                    "id": 165
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 164,
+                    "position": 1
+                },
+                {
+                    "id": 165,
+                    "position": 2
+                },
+                {
+                    "id": 166,
+                    "position": 3
+                }
+            ]
+        },
+        {
+            "name": "Архитектурное освещение",
+            "url": "https://ladzavod.ru/catalog/arhitekturnoe-osveshchenie",
+            "id": 12,
+            "categoriesId": [
+                {
+                    "id": 191
+                }
+            ],
+            "curatedCategoryIds": [
+                {
+                    "id": 191,
+                    "position": 1
+                }
+            ]
+        }
+    ]
+}

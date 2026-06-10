@@ -1,0 +1,6 @@
+functional_requirements:
+- id: FR-001
+  title: Repository docs baseline
+  owners:
+  - repo-harness-kit
+  notes: Bootstrap placeholder requirement when no HTTP service is present.

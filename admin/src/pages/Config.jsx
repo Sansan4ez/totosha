@@ -1309,6 +1309,7 @@ function Config() {
                 {asrHealth?.status === 'ready' ? t('config.asr.online') : asrHealth?.status === 'disabled' ? t('config.asr.disabled_status') : t('config.asr.offline')}
               </span>
               {asrHealth?.api_type && <span style={{ color: '#888', marginLeft: '12px' }}>Type: {asrHealth.api_type}</span>}
+              {asrHealth?.backend_mode && <span style={{ color: '#888', marginLeft: '12px' }}>Backend: {asrHealth.backend_mode}</span>}
               {asrHealth?.model_name && <span style={{ color: '#888', marginLeft: '12px' }}>Model: {asrHealth.model_name}</span>}
               {asrHealth?.device && <span style={{ color: '#888', marginLeft: '12px' }}>Device: {asrHealth.device}</span>}
               {asrHealth?.error && <span style={{ color: '#f66', marginLeft: '12px' }}>{asrHealth.error}</span>}
@@ -1321,6 +1322,21 @@ function Config() {
               >
                 {asrTesting ? '...' : '🔌 Тест подключения'}
               </button>
+              {asrHealth?.note && (
+                <div style={{ marginTop: '10px', fontSize: '12px', color: '#cfe8cf' }}>
+                  {asrHealth.note}
+                </div>
+              )}
+              {asrHealth?.operator_note && (
+                <div style={{ marginTop: '6px', fontSize: '12px', color: '#f0d8a8' }}>
+                  {asrHealth.operator_note}
+                </div>
+              )}
+              {asrHealth?.recommended_default && (
+                <div style={{ marginTop: '6px', fontSize: '12px', color: '#d6e7ff' }}>
+                  {asrHealth.recommended_default}
+                </div>
+              )}
             </div>
 
             <div className="toggle">
@@ -1354,6 +1370,7 @@ function Config() {
               <div style={{ display: 'flex', gap: '8px' }}>
                 {[
                   { value: 'openai', label: '🔌 OpenAI Compatible', desc: '/v1/audio/transcriptions' },
+                  { value: 'chatgpt', label: '💬 ChatGPT', desc: '/transcribe' },
                   { value: 'faster-whisper', label: '⚡ Faster-Whisper', desc: '/api/v1/transcribe' }
                 ].map(type => (
                   <button
@@ -1370,11 +1387,11 @@ function Config() {
                 ))}
               </div>
               <p style={{ color: '#888', fontSize: '12px', marginTop: '6px' }}>
-                OpenAI Compatible for remote Whisper servers (with Bearer token). Faster-Whisper for local servers.
+                OpenAI Compatible uses /v1/audio/transcriptions. ChatGPT uses /transcribe. Faster-Whisper uses /api/v1/transcribe.
               </p>
             </div>
 
-            {asrConfig.api_type === 'openai' && (
+            {(asrConfig.api_type === 'openai' || asrConfig.api_type === 'chatgpt') && (
               <div className="form-group">
                 <label className="form-label">API Key (Bearer Token)</label>
                 <input

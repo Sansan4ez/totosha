@@ -5,6 +5,7 @@ import logging
 from aiohttp import web
 from aiogram.types import FSInputFile, BufferedInputFile
 
+from observability import metrics_handler, observability_middleware
 from state import bot, resolve_username, get_all_usernames
 from formatters import md_to_html
 
@@ -237,8 +238,9 @@ async def handle_known_users(request):
 
 def create_http_app() -> web.Application:
     """Create HTTP application"""
-    app = web.Application()
+    app = web.Application(middlewares=[observability_middleware])
     app.router.add_get("/health", handle_health)
+    app.router.add_get("/metrics", metrics_handler)
     app.router.add_post("/send", handle_send)
     app.router.add_post("/send_file", handle_send_file)
     app.router.add_post("/send_dm", handle_send_dm)
