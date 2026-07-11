@@ -1,0 +1,71 @@
+route_id: corp_kb.company_common
+route_family: corp_kb.company_common
+route_kind: corp_table
+authority: primary
+title: Company common knowledge base
+summary: Source-scoped company KB for contacts, website, legal details, address, service, warranty, canonical
+  series overviews, and general company facts.
+topics:
+- company
+- contacts
+- legal
+- certification
+- quality
+- series
+keywords:
+- сайт
+- адрес
+- контакты
+- телефон
+- email
+- e-mail
+- сертификат
+- сертификаты
+- качество
+- комплектующие
+- реквизиты
+- инн
+- кпп
+- огрн
+- гарантия
+- сервис
+- о компании
+- год основания
+- соцсети
+- сертификация
+- декларации
+- экспертиза
+- надежность
+- серии светильников
+- линейки светильников
+- описание серий
+- все серии
+patterns:
+- какие есть сертификаты
+- какие используются комплектующие
+- как контролируется качество
+- официальный сайт
+- год основания
+- общая информация о компании
+- расскажи о компании
+- контакты компании
+- подскажи контакты компании
+- реквизиты компании
+- о самой компании
+- какие сертификаты
+- какая сертификация
+- какие комплектующие
+- какие у вас есть серии светильников
+- в общей базе есть описание всех серий
+- какие серии доступны
+executor: corp_db_search
+executor_args_template:
+  kind: hybrid_search
+  profile: kb_route_lookup
+  knowledge_route_id: corp_kb.company_common
+  source_files:
+  - common_information_about_company.md
+fallback_route_ids:
+- corp_kb.series_description
+observability_labels:
+  scope: source_file

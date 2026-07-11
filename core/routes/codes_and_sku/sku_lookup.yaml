@@ -1,0 +1,45 @@
+route_id: corp_db.sku_lookup
+route_family: corp_db.sku_lookup
+route_kind: corp_table
+authority: primary
+title: Codes and SKU lookup
+summary: Structured codes route for reverse code-to-lamp lookup and broader code-family questions.
+topics:
+- catalog
+- sku
+- codes
+keywords:
+- etm
+- етм
+- oracl
+- оракл
+- sku
+- артикул
+- код
+- код номенклатуры
+- найди по коду
+- что это за модель по коду
+patterns:
+- найди по etm
+- найди по етм
+- найди по oracl
+- найди по оракл
+- найди sku
+- по артикулу
+- что это за модель по коду
+- найди модель по коду
+executor: corp_db_search
+executor_args_template:
+  kind: lamp_code_lookup
+  lookup_direction: by_code
+argument_hints:
+  lookup_direction: Use by_code when the user starts from ETM/ORACL/article/SKU and wants the lamp or
+    model.
+  code_system: Use etm, oracl, sku, article, catalog_identifier, or mixed when the code family is explicit.
+  name: Use the lamp or model name when the user asks broadly about codes for a product family and the
+    exact code system is unclear.
+  etm: Extract the ETM code as a short free string when present.
+  oracl: Extract the ORACL code as a short free string when present.
+  query: Use the original identifier text when the code system is unclear.
+observability_labels:
+  scope: sku_lookup

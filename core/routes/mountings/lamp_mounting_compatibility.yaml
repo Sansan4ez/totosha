@@ -1,0 +1,31 @@
+route_id: corp_db.lamp_mounting_compatibility
+route_family: corp_db.lamp_mounting_compatibility
+route_kind: corp_table
+authority: primary
+title: Lamp and mounting compatibility
+summary: Structured route for checking compatibility between lamp categories/models and mounting types.
+topics:
+- catalog
+- compatibility
+- lamp_mountings
+- mounting_type
+keywords:
+- совместимость креплений
+- совместимо с креплением
+- подходит крепление
+- крепление подходит
+- lamp_mountings
+patterns:
+- какое крепление подходит
+- совместимость с креплением
+- подходит ли крепление
+executor: corp_db_search
+executor_args_template:
+  kind: category_mountings
+  fuzzy: true
+argument_hints:
+  category: Extract category/model family when available.
+  mounting_type: Extract mounting type as a free string.
+  query: Keep the compatibility wording for fuzzy resolution.
+observability_labels:
+  scope: mounting_compatibility

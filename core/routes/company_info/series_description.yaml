@@ -1,0 +1,46 @@
+route_id: corp_kb.series_description
+route_family: corp_kb.company_common
+route_kind: corp_table
+authority: primary
+title: Series descriptions and lineup overview
+summary: Dedicated company-KB leaf route for broad series overviews and series-level descriptions.
+topics:
+- series
+- catalog
+- company
+keywords:
+- серии светильников
+- какие серии
+- какие есть серии
+- описание серий
+- линейки светильников
+- список серий
+- nl nova
+- nl vega
+- lad led r500
+- lad led r700
+patterns:
+- какие у вас есть серии светильников
+- в общей базе есть описание всех серий
+- какие серии доступны
+- опиши серию
+- расскажи про серию
+executor: corp_db_search
+executor_args_template:
+  kind: hybrid_search
+  profile: kb_route_lookup
+  knowledge_route_id: corp_kb.company_common
+  source_files:
+  - common_information_about_company.md
+  topic_facets:
+  - series
+argument_hints:
+  series: Choose one canonical business series when the user asks about a specific series; omit it for
+    broad lineup questions.
+  query: Keep the original series wording so the KB search can answer either broad lineup or a specific
+    series description.
+fallback_route_ids:
+- corp_kb.company_common
+observability_labels:
+  scope: source_file
+  specialization: series_description

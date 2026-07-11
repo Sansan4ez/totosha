@@ -667,6 +667,13 @@ def _normalize_fallback_policy(route: dict[str, Any]) -> dict[str, Any]:
         "same_family_route_ids": same_family_route_ids,
         "cross_family_route_ids": explicit_cross_family_ids,
         "allow_cross_family": bool(explicit_cross_family_ids),
+        # RFC-028 catalog-check opt-out: a route may share an identical KB scope with a sibling
+        # (same knowledge_route_id + source_files) yet deliberately not offer it as a fallback
+        # (e.g. a narrower specialization where the broader sibling wouldn't add evidence).
+        # Declaring this explicitly, with a reason, lets documents/route_catalog_check.py
+        # distinguish a documented design choice from an overlooked fallback declaration.
+        "no_sibling_fallback": bool(raw_policy.get("no_sibling_fallback")),
+        "no_sibling_fallback_reason": str(raw_policy.get("no_sibling_fallback_reason") or ""),
     }
 
 

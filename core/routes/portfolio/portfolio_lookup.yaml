@@ -1,0 +1,45 @@
+route_id: corp_db.portfolio_lookup
+route_family: corp_db.portfolio_lookup
+route_kind: corp_table
+authority: secondary
+title: Portfolio object lookup
+summary: Named portfolio object lookup for concrete customer, object, terminal, warehouse, bridge, plant,
+  or project names. Use this when the user asks about a specific realized object such as Белый Раст rather
+  than a broad project segment.
+topics:
+- portfolio
+- projects
+- objects
+- references
+- realized_projects
+keywords:
+- портфолио
+- референсы
+- кейс
+- кейсы
+- логистический центр
+- терминально-логистический центр
+- терминал
+- белый раст
+patterns:
+- расскажи подробнее про объект
+- расскажи подробнее про проект
+- расскажи про объект
+- покажи проект
+- терминально-логистический центр
+executor: corp_db_search
+executor_args_template:
+  kind: hybrid_search
+  profile: entity_resolver
+  entity_types:
+  - portfolio
+  - sphere
+  limit: 8
+argument_hints:
+  query: Use the original user wording with named object/customer/project terms.
+  entity_types: Keep locked to portfolio and sphere for portfolio entity resolution.
+fallback_route_ids:
+- corp_db.portfolio_by_sphere
+- corp_db.portfolio_examples_by_lamp
+observability_labels:
+  scope: portfolio_lookup

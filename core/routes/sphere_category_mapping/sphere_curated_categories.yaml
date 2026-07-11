@@ -1,0 +1,33 @@
+route_id: corp_db.sphere_curated_categories
+route_family: corp_db.sphere_curated_categories
+route_kind: corp_table
+authority: primary
+title: Curated Categories By Application Sphere
+summary: Structured route for user-facing application questions that returns curated display categories
+  for a resolved sphere. Use this for sphere-to-category answers; runtime expands family categories to
+  executable leaf category ids only in downstream search flows.
+topics:
+- catalog
+- sphere
+- category
+- application
+keywords:
+- сфера применения
+- область применения
+- категории для
+- для стадиона
+- для склада
+- для аэропорта
+patterns:
+- какие категории подходят для
+- категории для сферы
+- светильники для сферы
+executor: corp_db_search
+executor_args_template:
+  kind: sphere_curated_categories
+  fuzzy: true
+argument_hints:
+  sphere: Extract the application sphere as a free string and resolve it to curated display categories.
+  query: Use the user wording when the sphere requires fuzzy or alias-based resolution.
+observability_labels:
+  scope: sphere_curated_categories

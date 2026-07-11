@@ -1,0 +1,43 @@
+route_id: corp_db.sku_codes_lookup
+route_family: corp_db.sku_codes_lookup
+route_kind: corp_table
+authority: primary
+title: SKU and codes by lamp name
+summary: Structured lookup from lamp/model name to ETM, ORACL, article, and related catalog identifiers.
+topics:
+- catalog
+- sku
+- codes
+- lamp
+keywords:
+- коды модели
+- артикулы модели
+- etm код
+- etm-код
+- oracl код
+- oracl-код
+- sku модели
+- коды светильника
+patterns:
+- какие коды у модели
+- какие артикулы у светильника
+- найди etm и oracl для модели
+- какой etm-код у
+- какой oracl-код у
+executor: corp_db_search
+executor_args_template:
+  kind: lamp_code_lookup
+  lookup_direction: by_name
+argument_hints:
+  lookup_direction: Use by_name when the user starts from a lamp/model name and asks for ETM/ORACL/article/SKU
+    codes.
+  code_system: Use etm, oracl, sku, article, catalog_identifier, or mixed when the requested code family
+    is explicit.
+  name: Extract the lamp or model name whose ETM/ORACL/article codes the user wants.
+fallback_route_ids:
+- corp_db.sku_lookup
+- corp_db.catalog_lookup
+cross_family_fallback_route_ids:
+- corp_db.catalog_lookup
+observability_labels:
+  scope: sku_codes_lookup

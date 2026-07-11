@@ -1,0 +1,32 @@
+route_id: corp_db.category_lamps
+route_family: corp_db.category_lamps
+route_kind: corp_table
+authority: primary
+title: Lamps by category
+summary: Structured route for category pages and lamp lists. Exact display-category names may resolve
+  through the category tree to executable leaf category ids before lamp retrieval.
+topics:
+- catalog
+- category
+- lamp
+keywords:
+- категория
+- категории
+- линейка
+- светильники категории
+- модели в категории
+patterns:
+- какие светильники в категории
+- покажи категорию
+- модели категории
+executor: corp_db_search
+executor_args_template:
+  kind: category_lamps
+  fuzzy: true
+argument_hints:
+  category: Extract the product category name as a free string. Exact display-category names may be expanded
+    to executable leaf categories.
+  query: Keep the original category phrase for fuzzy resolution when the input is already a leaf-like
+    catalog category.
+observability_labels:
+  scope: category_lamps

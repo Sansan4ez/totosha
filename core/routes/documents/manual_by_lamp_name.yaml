@@ -1,0 +1,33 @@
+route_id: corp_db.manual_by_lamp_name
+route_family: corp_db.documents_by_lamp_name
+route_kind: corp_table
+authority: primary
+title: Manual by lamp name
+summary: Catalog-backed route for installation manuals and instructions scoped to one lamp, model, or
+  series name.
+topics:
+- documents
+- catalog
+- lamp
+- manual
+keywords:
+- инструкция
+- инструкции
+- руководство
+- manual
+- мануал
+patterns:
+- покажи инструкцию на
+- покажи руководство на
+- покажи manual для
+executor: corp_db_search
+executor_args_template:
+  kind: lamp_documents_index
+  limit: 3
+  document_type: manual
+argument_hints:
+  name: Extract the lamp, model, or series name whose instruction or manual the user wants.
+fallback_route_ids:
+- corp_db.documents_by_lamp_name
+observability_labels:
+  scope: manual_by_lamp_name

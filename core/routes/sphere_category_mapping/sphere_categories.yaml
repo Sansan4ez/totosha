@@ -1,0 +1,33 @@
+route_id: corp_db.sphere_categories
+route_family: corp_db.sphere_categories
+route_kind: corp_table
+authority: secondary
+title: Imported Categories By Application Sphere
+summary: Compatibility route for full imported sphere-category linkage. Prefer the curated sphere route
+  for user-facing application questions; keep this only for diagnostics or full linkage inspection.
+topics:
+- catalog
+- sphere
+- category
+- application
+keywords:
+- сфера применения
+- область применения
+- категории для
+- для стадиона
+- для склада
+- для аэропорта
+patterns:
+- какие категории подходят для
+- категории для сферы
+- светильники для сферы
+executor: corp_db_search
+executor_args_template:
+  kind: sphere_categories
+  fuzzy: true
+argument_hints:
+  sphere: Extract the application sphere as a free string when full imported linkage is explicitly needed.
+  query: Use the user wording when the sphere requires fuzzy resolution for diagnostic lookup.
+observability_labels:
+  scope: sphere_categories
+selector_visible: false

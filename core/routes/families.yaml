@@ -1,0 +1,25 @@
+company_info:
+  title: Company information
+  summary: General company facts, series descriptions, certificates, contacts, and source-scoped corporate
+    knowledge.
+catalog:
+  title: Catalog
+  summary: Catalog entities, representative category examples, and structured product selection routes.
+sphere_category_mapping:
+  title: Sphere and category mapping
+  summary: Curated mappings between application spheres and display categories.
+portfolio:
+  title: Portfolio
+  summary: Realized projects, references, and examples by sphere, object, or product family.
+mountings:
+  title: Mountings
+  summary: Mounting options and compatibility for categories and model families.
+documents:
+  title: Documents
+  summary: Document lookup and file-backed product evidence such as passports or certificates.
+codes_and_sku:
+  title: Codes and SKU
+  summary: Article, ETM, Oracle, and reverse model-code lookup routes.
+other:
+  title: Other
+  summary: Fallback family for routes that do not yet belong to a business family.

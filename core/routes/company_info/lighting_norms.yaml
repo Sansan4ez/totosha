@@ -1,0 +1,29 @@
+route_id: corp_kb.lighting_norms
+route_family: corp_kb.lighting_norms
+route_kind: corp_table
+authority: primary
+title: Lighting norms knowledge base
+summary: Source-scoped lighting norms KB route.
+topics:
+- lighting_norms
+- rules
+- tables
+keywords:
+- нормы освещенности
+- нормы освещённости
+- освещенность
+- освещённость
+- нормативы освещения
+patterns:
+- какие нормы освещенности
+- нормы освещения
+- нормативы освещения
+executor: corp_db_search
+executor_args_template:
+  kind: hybrid_search
+  profile: kb_route_lookup
+  knowledge_route_id: corp_kb.lighting_norms
+  source_files:
+  - normy_osveschennosty.md
+observability_labels:
+  scope: source_file

@@ -1,0 +1,25 @@
+route_id: corp_kb.luxnet
+route_family: corp_kb.luxnet
+route_kind: corp_table
+authority: primary
+title: Luxnet knowledge base
+summary: Source-scoped Luxnet KB route.
+topics:
+- luxnet
+- product
+keywords:
+- luxnet
+- люкснет
+patterns:
+- что такое luxnet
+- что такое люкснет
+- расскажи про luxnet
+executor: corp_db_search
+executor_args_template:
+  kind: hybrid_search
+  profile: kb_route_lookup
+  knowledge_route_id: corp_kb.luxnet
+  source_files:
+  - about_Luxnet.md
+observability_labels:
+  scope: source_file

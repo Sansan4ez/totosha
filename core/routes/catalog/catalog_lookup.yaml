@@ -1,0 +1,27 @@
+route_id: corp_db.catalog_lookup
+route_family: corp_db.catalog_lookup
+route_kind: corp_table
+authority: primary
+title: Lamp catalog lookup
+summary: Exact models, codes, series, categories, and structured catalog lookup.
+topics:
+- catalog
+- lamp
+- model
+keywords:
+- модель
+- серия
+- артикул
+- код
+- светильник
+- каталог
+- характеристики
+- крепление
+- совместимость
+patterns:
+- точная модель
+- карточка светильника
+- найди модель
+executor: corp_db_search
+executor_args_template:
+  kind: lamp_exact

@@ -1,0 +1,49 @@
+route_id: corp_db.portfolio_by_sphere
+route_family: corp_db.portfolio_by_sphere
+route_kind: corp_script
+authority: primary
+title: Portfolio by sphere
+summary: Preferred broad portfolio route for completed projects, object examples, and implementation references
+  by sphere, customer segment, or environment.
+topics:
+- portfolio
+- projects
+keywords:
+- портфолио
+- проект
+- объект
+- реализованные проекты
+- реализованные объекты
+- пример проекта
+- пример объекта
+- примеры реализации
+- стадион
+- аэропорт
+- перрон
+- склад
+- офис
+- карьер
+- наружное освещение
+- ржд
+- логистический центр
+- белый раст
+patterns:
+- какие объекты были реализованы
+- список объектов
+- список проектов
+- реализованные проекты для
+- пример проекта
+- пример объекта
+- из портфолио
+- портфолио по
+executor: corp_db_search
+executor_args_template:
+  kind: portfolio_by_sphere
+  fuzzy: true
+argument_hints:
+  sphere: Choose the canonical broad sphere or customer segment such as РЖД, складские помещения, логистический
+    центр, стадион.
+  query: Keep the original wording when the sphere is ambiguous.
+fallback_route_ids:
+- corp_db.portfolio_lookup
+- corp_db.portfolio_examples_by_lamp

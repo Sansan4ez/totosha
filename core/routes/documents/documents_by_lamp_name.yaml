@@ -1,0 +1,37 @@
+route_id: corp_db.documents_by_lamp_name
+route_family: corp_db.documents_by_lamp_name
+route_kind: corp_table
+authority: primary
+title: Documents by lamp name
+summary: Catalog-backed route for listing passports, certificates, manuals, IES files, and other linked
+  documents for a lamp or model family.
+topics:
+- documents
+- catalog
+- lamp
+keywords:
+- документы на светильник
+- паспорт на модель
+- сертификаты на модель
+- инструкция на модель
+- ies для модели
+- документы для серии
+- какие документы есть
+patterns:
+- какие документы есть для модели
+- покажи документы на светильник
+- какие паспорта и сертификаты есть
+executor: corp_db_search
+executor_args_template:
+  kind: lamp_documents_index
+  limit: 3
+argument_hints:
+  name: Extract the lamp, model, or series name whose linked documents should be listed.
+  document_type: Use passport, certificate, manual, or ies when the user clearly asks for one document
+    subtype instead of the full list.
+fallback_route_ids:
+- corp_db.catalog_lookup
+cross_family_fallback_route_ids:
+- corp_db.catalog_lookup
+observability_labels:
+  scope: documents_by_lamp_name

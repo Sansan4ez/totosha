@@ -1,0 +1,34 @@
+route_id: corp_db.application_recommendation
+route_family: corp_db.application_recommendation
+route_kind: corp_script
+authority: secondary
+title: Application recommendation
+summary: Broad recommendation by application area such as stadiums, warehouses, airports, offices, or
+  aggressive environments.
+topics:
+- recommendation
+- application
+keywords:
+- стадион
+- арена
+- спорткомплекс
+- карьер
+- рудник
+- аэропорт
+- склад
+- офис
+- кабинет
+- агрессивная среда
+- агрессивной среды
+- агрессивной среде
+- апрон
+- высокие пролеты
+patterns:
+- подбери освещение
+- какие светильники подойдут
+- какие светильники подходят
+- подходят для агрессивной среды
+- рекомендация по освещению
+executor: corp_db_search
+executor_args_template:
+  kind: application_recommendation

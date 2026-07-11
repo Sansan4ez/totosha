@@ -1,0 +1,33 @@
+route_id: corp_db.certificate_by_lamp_name
+route_family: corp_db.documents_by_lamp_name
+route_kind: corp_table
+authority: primary
+title: Certificate by lamp name
+summary: Catalog-backed route for certificate or declaration requests scoped to one lamp, model, or series
+  name.
+topics:
+- documents
+- catalog
+- lamp
+- certificate
+keywords:
+- сертификат
+- сертификаты
+- декларация
+- декларации
+- сертификат на модель
+patterns:
+- покажи сертификат на
+- покажи сертификат для
+- нужен сертификат на
+executor: corp_db_search
+executor_args_template:
+  kind: lamp_documents_index
+  limit: 3
+  document_type: certificate
+argument_hints:
+  name: Extract the lamp, model, or series name whose certificate or declaration the user wants.
+fallback_route_ids:
+- corp_db.documents_by_lamp_name
+observability_labels:
+  scope: certificate_by_lamp_name

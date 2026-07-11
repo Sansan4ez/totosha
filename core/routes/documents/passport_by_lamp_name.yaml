@@ -1,0 +1,31 @@
+route_id: corp_db.passport_by_lamp_name
+route_family: corp_db.documents_by_lamp_name
+route_kind: corp_table
+authority: primary
+title: Passport by lamp name
+summary: Catalog-backed route for passport requests scoped to one lamp, model, or series name.
+topics:
+- documents
+- catalog
+- lamp
+- passport
+keywords:
+- паспорт
+- паспорта
+- паспорт на модель
+- паспорт на светильник
+patterns:
+- покажи паспорт на
+- покажи паспорт для
+- нужен паспорт на
+executor: corp_db_search
+executor_args_template:
+  kind: lamp_documents_index
+  limit: 3
+  document_type: passport
+argument_hints:
+  name: Extract the lamp, model, or series name whose passport the user wants.
+fallback_route_ids:
+- corp_db.documents_by_lamp_name
+observability_labels:
+  scope: passport_by_lamp_name

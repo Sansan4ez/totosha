@@ -1,0 +1,31 @@
+route_id: corp_db.ies_by_lamp_name
+route_family: corp_db.documents_by_lamp_name
+route_kind: corp_table
+authority: primary
+title: IES by lamp name
+summary: Catalog-backed route for IES photometric files scoped to one lamp, model, or series name.
+topics:
+- documents
+- catalog
+- lamp
+- ies
+keywords:
+- ies
+- ies файл
+- ies-файл
+- фотометрия
+patterns:
+- покажи ies для
+- дай ies для
+- нужен ies для
+executor: corp_db_search
+executor_args_template:
+  kind: lamp_documents_index
+  limit: 3
+  document_type: ies
+argument_hints:
+  name: Extract the lamp, model, or series name whose IES file the user wants.
+fallback_route_ids:
+- corp_db.documents_by_lamp_name
+observability_labels:
+  scope: ies_by_lamp_name

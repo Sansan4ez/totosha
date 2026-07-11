@@ -1,0 +1,30 @@
+route_id: corp_db.portfolio_examples_by_lamp
+route_family: corp_db.portfolio_examples_by_lamp
+route_kind: corp_script
+authority: secondary
+title: Portfolio examples by lamp
+summary: Portfolio examples and completed projects connected to a specific lamp, category, or model family.
+topics:
+- portfolio
+- projects
+- lamp
+- category
+keywords:
+- примеры с моделью
+- проекты с моделью
+- объекты с моделью
+- портфолио по светильнику
+- референсы
+patterns:
+- где применялась модель
+- объекты с этим светильником
+- примеры проектов с
+executor: corp_db_search
+executor_args_template:
+  kind: portfolio_examples_by_lamp
+  fuzzy: true
+argument_hints:
+  name: Extract lamp/model name as a free string.
+  category: Extract category when the request is category-level.
+observability_labels:
+  scope: portfolio_examples_by_lamp

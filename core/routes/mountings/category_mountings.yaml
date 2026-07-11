@@ -1,0 +1,31 @@
+route_id: corp_db.category_mountings
+route_family: corp_db.category_mountings
+route_kind: corp_table
+authority: primary
+title: Category mounting options
+summary: Structured route for mounting types available for a product category.
+topics:
+- catalog
+- category_mounting
+- mounting_type
+- lamp_mountings
+keywords:
+- крепления категории
+- варианты крепления
+- типы креплений
+- монтаж
+- lamp_mountings
+- mounting_types
+patterns:
+- какие крепления доступны
+- какие типы креплений
+- крепления для категории
+executor: corp_db_search
+executor_args_template:
+  kind: category_mountings
+  fuzzy: true
+argument_hints:
+  category: Extract the product category name.
+  mounting_type: Extract the requested mounting type when present.
+observability_labels:
+  scope: category_mountings
