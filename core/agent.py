@@ -8,7 +8,7 @@ import aiohttp
 from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter
-from typing import Optional, Any
+from typing import Optional, Any, Awaitable, Callable
 from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
@@ -3094,18 +3094,31 @@ def _short_circuit_application_failure(
     return _application_bounded_failure_response(message, args, tool_result)
 
 
+# RFC-028 workstream 3: the selector's LLM call is an injectable dependency so tests can drive
+# the full selection/validation/sanitization pipeline with a scripted fake instead of monkeypatching
+# call_llm. `purpose` is "route_selector" or "route_selector_repair"; production always resolves to
+# _default_route_selector_llm, which is exactly the call_llm(...) invocation this replaced.
+RouteSelectorLLM = Callable[[list[dict[str, Any]], str], Awaitable[dict[str, Any]]]
+
+
+async def _default_route_selector_llm(messages: list[dict[str, Any]], purpose: str) -> dict[str, Any]:
+    return await call_llm(messages, [], purpose=purpose)
+
+
 async def _select_route_with_llm(
     routing_message: str,
     *,
     sphere_context: dict[str, Any] | None = None,
+    llm_caller: RouteSelectorLLM | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    call_selector_llm = llm_caller or _default_route_selector_llm
     selector_started = perf_counter()
     selector_payload = build_route_selector_payload(routing_message, sphere_context=sphere_context)
     candidate_routes = selector_payload_leaf_routes(selector_payload)
     if not candidate_routes:
         raise RuntimeError("route selector has no candidate routes")
 
-    result = await call_llm(_build_route_selector_messages(selector_payload), [], purpose="route_selector")
+    result = await call_selector_llm(_build_route_selector_messages(selector_payload), "route_selector")
     selector_model = str(result.get("model") or get_model())
     if "error" in result:
         raise RuntimeError(str(result.get("error") or "route selector LLM error"))
@@ -3127,7 +3140,7 @@ async def _select_route_with_llm(
         repair_messages = _build_route_selector_messages(selector_payload)
         repair_messages.append({"role": "assistant", "content": content})
         repair_messages.append({"role": "user", "content": validation.repair_prompt})
-        repair_result = await call_llm(repair_messages, [], purpose="route_selector_repair")
+        repair_result = await call_selector_llm(repair_messages, "route_selector_repair")
         selector_model = str(repair_result.get("model") or selector_model)
         if "error" in repair_result:
             raise RuntimeError(str(repair_result.get("error") or "route selector repair LLM error"))

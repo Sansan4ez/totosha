@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .bench_lib import BENCH_DIR, estimate_cost_usd, evaluate_case_result, get_validation, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
+    from .bench_lib import BENCH_DIR, estimate_cost_usd, evaluate_case_result, get_validation, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path, routing_accuracy_summary
 except ImportError:  # pragma: no cover - CLI script fallback
-    from bench_lib import BENCH_DIR, estimate_cost_usd, evaluate_case_result, get_validation, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path
+    from bench_lib import BENCH_DIR, estimate_cost_usd, evaluate_case_result, get_validation, load_pricing, percentile, read_jsonl, repo_rel, resolve_repo_path, routing_accuracy_summary
 
 DEFAULT_DATASET = BENCH_DIR / "golden" / "v1.jsonl"
 DEFAULT_PRICING = BENCH_DIR / "pricing.json"
@@ -130,6 +130,7 @@ def main() -> None:
     total = len(dataset)
     scored = total - missing_count
     pass_rate = (pass_count / scored) if scored else 0.0
+    routing_accuracy = routing_accuracy_summary(dataset, by_case)
 
     summary = {
         "dataset": repo_rel(dataset_path),
@@ -165,6 +166,7 @@ def main() -> None:
             }
             for mode in sorted(validation_mode_totals.keys())
         },
+        "routing_accuracy": routing_accuracy,
     }
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -198,6 +200,26 @@ def main() -> None:
             s = summary["validation_modes"][mode]
             lines.append(f"- `{mode}`: {s['pass']}/{s['total']} (pass_rate={s['pass_rate']})")
         lines.append("")
+        if routing_accuracy["scored_cases"]:
+            lines.append("## Routing accuracy")
+            lines.append(f"- Scored cases (golden entries with an expected `routing.route_id`): {routing_accuracy['scored_cases']}")
+            lines.append("")
+            lines.append("### By route")
+            for route_id, s in routing_accuracy["by_route"].items():
+                lines.append(f"- `{route_id}`: {s['correct']}/{s['total']} (accuracy={s['accuracy']})")
+            if routing_accuracy["by_family"]:
+                lines.append("")
+                lines.append("### By family")
+                for family_id, s in routing_accuracy["by_family"].items():
+                    lines.append(f"- `{family_id}`: {s['correct']}/{s['total']} (accuracy={s['accuracy']})")
+            if routing_accuracy["mismatches"]:
+                lines.append("")
+                lines.append("### Mismatches")
+                for item in routing_accuracy["mismatches"]:
+                    lines.append(
+                        f"- `{item['case_id']}`: expected `{item['expected_route_id']}`, got `{item['actual_route_id']}`"
+                    )
+            lines.append("")
         if failures:
             lines.append("## Failures")
             for item in failures:

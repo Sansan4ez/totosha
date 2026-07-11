@@ -600,6 +600,70 @@ def eval_checks(answer: str, checks: list[dict[str, Any]]) -> tuple[bool, list[s
     return (len(errors) == 0), errors
 
 
+def routing_accuracy_summary(dataset: list[dict[str, Any]], by_case: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """RFC-028 workstream 3: aggregate selected-vs-expected route_id per route and per family.
+
+    Only golden cases that declare an expected `routing.route_id` participate. Family
+    aggregation uses the golden case's own declared `routing.family_id` (not the actual run's
+    family), so a wrong route never counts as a family match by accident.
+    """
+    route_totals: dict[str, int] = {}
+    route_correct: dict[str, int] = {}
+    family_totals: dict[str, int] = {}
+    family_correct: dict[str, int] = {}
+    mismatches: list[dict[str, Any]] = []
+
+    for case in dataset:
+        case_id = str(case.get("id") or "")
+        routing = case.get("routing") if isinstance(case.get("routing"), dict) else {}
+        expected_route_id = str(routing.get("route_id") or "")
+        if not expected_route_id:
+            continue
+        row = by_case.get(case_id)
+        meta = row.get("meta") if isinstance(row, dict) and isinstance(row.get("meta"), dict) else {}
+        actual_route_id = str(meta.get("retrieval_route_id") or "")
+        route_match = actual_route_id == expected_route_id
+
+        route_totals[expected_route_id] = route_totals.get(expected_route_id, 0) + 1
+        if route_match:
+            route_correct[expected_route_id] = route_correct.get(expected_route_id, 0) + 1
+        else:
+            mismatches.append(
+                {
+                    "case_id": case_id,
+                    "expected_route_id": expected_route_id,
+                    "actual_route_id": actual_route_id or "(missing)",
+                }
+            )
+
+        expected_family_id = str(routing.get("family_id") or "")
+        if expected_family_id:
+            family_totals[expected_family_id] = family_totals.get(expected_family_id, 0) + 1
+            if route_match:
+                family_correct[expected_family_id] = family_correct.get(expected_family_id, 0) + 1
+
+    return {
+        "scored_cases": sum(route_totals.values()),
+        "by_route": {
+            route_id: {
+                "correct": route_correct.get(route_id, 0),
+                "total": route_totals[route_id],
+                "accuracy": round(route_correct.get(route_id, 0) / route_totals[route_id], 4),
+            }
+            for route_id in sorted(route_totals.keys())
+        },
+        "by_family": {
+            family_id: {
+                "correct": family_correct.get(family_id, 0),
+                "total": family_totals[family_id],
+                "accuracy": round(family_correct.get(family_id, 0) / family_totals[family_id], 4),
+            }
+            for family_id in sorted(family_totals.keys())
+        },
+        "mismatches": mismatches,
+    }
+
+
 def eval_routing(meta: Optional[dict[str, Any]], routing: Optional[dict[str, Any]]) -> tuple[bool, list[str]]:
     if not isinstance(routing, dict) or not routing:
         return True, []
