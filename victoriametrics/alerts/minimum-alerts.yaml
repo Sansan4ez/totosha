@@ -56,3 +56,15 @@ alerts:
     summary: The `proxy -> cli-proxy-api /transcribe` compatibility path is failing or challenge/error-rate windows are out of bounds.
     impact: Voice input may look alive at the container level while the real ASR path is degraded by upstream challenge behavior.
     runbook: docs/operations/observability-runbook.md
+
+  - id: OBS-ALERT-006
+    execution: vmalert
+    alert_name: RouteSelectorSanitizationSustained
+    title: Route selector sanitization sustained
+    severity: warning
+    datasource: VictoriaMetrics
+    expr: sum(rate(route_selector_sanitized_total{action="dropped_undeclared_fallback"}[30m])) > 0
+    for: 30m
+    summary: The route selector keeps proposing fallback routes the catalog does not declare.
+    impact: RFC-028 sanitization (core/documents/route_schema.py) hides this from users as a successful answer, but sustained hits mean core/routes/ has an undeclared sibling-fallback gap that should be fixed as data -- the same class of bug behind the 2026-07-06 incident (trace 7852fc7fe6909eec06529a124817e571). Check `python -m documents.route_catalog_check` output and core/routes/index.md.
+    runbook: docs/operations/observability-runbook.md

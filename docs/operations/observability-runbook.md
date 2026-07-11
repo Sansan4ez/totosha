@@ -256,6 +256,13 @@ Notes
 - Proxy-specific user-path alerts now track:
   - `ProxyUserPathHigh5xxRatio`
   - `ProxyUserPathHighP95Latency`
+- `RouteSelectorSanitizationSustained` (OBS-ALERT-006) fires when the route selector keeps
+  proposing undeclared fallback routes over a 30m window. RFC-028 (`documents/route_schema.py`)
+  sanitizes this at request time so users still get an answer, but a sustained rate means
+  `core/routes/` is missing a fallback declaration between routes that should recognize each
+  other -- run `python -m documents.route_catalog_check` and fix the catalog as data, per
+  `core/routes/index.md`. This is the same failure class as the 2026-07-06 incident (trace
+  `7852fc7fe6909eec06529a124817e571`), which failed closed instead of sanitizing.
 - Grafana now includes dedicated panels for:
   - `Incident Route Traffic`
   - `Proxy User Path p95`

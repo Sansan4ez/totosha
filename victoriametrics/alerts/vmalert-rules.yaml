@@ -37,3 +37,14 @@ groups:
           summary: Proxy route {{ $labels.route }} exceeded the 2.5s p95 latency budget over 15 minutes.
           impact: Tail latency can breach the user-visible SLO before the route turns fully unavailable.
           runbook: docs/operations/observability-runbook.md
+      - alert: RouteSelectorSanitizationSustained
+        expr: sum(rate(route_selector_sanitized_total{action="dropped_undeclared_fallback"}[30m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+          alert_id: OBS-ALERT-006
+          service: core
+        annotations:
+          summary: The route selector keeps proposing fallback routes the catalog does not declare.
+          impact: RFC-028 sanitization hides this from users as a successful answer, but it means core/routes/ has an undeclared sibling-fallback gap (see routes/index.md) that should be fixed as data, the same class of bug behind the 2026-07-06 incident (trace 7852fc7fe6909eec06529a124817e571).
+          runbook: docs/operations/observability-runbook.md
