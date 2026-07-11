@@ -19,7 +19,6 @@ from documents.routing_policy import (
     APPLICATION_RECOMMENDATION_KEYWORDS,
     COMPANY_COMMON_FACET_KEYWORDS,
     COMPANY_FACT_KEYWORDS,
-    KB_ROUTE_SPECS,
     company_common_topic_facets as _company_common_topic_facets,
     company_fact_intent_type as _company_fact_intent_type,
     contact_doc_search_query as _contact_doc_search_query,
@@ -3380,16 +3379,14 @@ async def run_agent(
     candidate_route_ids = list(route_hint.get("candidate_route_ids") or route_selection.get("candidate_route_ids") or []) if route_hint else []
     if not candidate_route_ids and route_hint and route_hint.get("route_id"):
         candidate_route_ids = [str(route_hint.get("route_id"))]
+    # RFC-028 workstream 3.4: canonical_route_id is the selector's own choice and is never
+    # overridden post-selection. authoritative_route_id (the KB source id every corp_kb.* route's
+    # tool_args carries) stays purely informational -- it drives topic_facets defaults and the
+    # observability knowledge_route_id field below, but no longer collapses distinct selected
+    # leaf routes (e.g. corp_kb.series_description) into their shared underlying KB source id
+    # (corp_kb.company_common). That collapse was the mechanism behind the routing drift seen in
+    # the 2026-07-11 baseline replay (series questions silently answered as corp_kb.company_common).
     canonical_route_id = str(route_hint.get("route_id") or "") if route_hint else ""
-    if company_fact_intent_type and not authoritative_route_id:
-        authoritative_route_id = "corp_kb.company_common"
-        source_file_scope = list(KB_ROUTE_SPECS[authoritative_route_id]["source_files"])
-        if not topic_facets:
-            topic_facets = _company_common_topic_facets(routing_message)
-    if authoritative_route_id:
-        canonical_route_id = authoritative_route_id
-        if authoritative_route_id not in candidate_route_ids:
-            candidate_route_ids = [authoritative_route_id, *candidate_route_ids]
     selector_meta = route_selection.get("selector") if isinstance(route_selection.get("selector"), dict) else {}
     selector_latency_ms = float(selector_meta.get("latency_ms") or route_hint.get("selector_latency_ms") or 0.0) if route_hint else 0.0
     routing_catalog_version = str(
@@ -3466,7 +3463,7 @@ async def run_agent(
         "route_shortlist": [dict(route_hint)] + [dict(item) for item in secondary_route_candidates[:3]] if route_hint else [],
         "selected_route_kind": selected_route_kind,
         "candidate_route_ids": candidate_route_ids,
-        "retrieval_route_family": authoritative_route_id or retrieval_route_family,
+        "retrieval_route_family": retrieval_route_family,
         "retrieval_business_family_id": retrieval_business_family_id,
         "retrieval_leaf_route_id": retrieval_leaf_route_id or canonical_route_id,
         "retrieval_route_stage": str(route_hint.get("route_stage") or route_selection.get("selected_route_stage") or "") if route_hint else str(route_selection.get("selected_route_stage") or ""),

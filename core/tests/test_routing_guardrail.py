@@ -1627,7 +1627,11 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("промышленное освещение", response)
         self.assertEqual(exec_mock.await_count, 1)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
+        # RFC-028 workstream 3.4: the selector's actual choice (this fixture's legacy
+        # corp_db.company_profile route) is recorded as-is; it is no longer coerced to the
+        # shared corp_kb.* KB source id (corp_kb.company_common) that every corp_kb route's
+        # tool_args happens to carry. The retrieval/guardrail/answer behavior below is unchanged.
+        self.assertEqual(meta["retrieval_route_id"], "corp_db.company_profile")
         self.assertEqual(meta["routing_guardrail_hits"], 0)
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
 
