@@ -15,8 +15,15 @@ Argument merge order is:
 2. validated selector ``tool_args`` may override defaults.
 3. ``locked_args`` are applied last and cannot be changed by selector output.
 
-Invalid selector JSON/arguments may be repaired once by the caller. Unsafe
-selector output is rejected outright.
+Selector output validation (RFC-028) is sanitize-first: recoverable
+imperfections (an undeclared/invisible fallback route id, a family id that
+does not match the selected route, or an unknown ``tool_args`` field) are
+silently dropped and recorded in ``SelectorValidationResult.sanitization_actions``
+rather than failing the request. Only material violations reject the output:
+malformed JSON, a missing/unknown/invisible ``selected_route_id``, missing
+required arguments, and genuine bypass attempts (execution-carrying keys,
+locked-arg overrides). Invalid JSON/arguments may be repaired once by the
+caller; bypass attempts are rejected outright.
 """
 
 from __future__ import annotations
@@ -73,6 +80,13 @@ SAFE_SELECTOR_KEYS = {
     "fallback_route_ids",
 }
 
+# RFC-028 sanitization action codes recorded on SelectorValidationResult.sanitization_actions
+# and emitted as the `action` label on route_selector_sanitized_total.
+SANITIZE_DROPPED_ROOT_KEY = "dropped_unknown_root_key"
+SANITIZE_DERIVED_FAMILY = "derived_family_from_route"
+SANITIZE_DROPPED_TOOL_ARG = "dropped_unknown_tool_arg"
+SANITIZE_DROPPED_FALLBACK = "dropped_undeclared_fallback"
+
 
 class RouteCardContractError(ValueError):
     """Route card does not satisfy the runtime route-card contract."""
@@ -99,6 +113,7 @@ class SelectorValidationResult:
     error: str = ""
     repairable: bool = False
     repair_prompt: str = ""
+    sanitization_actions: list[str] = field(default_factory=list)
 
 
 def _dedupe_strings(values: Any) -> list[str]:
@@ -448,6 +463,32 @@ def _contains_selector_bypass(value: Any) -> str:
     return ""
 
 
+def _check_locked_args_override(route: dict[str, Any], selector_args: dict[str, Any]) -> None:
+    """Reject attempts to override locked_args outright; this is a bypass attempt, not sanitized."""
+    locked_args = dict(route.get("locked_args") or {})
+    for key, value in selector_args.items():
+        if key in locked_args and locked_args[key] != value:
+            raise RouteSelectorOutputError("unsafe_selector_output", f"tool_args.{key} attempts to override locked_args")
+
+
+def sanitize_unknown_tool_args(route: dict[str, Any], tool_args: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Drop tool_args keys not declared by the route's selector-visible schema.
+
+    Runs after the locked-args override check so a genuine bypass attempt on a
+    locked key is still rejected rather than silently dropped here.
+    """
+    schema = normalize_argument_schema(route.get("argument_schema") or {})
+    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    sanitized: dict[str, Any] = {}
+    dropped: list[str] = []
+    for key, value in tool_args.items():
+        if key in properties:
+            sanitized[key] = value
+        else:
+            dropped.append(key)
+    return sanitized, dropped
+
+
 def merge_route_tool_args(
     route: dict[str, Any],
     selector_tool_args: dict[str, Any] | None = None,
@@ -666,12 +707,19 @@ def validate_selector_output(
         if not isinstance(parsed, dict):
             raise RouteSelectorOutputError("invalid_json", "selector output must be a JSON object")
 
-        root_unsafe_key = next((key for key in parsed if key not in SAFE_SELECTOR_KEYS), "")
-        if root_unsafe_key:
-            raise RouteSelectorOutputError("unsafe_selector_output", f"selector key {root_unsafe_key} is not allowed")
+        # Genuine bypass attempts (execution-carrying keys anywhere in the payload, including
+        # nested inside tool_args) are checked on the raw payload before anything is dropped, so
+        # sanitizing unknown fields below can never hide an attack.
         bypass_key = _contains_selector_bypass(parsed)
         if bypass_key:
             raise RouteSelectorOutputError("unsafe_selector_output", f"selector output contains unsafe key {bypass_key}")
+
+        sanitization_actions: list[str] = []
+
+        unsafe_root_keys = [key for key in parsed if key not in SAFE_SELECTOR_KEYS]
+        if unsafe_root_keys:
+            parsed = {key: value for key, value in parsed.items() if key in SAFE_SELECTOR_KEYS}
+            sanitization_actions.append(SANITIZE_DROPPED_ROOT_KEY)
 
         routes_by_id = _visible_routes_by_id(routes)
         selected_route_id = str(parsed.get("selected_route_id") or "").strip()
@@ -684,16 +732,18 @@ def validate_selector_output(
         selected_family_id = str(parsed.get("selected_family_id") or "").strip()
         route_family_id = _route_selector_family_id(route)
         if selected_family_id and selected_family_id != route_family_id:
-            raise RouteSelectorOutputError(
-                "unsafe_selector_output",
-                f"selected family {selected_family_id} does not match route {selected_route_id} family {route_family_id}",
-            )
+            selected_family_id = route_family_id
+            sanitization_actions.append(SANITIZE_DERIVED_FAMILY)
         if not selected_family_id:
             selected_family_id = route_family_id
 
         selector_tool_args = parsed.get("tool_args") or {}
         if not isinstance(selector_tool_args, dict):
             raise RouteSelectorOutputError("invalid_tool_args", "tool_args must be an object")
+        _check_locked_args_override(route, selector_tool_args)
+        selector_tool_args, dropped_tool_arg_keys = sanitize_unknown_tool_args(route, selector_tool_args)
+        if dropped_tool_arg_keys:
+            sanitization_actions.append(SANITIZE_DROPPED_TOOL_ARG)
         final_args = merge_route_tool_args(route, selector_tool_args, validate_required=True)
 
         route_fallback_ids = set(_dedupe_strings(route.get("fallback_route_ids") or []))
@@ -712,22 +762,24 @@ def validate_selector_output(
             )
         )
         declared_fallback_ids = same_family_fallback_ids | cross_family_fallback_ids
-        fallback_route_ids = _dedupe_strings(parsed.get("fallback_route_ids") or [])
-        for fallback_id in fallback_route_ids:
+        requested_fallback_route_ids = _dedupe_strings(parsed.get("fallback_route_ids") or [])
+        fallback_route_ids: list[str] = []
+        for fallback_id in requested_fallback_route_ids:
             fallback_route = routes_by_id.get(fallback_id)
             if fallback_route is None:
-                raise RouteSelectorOutputError("unsafe_selector_output", f"fallback route {fallback_id} is not visible")
+                sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
+                continue
             if fallback_id not in declared_fallback_ids:
-                raise RouteSelectorOutputError(
-                    "unsafe_selector_output",
-                    f"fallback route {fallback_id} is not declared by selected route",
-                )
+                sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
+                continue
             fallback_family_id = _route_selector_family_id(fallback_route)
             if fallback_id in same_family_fallback_ids and fallback_family_id != route_family_id:
-                raise RouteSelectorOutputError(
-                    "unsafe_selector_output",
-                    f"fallback route {fallback_id} leaves family {route_family_id} without explicit cross-family declaration",
-                )
+                # The catalog itself declares this as a same-family fallback but the fallback
+                # route's actual family differs (a catalog data bug caught by RFC-028's CI
+                # invariant check). Drop it here rather than fail the whole request on a data bug.
+                sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
+                continue
+            fallback_route_ids.append(fallback_id)
 
         return SelectorValidationResult(
             valid=True,
@@ -736,6 +788,7 @@ def validate_selector_output(
             route=dict(route),
             tool_args=final_args,
             fallback_route_ids=fallback_route_ids,
+            sanitization_actions=sanitization_actions,
         )
     except RouteSelectorOutputError as exc:
         return _selector_error_result(exc, repair_attempted=repair_attempted)

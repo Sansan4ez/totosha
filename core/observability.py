@@ -91,6 +91,7 @@ CORRELATION_FIELDS = (
     "routing_guardrail_hits",
     "guardrail_blocked_tool",
     "finalizer_mode",
+    "route_selector_sanitization_actions",
 )
 CORRELATION_FIELD_DEFAULTS = {
     "request_source": "-",
@@ -122,6 +123,7 @@ CORRELATION_FIELD_DEFAULTS = {
     "routing_guardrail_hits": "0",
     "guardrail_blocked_tool": "-",
     "finalizer_mode": "-",
+    "route_selector_sanitization_actions": "-",
 }
 SPAN_ATTRIBUTE_NAMES = {
     "request_source": "request_source",
@@ -153,6 +155,7 @@ SPAN_ATTRIBUTE_NAMES = {
     "routing_guardrail_hits": "routing_guardrail_hits",
     "guardrail_blocked_tool": "guardrail_blocked_tool",
     "finalizer_mode": "finalizer_mode",
+    "route_selector_sanitization_actions": "route_selector_sanitization_actions",
 }
 
 REGISTRY = CollectorRegistry()
@@ -419,6 +422,17 @@ RETRIEVAL_ROUTE_STAGE_TOTAL = Counter(
     ),
     registry=REGISTRY,
 )
+ROUTE_SELECTOR_SANITIZED_TOTAL = Counter(
+    "route_selector_sanitized_total",
+    "Recoverable route selector output violations that were sanitized instead of failing the request.",
+    labelnames=(
+        "service",
+        "action",
+        "selected_route_id",
+        "selected_business_family_id",
+    ),
+    registry=REGISTRY,
+)
 LLM_CONTEXT_PRETRIM_CHARS = Histogram(
     "llm_context_pretrim_characters",
     "Estimated LLM context size before trimming, grouped by call stage.",
@@ -671,6 +685,23 @@ def observe_request_correlation(duration_ms: float, status: str) -> None:
         ).inc(guardrail_hits)
 
 
+def observe_route_selector_sanitization(
+    action: str,
+    *,
+    selected_route_id: str = "",
+    selected_business_family_id: str = "",
+) -> None:
+    action_label = str(action or "").strip() or "unknown"
+    route_label = str(selected_route_id or "").strip() or "-"
+    family_label = str(selected_business_family_id or "").strip() or "-"
+    ROUTE_SELECTOR_SANITIZED_TOTAL.labels(
+        ACTIVE_SERVICE_NAME,
+        action_label,
+        route_label,
+        family_label,
+    ).inc()
+
+
 def observe_tool_execution(tool_name: str, tool_status: str, duration_ms: float) -> None:
     context = get_correlation_context()
     labels = (
@@ -769,7 +800,8 @@ def setup_observability(service_name: str) -> None:
         "used_fallback_scope=%(used_fallback_scope)s used_fallback_route_id=%(used_fallback_route_id)s "
         "fallback_family_id=%(fallback_family_id)s routing_catalog_version=%(routing_catalog_version)s "
         "routing_guardrail_hits=%(routing_guardrail_hits)s guardrail_blocked_tool=%(guardrail_blocked_tool)s "
-        "finalizer_mode=%(finalizer_mode)s %(name)s: %(message)s"
+        "finalizer_mode=%(finalizer_mode)s "
+        "route_selector_sanitization_actions=%(route_selector_sanitization_actions)s %(name)s: %(message)s"
     )
     request_filter = _RequestContextFilter()
     for handler in root.handlers:

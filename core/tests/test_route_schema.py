@@ -259,7 +259,10 @@ class RouteSchemaTests(unittest.TestCase):
         self.assertEqual(result.tool_args["document_type"], "passport")
         self.assertEqual(result.fallback_route_ids, ["corp_db.documents_by_lamp_name"])
 
-    def test_selector_rejects_hidden_routes_and_undeclared_fallbacks(self):
+    def test_selector_rejects_hidden_selected_route_but_sanitizes_undeclared_fallback(self):
+        # RFC-028: selecting a hidden/invisible route stays a material failure (the primary
+        # route choice is unrecoverable), but an undeclared fallback hint on an otherwise valid
+        # selection is dropped rather than failing the whole request (2026-07-06 incident class).
         route = _route({})
         hidden = _route({"route_id": "corp_kb.hidden", "route_family": "corp_kb.hidden", "hidden": True})
 
@@ -278,10 +281,14 @@ class RouteSchemaTests(unittest.TestCase):
 
         self.assertFalse(hidden_result.valid)
         self.assertEqual(hidden_result.error_code, "unsafe_selector_output")
-        self.assertFalse(undeclared_fallback.valid)
-        self.assertEqual(undeclared_fallback.error_code, "unsafe_selector_output")
+        self.assertTrue(undeclared_fallback.valid)
+        self.assertEqual(undeclared_fallback.fallback_route_ids, [])
+        self.assertIn("dropped_undeclared_fallback", undeclared_fallback.sanitization_actions)
 
-    def test_selector_rejects_cross_family_fallback_without_explicit_declaration(self):
+    def test_fallback_leaving_family_without_explicit_declaration_is_sanitized(self):
+        # RFC-028: this shape is a catalog data bug (fallback_route_ids lists a route from a
+        # different family without an explicit cross_family_fallback_route_ids declaration).
+        # The primary route selection is still valid; the malformed fallback hint is dropped.
         catalog_route = _route(
             {
                 "route_id": "corp_db.catalog_lookup",
@@ -314,11 +321,14 @@ class RouteSchemaTests(unittest.TestCase):
             [route, catalog_route],
         )
 
-        self.assertFalse(result.valid)
-        self.assertEqual(result.error_code, "unsafe_selector_output")
-        self.assertIn("explicit cross-family declaration", result.error)
+        self.assertTrue(result.valid)
+        self.assertEqual(result.fallback_route_ids, [])
+        self.assertIn("dropped_undeclared_fallback", result.sanitization_actions)
 
-    def test_selector_rejects_mismatched_family_and_route(self):
+    def test_selector_family_mismatch_is_sanitized_by_deriving_from_route(self):
+        # RFC-028: a mismatched selected_family_id no longer fails the request; the family is
+        # derived from the selected route instead, since the route choice is the authoritative
+        # signal and the family id is redundant with it.
         route = _route({})
         result = validate_selector_output(
             {
@@ -329,9 +339,9 @@ class RouteSchemaTests(unittest.TestCase):
             [route],
         )
 
-        self.assertFalse(result.valid)
-        self.assertEqual(result.error_code, "unsafe_selector_output")
-        self.assertIn("does not match", result.error)
+        self.assertTrue(result.valid)
+        self.assertEqual(result.selected_family_id, "company_info")
+        self.assertIn("derived_family_from_route", result.sanitization_actions)
 
     def test_argument_schema_enforces_type_enum_bounds_pattern_max_length_and_max_items(self):
         route = _route(
@@ -366,7 +376,6 @@ class RouteSchemaTests(unittest.TestCase):
             {"query": "ok", "limit": 6},
             {"query": "ok", "topic_facets": ["contacts", "legal", "service"]},
             {"query": "ok", "topic_facets": ["невалидно"]},
-            {"query": "ok", "extra": "field"},
         ]
         for args in cases:
             with self.subTest(args=args):
@@ -376,6 +385,31 @@ class RouteSchemaTests(unittest.TestCase):
                 )
                 self.assertFalse(result.valid)
                 self.assertIn(result.error_code, {"invalid_tool_args", "unsafe_selector_output"})
+
+    def test_unknown_tool_arg_is_sanitized_instead_of_rejected(self):
+        route = _route(
+            {
+                "argument_schema": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"type": "string", "enum": ["hybrid_search"]},
+                        "query": {"type": "string", "maxLength": 20},
+                    },
+                    "required": ["kind", "query"],
+                },
+                "locked_args": {"kind": "hybrid_search"},
+            }
+        )
+
+        result = validate_selector_output(
+            {"selected_route_id": "corp_kb.company_common", "tool_args": {"query": "ok", "extra": "field"}},
+            [route],
+        )
+
+        self.assertTrue(result.valid)
+        self.assertNotIn("extra", result.tool_args)
+        self.assertEqual(result.tool_args["query"], "ok")
+        self.assertIn("dropped_unknown_tool_arg", result.sanitization_actions)
 
     def test_document_type_enum_is_enforced_for_documents_routes(self):
         route = normalize_route_card_contract(
@@ -488,6 +522,27 @@ class RouteSchemaTests(unittest.TestCase):
                     }
                 }
             )
+
+    def test_2026_07_06_incident_replay_undeclared_series_description_fallback_now_succeeds(self):
+        # Regression for production incident (trace 7852fc7fe6909eec06529a124817e571): the
+        # selector correctly chose corp_kb.company_common but proposed the sibling leaf
+        # corp_kb.series_description as an optional fallback, which the route did not declare.
+        # Under the old fail-closed contract this rejected the whole response and the user saw
+        # a bounded "service unavailable" answer. RFC-028 sanitizes the undeclared hint instead.
+        route = _route({})
+        result = validate_selector_output(
+            {
+                "selected_route_id": "corp_kb.company_common",
+                "tool_args": {"query": "светильники в реестре минпромторга"},
+                "fallback_route_ids": ["corp_kb.series_description"],
+            },
+            [route],
+        )
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.selected_route_id, "corp_kb.company_common")
+        self.assertEqual(result.fallback_route_ids, [])
+        self.assertIn("dropped_undeclared_fallback", result.sanitization_actions)
 
     def test_evidence_policy_bypass_keys_are_rejected(self):
         route = _route({})

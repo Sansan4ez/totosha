@@ -41,6 +41,7 @@ from logger import agent_logger, log_agent_step
 from observability import (
     REQUEST_ID as OBS_REQUEST_ID,
     inject_trace_context,
+    observe_route_selector_sanitization,
     record_span_event,
     update_correlation_context,
 )
@@ -1257,6 +1258,7 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["route_selector_repair_status"] = str(state.get("route_selector_repair_status") or "")
         meta["route_selector_validation_error_code"] = str(state.get("route_selector_validation_error_code") or "")
         meta["route_selector_validation_error"] = str(state.get("route_selector_validation_error") or "")
+        meta["route_selector_sanitization_actions"] = list(state.get("route_selector_sanitization_actions") or [])
         meta["routing_catalog_version"] = str(state.get("routing_catalog_version") or "")
         meta["routing_catalog_origin"] = str(state.get("routing_catalog_origin") or "")
         meta["routing_schema_version"] = int(state.get("routing_schema_version") or 0)
@@ -1307,6 +1309,7 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         fallback_family_id=str(state.get("retrieval_fallback_family_id") or ""),
         guardrail_blocked_tool=blocked_tool,
         finalizer_mode=str(state.get("finalizer_mode") or ""),
+        route_selector_sanitization_actions=list(state.get("route_selector_sanitization_actions") or []),
     )
 
     span = trace.get_current_span()
@@ -3137,6 +3140,13 @@ async def _select_route_with_llm(
     if not validation.valid:
         raise RuntimeError(f"route selector output rejected: {validation.error_code}: {validation.error}")
 
+    for action in validation.sanitization_actions:
+        observe_route_selector_sanitization(
+            action,
+            selected_route_id=str(validation.selected_route_id or ""),
+            selected_business_family_id=str(validation.selected_family_id or ""),
+        )
+
     selected_route = dict(validation.route or {})
     selected_route["tool_args"] = dict(validation.tool_args)
     selected_route["selected_family_id"] = str(validation.selected_family_id or selected_route.get("family_id") or "")
@@ -3153,6 +3163,7 @@ async def _select_route_with_llm(
         pass
     selected_route["candidate_route_ids"] = list(selector_payload.get("candidate_route_ids") or [])
     selected_route["selector_fallback_route_ids"] = list(validation.fallback_route_ids)
+    selected_route["selector_sanitization_actions"] = list(validation.sanitization_actions)
     selected_route["selector_status"] = "valid"
     selected_route["selector_model"] = selector_model
     selected_route["selector_latency_ms"] = (perf_counter() - selector_started) * 1000
@@ -3199,6 +3210,7 @@ async def _select_route_with_llm(
             "validated_arg_keys": list(selected_route.get("validated_arg_keys") or []),
             "candidate_family_ids": list(selector_payload.get("candidate_family_ids") or []),
             "candidate_route_ids": list(selector_payload.get("candidate_route_ids") or []),
+            "sanitization_actions": list(selected_route.get("selector_sanitization_actions") or []),
         },
     }
     return route_selection, selected_route, secondary_candidates
@@ -3480,6 +3492,7 @@ async def run_agent(
         "route_selector_repair_status": str(selector_meta.get("repair_status") or route_hint.get("selector_repair_status") or "") if route_hint else "",
         "route_selector_validation_error_code": str(selector_meta.get("validation_error_code") or route_hint.get("selector_validation_error_code") or "") if route_hint else "",
         "route_selector_validation_error": str(selector_meta.get("validation_error") or route_hint.get("selector_validation_error") or "") if route_hint else "",
+        "route_selector_sanitization_actions": list(selector_meta.get("sanitization_actions") or route_hint.get("selector_sanitization_actions") or []) if route_hint else [],
         "routing_catalog_version": routing_catalog_version,
         "routing_catalog_origin": routing_catalog_origin,
         "routing_schema_version": routing_schema_version,

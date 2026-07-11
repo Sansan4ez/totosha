@@ -85,6 +85,7 @@ _stub_modules = {
     "observability": types.SimpleNamespace(
         REQUEST_ID=ContextVar("request_id", default="-"),
         inject_trace_context=lambda *args, **kwargs: {},
+        observe_route_selector_sanitization=lambda *args, **kwargs: None,
         record_span_event=lambda *args, **kwargs: None,
         update_correlation_context=lambda *args, **kwargs: {},
     ),
@@ -470,19 +471,11 @@ class RoutingGuardrailTests(unittest.TestCase):
             ["corp_db.catalog_lookup"],
         )
 
-    def test_llm_route_selector_repairs_invalid_selector_args_once(self):
+    def test_llm_route_selector_repairs_invalid_json_once(self):
         invalid_response = {
             "choices": [
                 {
-                    "message": {
-                        "content": json.dumps(
-                            {
-                                "selected_route_id": "corp_kb.company_common",
-                                "tool_args": {"query": "сертификаты", "undeclared": "drop me"},
-                            },
-                            ensure_ascii=False,
-                        )
-                    },
+                    "message": {"content": "not valid json at all"},
                     "finish_reason": "stop",
                 }
             ]
@@ -523,9 +516,43 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(route_hint["tool_args"]["topic_facets"], ["certification"])
         self.assertEqual(route_selection["selector"]["repair_status"], "succeeded")
         self.assertTrue(route_selection["selector"]["repair_attempted"])
-        self.assertEqual(route_selection["selector"]["validation_error_code"], "invalid_tool_args")
-        self.assertIn("undeclared", route_selection["selector"]["validation_error"])
+        self.assertEqual(route_selection["selector"]["validation_error_code"], "invalid_json")
         self.assertEqual(route_selection["selector"]["model"], "selector-test-model")
+
+    def test_llm_route_selector_sanitizes_unknown_tool_arg_without_repair_round_trip(self):
+        # RFC-028: an unknown tool_args field is dropped silently; it must not trigger the
+        # repair round-trip (a single call_llm side effect proves at most one call happens).
+        selector_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "selected_route_id": "corp_kb.company_common",
+                                "tool_args": {"query": "сертификаты", "undeclared": "drop me"},
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
+            clear=False,
+        ), patch.object(_MODULE, "call_llm", AsyncMock(side_effect=[selector_response])):
+            route_selection, route_hint, _secondary = asyncio.run(
+                _MODULE._select_route_with_llm("какие есть сертификаты?")
+            )
+
+        self.assertEqual(route_hint["route_id"], "corp_kb.company_common")
+        self.assertNotIn("undeclared", route_hint["tool_args"])
+        self.assertEqual(route_hint["tool_args"]["query"], "сертификаты")
+        self.assertFalse(route_selection["selector"]["repair_attempted"])
+        self.assertIn("dropped_unknown_tool_arg", route_selection["selector"]["sanitization_actions"])
 
     def test_route_selector_llm_outage_returns_temporary_unavailable(self):
         response, exec_mock, meta = self._run_flow(
