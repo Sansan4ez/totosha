@@ -23,6 +23,7 @@ from documents.routing_policy import (
     company_fact_intent_type as _company_fact_intent_type,
     contact_doc_search_query as _contact_doc_search_query,
     dedupe_strings as _dedupe_strings,
+    expand_company_fact_query as _expand_company_fact_query,
     is_application_recommendation_intent as _is_application_recommendation_intent,
     is_company_fact_intent as _is_company_fact_intent,
     is_document_lookup_intent as _is_document_lookup_intent,
@@ -553,6 +554,15 @@ def _route_execution_args(route_hint: dict[str, Any], query: str) -> dict[str, A
     properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
     if "query" in properties and not args.get("query"):
         args["query"] = query
+    # The selector often leaves query empty (or copies the raw message verbatim) for
+    # corp_kb.company_common, and the KB hybrid_search's matching is measurably worse against raw
+    # conversational phrasing than a canonical company-fact query shape (verified live: "Расскажи
+    # о компании ЛАДзавод светотехники" returns 0 results; "общая информация о компании ЛАДзавод
+    # светотехники" returns 20 for the identical KB scope). This is a narrow, verified-necessary
+    # exception to "the selector's own job fills query" -- not a reintroduction of RFC-028's
+    # removed keyword rewrite, which also touched topic_facets and every corp_kb route.
+    if str(args.get("knowledge_route_id") or "") == "corp_kb.company_common" and str(args.get("query") or "") == str(query or ""):
+        args["query"] = _expand_company_fact_query(query)
     return args
 
 
@@ -1143,6 +1153,15 @@ def _duplicate_retrieval_error(attempted_tool: str) -> str:
     return (
         f"Routing guardrail: `{attempted_tool}` with these exact args was already called. "
         "Измени аргументы, выбери другой retrieval tool или дай финальный ответ."
+    )
+
+
+def _authoritative_kb_scope_exhausted_error(attempted_tool: str) -> str:
+    return (
+        f"Routing guardrail: `{attempted_tool}` was already tried against this same knowledge "
+        "base scope and its content will not change within this request -- retrying it (even "
+        "reworded) cannot produce new results. Do not call it again. Answer now using whatever "
+        "evidence you already have, or state plainly that the information is not available."
     )
 
 
@@ -3766,7 +3785,7 @@ async def run_agent(
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
                     update_correlation_context(tool_status="blocked")
-                    tool_result = ToolResult(False, error=_duplicate_retrieval_error(name))
+                    tool_result = ToolResult(False, error=_authoritative_kb_scope_exhausted_error(name))
                 elif _is_duplicate_retrieval_attempt(name, args, routing_state):
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
