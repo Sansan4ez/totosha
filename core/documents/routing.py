@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -32,6 +34,7 @@ from .routing_policy import (
 from .series_catalog import canonical_series_names
 from .storage import ensure_document_layout, get_document_paths, iter_live_documents
 
+_logger = logging.getLogger(__name__)
 
 WORD_RE = re.compile(r"[\wА-Яа-яЁё]+", re.UNICODE)
 DOCUMENT_REQUEST_KEYWORDS = (
@@ -254,40 +257,32 @@ ROUTE_OWNER_PRIORITY = {
     "document_ingestion": 30,
     "runtime_merged": 40,
 }
-ROUTE_FAMILY_CARDS = {
-    "company_info": {
-        "title": "Company information",
-        "summary": "General company facts, series descriptions, certificates, contacts, and source-scoped corporate knowledge.",
-    },
-    "catalog": {
-        "title": "Catalog",
-        "summary": "Catalog entities, representative category examples, and structured product selection routes.",
-    },
-    "sphere_category_mapping": {
-        "title": "Sphere and category mapping",
-        "summary": "Curated mappings between application spheres and display categories.",
-    },
-    "portfolio": {
-        "title": "Portfolio",
-        "summary": "Realized projects, references, and examples by sphere, object, or product family.",
-    },
-    "mountings": {
-        "title": "Mountings",
-        "summary": "Mounting options and compatibility for categories and model families.",
-    },
-    "documents": {
-        "title": "Documents",
-        "summary": "Document lookup and file-backed product evidence such as passports or certificates.",
-    },
-    "codes_and_sku": {
-        "title": "Codes and SKU",
-        "summary": "Article, ETM, Oracle, and reverse model-code lookup routes.",
-    },
-    "other": {
-        "title": "Other",
-        "summary": "Fallback family for routes that do not yet belong to a business family.",
-    },
-}
+def static_route_catalog_dir() -> Path:
+    """RFC-028 declarative route catalog directory (core/routes/), shipped with the code.
+
+    Distinct from _repo_route_dir(), which is an optional runtime overlay of
+    generated/published manifests outside the core image.
+    """
+    return Path(__file__).resolve().parents[1] / "routes"
+
+
+def load_route_family_cards() -> dict[str, dict[str, str]]:
+    """Load routes/families.yaml (family id -> {title, summary})."""
+    families_path = static_route_catalog_dir() / "families.yaml"
+    if not families_path.exists():
+        return {}
+    payload = yaml.safe_load(families_path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else {}
+
+
+# RFC-028: families.yaml is the single source of truth for family title/summary metadata,
+# same as core/routes/<family>/<leaf>.yaml is for routes (see load_static_route_cards). It ships
+# in the image (core/Dockerfile: COPY routes/ ./routes/), so a missing/empty file is a packaging
+# bug, not a runtime condition to silently degrade -- fail fast at import time instead of falling
+# back to a second, driftable copy of this data in Python.
+ROUTE_FAMILY_CARDS = load_route_family_cards()
+if not ROUTE_FAMILY_CARDS:
+    raise RuntimeError(f"route family catalog is empty or missing at {static_route_catalog_dir() / 'families.yaml'}")
 ROUTE_FAMILY_ORDER = {
     family_id: index
     for index, family_id in enumerate(ROUTE_FAMILY_CARDS.keys(), start=1)
@@ -644,13 +639,17 @@ def _repo_route_dir() -> Path:
     return _repo_root() / "doc-corpus" / "manifests" / "routes"
 
 
-def static_route_catalog_dir() -> Path:
-    """RFC-028 declarative route catalog directory (core/routes/), shipped with the code.
-
-    Distinct from _repo_route_dir(), which is an optional runtime overlay of
-    generated/published manifests outside the core image.
-    """
-    return Path(__file__).resolve().parents[1] / "routes"
+@functools.lru_cache(maxsize=1)
+def _load_static_route_cards_from_disk() -> tuple[dict[str, Any], ...]:
+    routes_dir = static_route_catalog_dir()
+    routes: list[dict[str, Any]] = []
+    for path in sorted(routes_dir.glob("*/*.yaml")):
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict) and payload.get("route_id"):
+            routes.append(payload)
+        elif isinstance(payload, dict):
+            _logger.error(f"route catalog card missing route_id, skipped: {path}")
+    return tuple(routes)
 
 
 def load_static_route_cards() -> list[dict[str, Any]]:
@@ -660,23 +659,12 @@ def load_static_route_cards() -> list[dict[str, Any]]:
     Python literals: family/stage metadata is not included here (it is layered on by
     _normalize_route_card via ROUTE_BUSINESS_METADATA), only the route's own declared fields.
     File order is alphabetical by (family directory, filename) for determinism.
+
+    The disk read + YAML parse of all 23 route cards is cached process-wide (the catalog is
+    immutable within a running image); callers get a shallow per-route-dict copy so in-place
+    top-level key assignment (see _apply_runtime_argument_overrides) never mutates the cache.
     """
-    routes_dir = static_route_catalog_dir()
-    routes: list[dict[str, Any]] = []
-    for path in sorted(routes_dir.glob("*/*.yaml")):
-        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if isinstance(payload, dict) and payload.get("route_id"):
-            routes.append(payload)
-    return routes
-
-
-def load_route_family_cards() -> dict[str, dict[str, str]]:
-    """Load routes/families.yaml (family id -> {title, summary})."""
-    families_path = static_route_catalog_dir() / "families.yaml"
-    if not families_path.exists():
-        return {}
-    payload = yaml.safe_load(families_path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
+    return [dict(route) for route in _load_static_route_cards_from_disk()]
 
 
 def _runtime_catalog_path() -> Path:
