@@ -13,7 +13,10 @@ class DocWorkerFoundationTests(unittest.TestCase):
     def test_compose_declares_doc_worker_operator_service(self):
         compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertIn("doc-worker:", compose)
-        self.assertIn("build: ./doc-worker", compose)
+        # doc-worker builds from the repo root context (4e3e19f): its Dockerfile needs
+        # files outside doc-worker/ (e.g. core/ modules), so `build: ./doc-worker` is gone.
+        self.assertIn("dockerfile: doc-worker/Dockerfile", compose)
+        self.assertIn("context: .", compose)
         self.assertIn("profiles:\n      - operator", compose)
         self.assertIn("- .:/repo:ro", compose)
         self.assertIn("- ./workspace/_shared:/data", compose)
