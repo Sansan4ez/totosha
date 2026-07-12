@@ -1094,6 +1094,9 @@ async def _try_family_local_route_fallbacks(
     return ""
 
 
+AUTHORITATIVE_KB_MAX_ATTEMPTS = 2
+
+
 def _is_authoritative_kb_tool_attempt(name: str, args: dict, state: dict[str, Any]) -> bool:
     if name != "corp_db_search" or not _has_authoritative_kb_route(state):
         return False
@@ -1106,7 +1109,16 @@ def _is_authoritative_kb_tool_attempt(name: str, args: dict, state: dict[str, An
     requested_source_files = args.get("source_files")
     expected_source_files = state.get("source_file_scope")
     if isinstance(requested_source_files, list) and isinstance(expected_source_files, list) and requested_source_files:
-        return requested_source_files == expected_source_files
+        if requested_source_files != expected_source_files:
+            return False
+    # A transient tool-level error (timeout, transport failure) on the primary attempt carries no
+    # evidence about the KB content itself, unlike a genuine empty/weak content miss -- it doesn't
+    # burn the request's one sanctioned retry. Allow a single retry in that case before blocking.
+    if (
+        state.get("retrieval_evidence_status") == "error"
+        and int(state.get("authoritative_kb_attempt_count") or 0) < AUTHORITATIVE_KB_MAX_ATTEMPTS
+    ):
+        return False
     return True
 
 
@@ -3575,6 +3587,8 @@ async def run_agent(
                 # keyword-driven rewrite. topic_facets/query refinement is the selector's own job
                 # now that both are selector-visible schema properties on the KB routes.
                 routing_state["retrieval_tool_used"] = True
+                if primary_tool_name == "corp_db_search" and _has_authoritative_kb_route(routing_state):
+                    routing_state["authoritative_kb_attempt_count"] = int(routing_state.get("authoritative_kb_attempt_count") or 0) + 1
                 _record_retrieval_attempt(primary_tool_name, primary_args, routing_state)
                 primary_result = await execute_tool(
                     primary_tool_name,
@@ -3768,6 +3782,7 @@ async def run_agent(
                     tool_status="planned",
                 )
 
+                authoritative_kb_call_blocked = False
                 if (
                     _is_skill_or_doc_browse_attempt(name, args)
                     and _has_high_level_retrieval_hint(routing_state)
@@ -3786,6 +3801,7 @@ async def run_agent(
                     # execution already tried this scope; declared same-family/cross-family
                     # fallbacks are the only sanctioned retry path (see
                     # _try_family_local_route_fallbacks).
+                    authoritative_kb_call_blocked = True
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
                     update_correlation_context(tool_status="blocked")
@@ -3809,8 +3825,16 @@ async def run_agent(
                         tool_call_seq=tool_call_seq,
                     )
                 else:
-                    # Execute tool. Authoritative KB attempts never reach here -- they're blocked
-                    # by the elif above -- so no per-attempt counting is needed for that case.
+                    # Execute tool. A repeat authoritative KB attempt only reaches here when the
+                    # elif above granted the one sanctioned retry after a transient primary error
+                    # (see _is_authoritative_kb_tool_attempt) -- count it so a second failure is
+                    # blocked instead of retried indefinitely.
+                    if (
+                        name == "corp_db_search"
+                        and _has_authoritative_kb_route(routing_state)
+                        and str(args.get("knowledge_route_id") or routing_state.get("knowledge_route_id") or "") == str(routing_state.get("knowledge_route_id") or "")
+                    ):
+                        routing_state["authoritative_kb_attempt_count"] = int(routing_state.get("authoritative_kb_attempt_count") or 0) + 1
                     _record_retrieval_attempt(name, args, routing_state)
                     tool_result = await execute_tool(
                         name,
@@ -3859,7 +3883,16 @@ async def run_agent(
                         routing_state["retrieval_phase"] = "open"
                     _update_routing_observability(routing_state)
 
-                if name == "corp_db_search" and _is_authoritative_kb_tool_attempt(name, args, routing_state):
+                if (
+                    name == "corp_db_search"
+                    and not authoritative_kb_call_blocked
+                    and _is_authoritative_kb_tool_attempt(name, args, routing_state)
+                ):
+                    # authoritative_kb_call_blocked guards against reading the guardrail's own
+                    # synthetic ToolResult(False, ...) (set above when this exact call was blocked
+                    # outright) as real KB evidence -- that would misclassify a blocked attempt as
+                    # a transient "error" and spuriously unlock _is_authoritative_kb_tool_attempt's
+                    # one-retry budget for a call that never actually reached the KB.
                     evidence_status = _authoritative_kb_evidence_status(args, tool_result, routing_message, routing_state)
                     routing_state["retrieval_evidence_status"] = evidence_status
                     routing_state["selected_source"] = "corp_db" if tool_result.success else routing_state["selected_source"]
