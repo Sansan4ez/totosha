@@ -460,6 +460,13 @@ LLM_CONTEXT_TRIM_HARD_STOPS_TOTAL = Counter(
     labelnames=("service", "purpose"),
     registry=REGISTRY,
 )
+ROUTE_SELECTOR_PROMPT_CHARS = Histogram(
+    "route_selector_prompt_characters",
+    "RFC-028 workstream 5: size of the compact route selector prompt (system+user messages).",
+    labelnames=("service",),
+    registry=REGISTRY,
+    buckets=(2000, 4000, 8000, 12000, 16000, 20000, 24000, 32000, 40000),
+)
 
 
 def _normalize_context_value(value: Any) -> str:
@@ -723,6 +730,10 @@ def observe_tool_execution(tool_name: str, tool_status: str, duration_ms: float)
     )
     TOOL_EXECUTIONS_TOTAL.labels(*labels).inc()
     TOOL_EXECUTION_DURATION_MS.labels(*labels).observe(duration_ms)
+
+
+def observe_route_selector_prompt_size(total_chars: int) -> None:
+    ROUTE_SELECTOR_PROMPT_CHARS.labels(ACTIVE_SERVICE_NAME).observe(max(0, int(total_chars)))
 
 
 def observe_context_trim(

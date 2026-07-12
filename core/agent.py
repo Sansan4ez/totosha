@@ -37,6 +37,7 @@ from logger import agent_logger, log_agent_step
 from observability import (
     REQUEST_ID as OBS_REQUEST_ID,
     inject_trace_context,
+    observe_route_selector_prompt_size,
     observe_route_selector_sanitization,
     record_span_event,
     update_correlation_context,
@@ -2753,7 +2754,30 @@ def _compact_selector_argument_schema(argument_schema: dict[str, Any], locked_ar
     return compact
 
 
+def _route_when_to_use(route: dict[str, Any]) -> str:
+    """One compact line telling the selector when this route applies.
+
+    Derived from the route card's own human-authored summary (truncated) rather than a new
+    per-route catalog field: the summary already says what the route is for, and reusing it
+    avoids maintaining the same fact twice across routes/<family>/<leaf>.yaml files.
+    """
+    summary = str(route.get("summary") or "").strip()
+    if not summary:
+        return str(route.get("title") or "")[:160]
+    first_sentence = summary.split(". ")[0].strip().rstrip(".")
+    text = first_sentence or summary
+    return text[:180]
+
+
 def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[str, Any]:
+    # RFC-028 workstream 5: route_id, family_id, title, one-line when_to_use, and a trimmed
+    # argument schema of selector-fillable fields -- topics/keywords/patterns/tool_name/
+    # table_scopes/document_selectors/fallback_policy stay in routes/*.yaml for humans, tests, and
+    # the (currently unused) candidate-ranking hook, but are not spent on prompt tokens.
+    # fallback_policy is safe to drop here specifically because RFC-028 workstream 1 sanitizes any
+    # fallback_route_ids the selector proposes that the runtime doesn't recognize, instead of
+    # failing the request -- the selector no longer needs perfect fallback_policy knowledge to
+    # behave safely.
     compact_families: list[dict[str, Any]] = []
     for family in selector_payload.get("families") or []:
         if not isinstance(family, dict):
@@ -2761,50 +2785,27 @@ def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[st
         compact_family = {
             "family_id": str(family.get("family_id") or ""),
             "family_title": str(family.get("family_title") or "")[:120],
-            "family_summary": str(family.get("family_summary") or "")[:240],
             "leaf_routes": [],
         }
         for route in family.get("leaf_routes") or []:
             if not isinstance(route, dict):
                 continue
             locked_args = route.get("locked_args") if isinstance(route.get("locked_args"), dict) else {}
-            fallback_policy = route.get("fallback_policy") if isinstance(route.get("fallback_policy"), dict) else {}
             compact_route = {
                 "route_id": str(route.get("route_id") or ""),
-                "route_family": str(route.get("route_family") or ""),
                 "family_id": str(route.get("family_id") or ""),
-                "leaf_route_id": str(route.get("leaf_route_id") or route.get("route_id") or ""),
-                "route_kind": str(route.get("route_kind") or ""),
                 "title": str(route.get("title") or "")[:160],
-                "summary": str(route.get("summary") or "")[:240],
-                "topics": list(route.get("topics") or [])[:6],
-                "keywords": list(route.get("keywords") or [])[:12],
-                "patterns": list(route.get("patterns") or [])[:6],
-                "tool_name": str(route.get("tool_name") or route.get("executor") or ""),
-                "locked_args": locked_args,
+                "when_to_use": _route_when_to_use(route),
                 "argument_schema": _compact_selector_argument_schema(route.get("argument_schema") or {}, locked_args),
-                "argument_hints": dict(route.get("argument_hints") or {}),
-                "fallback_policy": {
-                    "default_scope": str(fallback_policy.get("default_scope") or "family_local"),
-                    "same_family_route_ids": list(fallback_policy.get("same_family_route_ids") or [])[:6],
-                    "cross_family_route_ids": list(fallback_policy.get("cross_family_route_ids") or [])[:6],
-                    "allow_cross_family": bool(fallback_policy.get("allow_cross_family")),
-                },
             }
-            table_scopes = route.get("table_scopes")
-            if isinstance(table_scopes, list) and table_scopes:
-                compact_route["table_scopes"] = table_scopes[:8]
-            document_selectors = route.get("document_selectors")
-            if isinstance(document_selectors, list) and document_selectors:
-                compact_route["document_selectors"] = document_selectors[:8]
+            argument_hints = route.get("argument_hints")
+            if isinstance(argument_hints, dict) and argument_hints:
+                compact_route["argument_hints"] = argument_hints
             compact_family["leaf_routes"].append(compact_route)
         compact_families.append(compact_family)
 
     compact_payload = {
         "query": str(selector_payload.get("query") or ""),
-        "intent_family": str(selector_payload.get("intent_family") or ""),
-        "catalog_version": str(selector_payload.get("catalog_version") or ""),
-        "schema_version": int(selector_payload.get("schema_version") or 0),
         "candidate_family_ids": list(selector_payload.get("candidate_family_ids") or []),
         "families": compact_families,
     }
@@ -2822,17 +2823,22 @@ def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dic
     compact_payload = _compact_route_selector_payload(selector_payload)
     payload = json.dumps(compact_payload, ensure_ascii=False, separators=(",", ":"))
     system = (
-        "You are a strict retrieval route selector. First choose the best business family, then choose exactly one leaf route from that family. "
+        "You are a strict retrieval route selector. First choose the best business family, then choose exactly one leaf route from that family, using each route's when_to_use to judge fit. "
         "Return only valid JSON with selected_family_id, selected_route_id, confidence, reason, tool_args, and optional fallback_route_ids. "
-        "tool_args must contain only fields declared by the selected route argument_schema. "
-        "selected_family_id must match the chosen route family_id. Optional fallback_route_ids must stay inside the selected family unless the selected leaf fallback_policy explicitly lists cross_family_route_ids. "
-        "Respect locked_args for the chosen route and do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
+        "tool_args must contain only fields declared by the selected route argument_schema; never set a key listed in locked_arg_keys. "
+        "selected_family_id must match the chosen route family_id. Prefer fallback_route_ids that stay inside the selected family; the runtime will drop any it doesn't recognize. "
+        "Do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
     )
     user = (
         "Select the best route and arguments for this user query using only this compact route catalog payload:\n"
         f"{payload}"
     )
-    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    try:
+        observe_route_selector_prompt_size(sum(len(m["content"]) for m in messages))
+    except Exception:
+        pass
+    return messages
 
 
 def _selector_args_shape(tool_args: dict[str, Any]) -> list[str]:

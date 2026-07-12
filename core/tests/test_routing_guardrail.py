@@ -85,6 +85,7 @@ _stub_modules = {
     "observability": types.SimpleNamespace(
         REQUEST_ID=ContextVar("request_id", default="-"),
         inject_trace_context=lambda *args, **kwargs: {},
+        observe_route_selector_prompt_size=lambda *args, **kwargs: None,
         observe_route_selector_sanitization=lambda *args, **kwargs: None,
         record_span_event=lambda *args, **kwargs: None,
         update_correlation_context=lambda *args, **kwargs: {},
@@ -2382,6 +2383,29 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(exec_mock.await_args_list[0].args[1]["kind"], "application_recommendation")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
         self.assertEqual(meta["finalizer_mode"], "unavailable")
+
+    def test_selector_prompt_stays_within_size_budget(self):
+        # RFC-028 workstream 5: the compact selector prompt should stay well under its old ~35KB
+        # size (measured before this workstream) for every route family. The budget here (20 KB)
+        # reflects what's actually achievable without cutting real per-route schema data -- e.g.
+        # corp_db.lamp_filters alone declares ~40 named filter dimensions and a 20-value
+        # mounting_type enum that three different routes legitimately need, not incidental bloat.
+        queries = [
+            "какие есть сертификаты?",
+            "Какие у вас есть серии светильников?",
+            "Покажи паспорт на NL Nova",
+            "Какие крепления доступны у серии NL Nova?",
+            "Что это за модель по коду 12345?",
+        ]
+        with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
+            os.environ, {"CORP_DOCS_ROOT": str(Path(docs_tmp))}, clear=False
+        ):
+            for query in queries:
+                with self.subTest(query=query):
+                    payload = _MODULE.build_route_selector_payload(query)
+                    messages = _MODULE._build_route_selector_messages(payload)
+                    total_chars = sum(len(m["content"]) for m in messages)
+                    self.assertLess(total_chars, 20000, f"selector prompt for {query!r} is {total_chars} chars")
 
 
 if __name__ == "__main__":

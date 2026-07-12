@@ -72,6 +72,7 @@ _stub_modules = {
     "observability": types.SimpleNamespace(
         REQUEST_ID=ContextVar("request_id", default="-"),
         inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
+        observe_route_selector_prompt_size=lambda *args, **kwargs: None,
         observe_route_selector_sanitization=lambda *args, **kwargs: None,
         record_span_event=lambda *args, **kwargs: None,
         update_correlation_context=lambda *args, **kwargs: {},
