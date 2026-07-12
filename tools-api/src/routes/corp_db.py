@@ -3853,9 +3853,13 @@ async def _category_mountings(conn: asyncpg.Connection, req: CorpDbSearchRequest
     )
 
 
-async def _lamp_filters(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
+async def _fetch_lamp_filter_rows(
+    conn: asyncpg.Connection,
+    req: CorpDbSearchRequest,
+    limit: int,
+    offset: int,
+) -> tuple[list[asyncpg.Record], dict[str, Any], list[str]]:
     conditions, args, filters = _build_lamp_conditions(req, alias="l")
-
     args.extend([limit, offset])
     rows = await conn.fetch(
         f"""
@@ -3867,6 +3871,25 @@ async def _lamp_filters(conn: asyncpg.Connection, req: CorpDbSearchRequest, limi
         """,
         *args,
     )
+    return rows, filters, conditions
+
+
+async def _lamp_filters(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
+    rows, filters, _ = await _fetch_lamp_filter_rows(conn, req, limit, offset)
+
+    category = str(req.category or "").strip()
+    if not rows and category:
+        # Colloquial category words ("прожектор", "лампа", ...) often don't exist in
+        # the catalog taxonomy. Retry without the category filter when other filters
+        # still constrain the result, and report the dropped filter to the caller.
+        relaxed_req = _request_like(req, category=None)
+        relaxed_conditions, _, _ = _build_lamp_conditions(relaxed_req, alias="l")
+        if len(relaxed_conditions) > 1:
+            rows, filters, _ = await _fetch_lamp_filter_rows(conn, relaxed_req, limit, offset)
+            if rows:
+                filters["category_unmatched"] = category
+                filters["category_filter_dropped"] = True
+
     return _success("lamp_filters", filters=filters, results=[_serialize_lamp_row(row) for row in rows])
 
 
