@@ -345,6 +345,8 @@ async def test_schedule_task_add_list_cancel():
         "content": "Test reminder",
         "delay_minutes": 999,
     }, TEST_CTX)
+    if not r.success and "unavailable" in (r.error or "").lower():
+        pytest.skip("scheduler service is not reachable; this integration test needs the live stack")
     assert r.success
     assert "task_" in r.output.lower() or "scheduled" in r.output.lower()
     

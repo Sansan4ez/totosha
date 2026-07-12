@@ -4,6 +4,11 @@ import pytest
 import httpx
 
 BASE = "http://localhost:4000"
+
+try:
+    httpx.get(BASE + "/health", timeout=1)
+except Exception:
+    pytest.skip("core API is not running; these integration tests need the live stack", allow_module_level=True)
 TEST_USER = 999999
 TEST_CHAT = 999999
 
