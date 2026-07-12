@@ -3195,11 +3195,20 @@ async def _lamp_documents_index(conn: asyncpg.Connection, req: CorpDbSearchReque
         entries = _document_entries(docs_by_lamp.get(row["lamp_id"]), document_type=document_type)
         if not entries:
             continue
-        payload = _serialize_lamp_row(row)
-        payload["documents"] = entries
-        payload["document_count"] = len(entries)
-        payload["primary_document"] = entries[0]
-        results.append(payload)
+        # Document-centric payload: lamp identity + document links only, so the
+        # full document list survives downstream evidence size limits.
+        results.append(
+            {
+                "lamp_id": row["lamp_id"],
+                "name": row["name"],
+                "category_id": _row_get(row, "category_id"),
+                "category_name": _row_get(row, "category_name"),
+                "url": _row_get(row, "url"),
+                "documents": entries,
+                "document_count": len(entries),
+                "primary_document": entries[0],
+            }
+        )
 
     return _success(
         "lamp_documents_index",
