@@ -1273,6 +1273,10 @@ def _sanitize_filter_defaults(req: CorpDbSearchRequest) -> CorpDbSearchRequest:
     knowledge_route_id, source_files, topic_facets = _resolve_kb_route_scope(req)
     if knowledge_route_id:
         updates["knowledge_route_id"] = knowledge_route_id
+    elif _normalize_ws(req.knowledge_route_id):
+        # Route-card ids (corp_db.*) are dropped by normalization; clear the raw
+        # field too so downstream code doesn't treat the request as KB-scoped.
+        updates["knowledge_route_id"] = None
     if source_files:
         updates["source_files"] = source_files
     if req.topic_facets is not None:
