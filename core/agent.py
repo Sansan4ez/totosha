@@ -757,7 +757,7 @@ async def _finalize_with_scoped_evidence(
         "selected_route_kind": str(route_hint.get("route_kind") or ""),
         "tool_name": tool_name,
         "tool_args": tool_args,
-        "tool_output": str(tool_result.output or "")[:12000],
+        "tool_output": str(tool_result.output or "")[:_finalizer_evidence_max_chars()],
     }
     finalizer_messages = list(base_messages)
     finalizer_messages.append(
@@ -1954,6 +1954,10 @@ def _float_env(name: str, default: float, *, minimum: float = 0.0) -> float:
 
 def _max_context_chars() -> int:
     return _int_env("MAX_CONTEXT_CHARS", 40000, minimum=1024)
+
+
+def _finalizer_evidence_max_chars() -> int:
+    return _int_env("FINALIZER_EVIDENCE_MAX_CHARS", 24000, minimum=2000)
 
 
 def _llm_max_attempts(purpose: str = "agent_loop") -> int:
