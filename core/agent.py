@@ -2855,6 +2855,9 @@ def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[st
             "category_names": list(resolved_sphere_context.get("category_names") or []),
             "confirmed": bool(resolved_sphere_context.get("confirmed")),
         }
+    recent_dialog = selector_payload.get("recent_dialog")
+    if isinstance(recent_dialog, list) and recent_dialog:
+        compact_payload["recent_dialog"] = recent_dialog
     return compact_payload
 
 
@@ -2866,6 +2869,7 @@ def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dic
         "Return only valid JSON with selected_family_id, selected_route_id, confidence, reason, tool_args, and optional fallback_route_ids. "
         "tool_args must contain only fields declared by the selected route argument_schema; never set a key listed in locked_arg_keys. "
         "selected_family_id must match the chosen route family_id. Prefer fallback_route_ids that stay inside the selected family; the runtime will drop any it doesn't recognize. "
+        "recent_dialog (if present) holds the latest user/assistant turns, oldest first. Use it only to resolve follow-up queries — pronouns and elliptical asks like 'а ещё варианты?' — to the right family and to fill tool_args the current query implies but does not restate. The query field is the current user message and stays authoritative. "
         "Do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
     )
     user = (
@@ -3153,15 +3157,54 @@ async def _default_route_selector_llm(messages: list[dict[str, Any]], purpose: s
     return await call_llm(messages, [], purpose=purpose)
 
 
+def _selector_dialog_context_pairs() -> int:
+    return _int_env("ROUTE_SELECTOR_DIALOG_CONTEXT_PAIRS", 3, minimum=0)
+
+
+def _recent_dialog_digest(
+    session: Session,
+    *,
+    max_pairs: int | None = None,
+    user_chars: int = 200,
+    assistant_chars: int = 300,
+) -> list[dict[str, str]]:
+    """Compact user/assistant pairs from session history for the route selector.
+
+    The selector only needs enough context to resolve follow-up phrasings
+    ("а ещё варианты?", pronouns) to the right family and arguments, so each
+    turn is truncated hard to keep the selector prompt small.
+    """
+    if max_pairs is None:
+        max_pairs = _selector_dialog_context_pairs()
+    if max_pairs <= 0:
+        return []
+    digest: list[dict[str, str]] = []
+    pending_user = ""
+    for msg in getattr(session, "history", None) or []:
+        role = str(msg.get("role") or "")
+        content = str(msg.get("content") or "").strip()
+        if role == "user":
+            pending_user = content
+        elif role == "assistant":
+            digest.append({"user": pending_user[:user_chars], "assistant": content[:assistant_chars]})
+            pending_user = ""
+    if pending_user:
+        digest.append({"user": pending_user[:user_chars], "assistant": ""})
+    return digest[-max_pairs:]
+
+
 async def _select_route_with_llm(
     routing_message: str,
     *,
     sphere_context: dict[str, Any] | None = None,
+    dialog_context: list[dict[str, str]] | None = None,
     llm_caller: RouteSelectorLLM | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
     call_selector_llm = llm_caller or _default_route_selector_llm
     selector_started = perf_counter()
     selector_payload = build_route_selector_payload(routing_message, sphere_context=sphere_context)
+    if dialog_context:
+        selector_payload["recent_dialog"] = dialog_context
     candidate_routes = selector_payload_leaf_routes(selector_payload)
     if not candidate_routes:
         raise RuntimeError("route selector has no candidate routes")
@@ -3397,6 +3440,7 @@ async def _run_agent_impl(
             route_selection, route_hint, secondary_route_candidates = await _select_route_with_llm(
                 routing_message,
                 sphere_context=selector_sphere_context,
+                dialog_context=_recent_dialog_digest(session),
             )
             selector_primary_execution_enabled = True
         except Exception as exc:
