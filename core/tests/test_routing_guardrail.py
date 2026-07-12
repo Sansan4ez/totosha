@@ -115,21 +115,13 @@ finally:
 
 class RoutingGuardrailTests(unittest.TestCase):
     def test_company_fact_helpers_classify_subtypes_and_queries(self):
+        # RFC-028 workstream 3.4: agent.py no longer imports/uses expand_company_fact_query or
+        # rewrite_company_fact_search_args (the keyword-driven query/args rewrite was removed);
+        # those functions are still covered directly in tests/test_routing_policy.py. Only
+        # company_fact_intent_type remains re-exported and used in agent.py.
         self.assertEqual(_MODULE._company_fact_intent_type("Подскажи контакты компании."), "contacts")
         self.assertEqual(_MODULE._company_fact_intent_type("Расскажи о компании"), "about_company")
         self.assertEqual(_MODULE._company_fact_intent_type("Какой официальный сайт компании?"), "website")
-        self.assertIn("lad@ladled.ru", _MODULE._expand_company_fact_query("Подскажи контакты компании.").lower())
-        self.assertIn("общая информация", _MODULE._expand_company_fact_query("Расскажи о компании").lower())
-        rewritten = _MODULE._rewrite_company_fact_search_args(
-            {"power_w_min": 0, "voltage_kind": "AC", "explosion_protected": False, "limit": 5},
-            "Подскажи контакты компании.",
-        )
-        self.assertEqual(rewritten["knowledge_route_id"], "corp_kb.company_common")
-        self.assertEqual(rewritten["source_files"], ["common_information_about_company.md"])
-        self.assertEqual(rewritten["topic_facets"], ["contacts"])
-        self.assertNotIn("power_w_min", rewritten)
-        self.assertNotIn("voltage_kind", rewritten)
-        self.assertNotIn("explosion_protected", rewritten)
         with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
             os.environ,
             {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
@@ -1326,9 +1318,14 @@ class RoutingGuardrailTests(unittest.TestCase):
         )
 
         self.assertIn("ladzavod.ru", response)
-        self.assertEqual(exec_mock.await_count, 2)
+        # RFC-028 workstream 3.4: company_info now attempts its declared family-local fallback
+        # (corp_kb.company_common -> corp_kb.series_description) before falling through to the
+        # general agent loop, so there is one more corp_db_search call than before that fallback
+        # was wired up.
+        self.assertEqual(exec_mock.await_count, 3)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
-        self.assertEqual(exec_mock.await_args_list[1].args[0], "doc_search")
+        self.assertEqual(exec_mock.await_args_list[1].args[0], "corp_db_search")
+        self.assertEqual(exec_mock.await_args_list[2].args[0], "doc_search")
         self.assertEqual(meta["retrieval_selected_source"], "doc_search")
         self.assertEqual(meta["routing_guardrail_hits"], 0)
         self.assertEqual(meta["retrieval_phase"], "open")
@@ -1366,7 +1363,10 @@ class RoutingGuardrailTests(unittest.TestCase):
         args = exec_mock.await_args_list[0].args[1]
         self.assertEqual(args["knowledge_route_id"], "corp_kb.company_common")
         self.assertEqual(args["source_files"], ["common_information_about_company.md"])
-        self.assertEqual(args["topic_facets"], ["certification"])
+        # RFC-028 workstream 3.4: topic_facets is no longer injected by keyword rewrite; it's the
+        # selector's own job to fill it in (a selector-visible schema property), and this test's
+        # synthetic selector fixture doesn't supply one.
+        self.assertNotIn("topic_facets", args)
         self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
         self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
@@ -1403,7 +1403,10 @@ class RoutingGuardrailTests(unittest.TestCase):
         args = exec_mock.await_args_list[0].args[1]
         self.assertEqual(args["knowledge_route_id"], "corp_kb.company_common")
         self.assertEqual(args["source_files"], ["common_information_about_company.md"])
-        self.assertEqual(args["topic_facets"], ["quality"])
+        # RFC-028 workstream 3.4: topic_facets is no longer injected by keyword rewrite; it's the
+        # selector's own job to fill it in (a selector-visible schema property), and this test's
+        # synthetic selector fixture doesn't supply one.
+        self.assertNotIn("topic_facets", args)
         self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
         self.assertEqual(meta["retrieval_evidence_status"], "sufficient")
@@ -1940,7 +1943,8 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("239-18-11", response)
         self.assertIn("lad@ladled.ru", response)
         self.assertEqual(exec_mock.await_count, 1)
-        self.assertIn("lad@ladled.ru", exec_mock.await_args_list[0].args[1]["query"].lower())
+        # RFC-028 workstream 3.4: no keyword-driven query rewrite; the raw user query is used as-is.
+        self.assertEqual(exec_mock.await_args_list[0].args[1]["query"], "контакты компании")
         self.assertTrue(meta["company_fact_payload_relevant"])
         self.assertEqual(meta["company_fact_intent_type"], "contacts")
         self.assertEqual(meta["company_fact_finalizer_mode"], "llm")
@@ -2115,8 +2119,13 @@ class RoutingGuardrailTests(unittest.TestCase):
         )
 
         self.assertIn("ladzavod.ru", response)
-        self.assertEqual(exec_mock.await_count, 1)
+        # RFC-028 workstream 3.4: primary attempt (empty) + one declared family-local fallback
+        # attempt (corp_kb.company_common -> corp_kb.series_description, also empty) before the
+        # ReAct loop's two identical re-attempts get blocked outright as repeats of the same
+        # already-tried authoritative KB scope.
+        self.assertEqual(exec_mock.await_count, 2)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
+        self.assertEqual(exec_mock.await_args_list[1].args[0], "corp_db_search")
         self.assertEqual(meta["routing_guardrail_hits"], 2)
         self.assertEqual(meta["retrieval_phase"], "open")
 

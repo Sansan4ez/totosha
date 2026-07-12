@@ -23,15 +23,12 @@ from documents.routing_policy import (
     company_fact_intent_type as _company_fact_intent_type,
     contact_doc_search_query as _contact_doc_search_query,
     dedupe_strings as _dedupe_strings,
-    expand_company_fact_query as _expand_company_fact_query,
     is_application_recommendation_intent as _is_application_recommendation_intent,
     is_company_fact_intent as _is_company_fact_intent,
     is_document_lookup_intent as _is_document_lookup_intent,
     is_portfolio_lookup_intent as _is_portfolio_lookup_intent,
     lighting_norms_topic_facets as _lighting_norms_topic_facets,
     normalize_routing_text as _normalize_routing_text,
-    rewrite_authoritative_kb_search_args as _rewrite_authoritative_kb_search_args,
-    rewrite_company_fact_search_args as _rewrite_company_fact_search_args,
     routing_message_text as _routing_message_text,
     routing_query_text as _routing_query_text,
     text_has_any as _text_has_any,
@@ -314,16 +311,23 @@ def _payload_matches_kb_route_scope(payload: dict[str, Any], source_files: list[
 
 
 def _authoritative_kb_evidence_status(args: dict[str, Any], tool_result: ToolResult, message: str, routing_state: dict[str, Any]) -> str:
+    # RFC-028 workstream 3.4: one rule for every corp_kb.* route -- a successful, non-empty
+    # payload is sufficient. The executor already scopes the search to the route's locked
+    # source_files, so a returned result is scoped by construction; no extra metadata check is
+    # needed here. This replaces the company_common-specific keyword/subtype relevance grading
+    # (_company_fact_payload_is_relevant), which graded corp_kb.company_common and
+    # corp_kb.series_description identically (they share this KB source id) using a fixed set of
+    # known subtypes (website/year/address/requisites/socials/certification/quality). A payload
+    # outside that fixed set -- e.g. a series listing -- was marked "weak" even when objectively
+    # relevant, driving repeated empty/weak retries in the ReAct loop (see the 2026-07-11 baseline
+    # replay of "Какие у вас есть серии светильников?").
     if not tool_result.success:
         return "error"
     payload = _parse_json_object(tool_result.output or "")
     if payload.get("status") == "empty":
         return "empty"
-    knowledge_route_id = str(args.get("knowledge_route_id") or routing_state.get("knowledge_route_id") or "")
-    if knowledge_route_id == "corp_kb.company_common":
-        return "sufficient" if _company_fact_payload_is_relevant(payload, message) else "weak"
-    source_files = routing_state.get("source_file_scope")
-    if isinstance(source_files, list) and _payload_matches_kb_route_scope(payload, source_files):
+    results = payload.get("results")
+    if payload.get("status") == "success" and isinstance(results, list) and results:
         return "sufficient"
     return "weak"
 
@@ -944,7 +948,7 @@ async def _try_family_local_route_fallbacks(
     tool_ctx: ToolContext,
 ) -> str:
     family_id = str(selected_route.get("selected_family_id") or selected_route.get("family_id") or "")
-    if not family_id or family_id == "company_info":
+    if not family_id:
         return ""
 
     routes_by_id = _active_visible_routes_by_id()
@@ -3537,14 +3541,10 @@ async def run_agent(
         primary_args = _route_execution_args(route_hint, routing_message)
         if primary_tool_name:
             try:
-                if (
-                    primary_tool_name == "corp_db_search"
-                    and _has_authoritative_kb_route(routing_state)
-                    and str(primary_args.get("kind") or "hybrid_search") in {"", "hybrid_search"}
-                ):
-                    primary_args = _rewrite_authoritative_kb_search_args(primary_args, routing_message, routing_state)
-                elif primary_tool_name == "corp_db_search" and routing_state["intent"] == "company_fact":
-                    primary_args = _rewrite_company_fact_search_args(primary_args, routing_message)
+                # RFC-028 workstream 3.4: primary_args is already selector tool_args merged with
+                # locked_args/executor_args_template (via _route_execution_args); no further
+                # keyword-driven rewrite. topic_facets/query refinement is the selector's own job
+                # now that both are selector-visible schema properties on the KB routes.
                 routing_state["retrieval_tool_used"] = True
                 _record_retrieval_attempt(primary_tool_name, primary_args, routing_state)
                 primary_result = await execute_tool(
@@ -3740,33 +3740,6 @@ async def run_agent(
                 )
 
                 if (
-                    name == "corp_db_search"
-                    and _has_authoritative_kb_route(routing_state)
-                    and int(routing_state.get("authoritative_kb_attempt_count") or 0) < 2
-                    and str(args.get("kind") or "hybrid_search") in {"", "hybrid_search"}
-                ):
-                    args = _rewrite_authoritative_kb_search_args(args, routing_message, routing_state)
-                    agent_logger.info(
-                        "[iter %s] Rewrote authoritative KB corp_db args route=%s facets=%s query=%s",
-                        iteration,
-                        routing_state.get("knowledge_route_id") or "",
-                        json.dumps(routing_state.get("topic_facets") or [], ensure_ascii=False),
-                        args.get("query") or "",
-                    )
-                elif (
-                    name == "corp_db_search"
-                    and routing_state["intent"] == "company_fact"
-                    and not routing_state["retrieval_tool_used"]
-                ):
-                    args = _rewrite_company_fact_search_args(args, routing_message)
-                    agent_logger.info(
-                        "[iter %s] Rewrote company-fact corp_db args subtype=%s query=%s",
-                        iteration,
-                        routing_state.get("company_fact_intent_type") or "",
-                        args.get("query") or "",
-                    )
-                
-                if (
                     _is_skill_or_doc_browse_attempt(name, args)
                     and _has_high_level_retrieval_hint(routing_state)
                 ):
@@ -3775,6 +3748,19 @@ async def run_agent(
                     _update_routing_observability(routing_state, blocked_tool=name)
                     update_correlation_context(tool_status="blocked")
                     tool_result = ToolResult(False, error=_raw_browse_error(route_hint, name))
+                elif _is_authoritative_kb_tool_attempt(name, args, routing_state):
+                    # RFC-028 workstream 3.4: no keyword-driven query/topic_facets rewrite. A
+                    # repeat corp_db_search targeting the same authoritative KB scope (structural
+                    # match on kind/knowledge_route_id/source_files, not keywords) is blocked
+                    # outright instead of rewritten -- the KB content can't change mid-request, so
+                    # retrying it (even reworded) can never produce new evidence. The primary
+                    # execution already tried this scope; declared same-family/cross-family
+                    # fallbacks are the only sanctioned retry path (see
+                    # _try_family_local_route_fallbacks).
+                    routing_state["guardrail_activations"] += 1
+                    _update_routing_observability(routing_state, blocked_tool=name)
+                    update_correlation_context(tool_status="blocked")
+                    tool_result = ToolResult(False, error=_duplicate_retrieval_error(name))
                 elif _is_duplicate_retrieval_attempt(name, args, routing_state):
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
@@ -3794,11 +3780,8 @@ async def run_agent(
                         tool_call_seq=tool_call_seq,
                     )
                 else:
-                    # Execute tool
-                    if _is_authoritative_kb_tool_attempt(name, args, routing_state):
-                        routing_state["authoritative_kb_attempt_count"] = int(routing_state.get("authoritative_kb_attempt_count") or 0) + 1
-                        routing_state["retrieval_retry_count"] = max(0, int(routing_state["authoritative_kb_attempt_count"]) - 1)
-                        _update_routing_observability(routing_state)
+                    # Execute tool. Authoritative KB attempts never reach here -- they're blocked
+                    # by the elif above -- so no per-attempt counting is needed for that case.
                     _record_retrieval_attempt(name, args, routing_state)
                     tool_result = await execute_tool(
                         name,
