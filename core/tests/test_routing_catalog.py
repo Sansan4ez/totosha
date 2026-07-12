@@ -519,6 +519,36 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertIn("corp_db.portfolio_lookup", {route["route_id"] for route in loaded["routes"]})
         self.assertTrue(loaded["validation_report"]["valid"])
 
+    def test_loaded_runtime_catalog_does_not_shadow_edited_bootstrap_route(self):
+        # Regression test for the 2026-07 incident where a core/routes/*.yaml edit was silently
+        # ignored: a persisted runtime-catalog snapshot with a stale copy of a bootstrap-owned
+        # route must not win a same-owner tie against the current code's fresh copy.
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                payload = build_routing_index()
+                route_dir = Path(docs_tmp) / "manifests" / "routes"
+                catalog_path = route_dir / ROUTING_CATALOG_FILENAME
+                stale_payload = dict(payload)
+                stale_routes = []
+                for route in payload["routes"]:
+                    if route.get("route_id") == "corp_db.portfolio_lookup" and route.get("route_owner") == "bootstrap":
+                        stale_route = dict(route)
+                        stale_route["title"] = "STALE TITLE FROM OLD DEPLOY"
+                        stale_routes.append(stale_route)
+                    else:
+                        stale_routes.append(route)
+                stale_payload["routes"] = stale_routes
+                catalog_path.write_text(json.dumps(stale_payload, ensure_ascii=False), encoding="utf-8")
+
+                loaded = load_routing_index()
+
+        loaded_route = next(route for route in loaded["routes"] if route["route_id"] == "corp_db.portfolio_lookup")
+        self.assertNotEqual(loaded_route["title"], "STALE TITLE FROM OLD DEPLOY")
+
     def test_select_route_returns_candidates_reason_and_kind(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             docs_root = Path(docs_tmp)

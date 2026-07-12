@@ -1292,6 +1292,14 @@ def _merge_catalogs(payloads: list[dict[str, Any]], *, manifest_origin: str) -> 
 
             existing_owner = str(existing.get("route_owner") or "")
             if existing_owner == incoming_owner:
+                if existing_owner == "bootstrap":
+                    # Bootstrap-owned routes are defined by the code/YAML shipped with the
+                    # current deploy. When _revalidate_loaded_runtime_catalog re-merges a
+                    # persisted runtime-catalog snapshot against a freshly computed bootstrap
+                    # payload, both copies of a bootstrap route tie on owner here -- keep the
+                    # first-seen (fresh) one rather than last-wins, so a frozen snapshot can
+                    # never shadow a core/routes/*.yaml edit until a manual catalog rebuild.
+                    continue
                 merged_by_id[route_id] = incoming
                 continue
 
