@@ -3226,7 +3226,9 @@ async def _lamp_code_lookup(conn: asyncpg.Connection, req: CorpDbSearchRequest, 
             WHERE ($1::text IS NOT NULL AND s.etm_code = $1)
                OR ($2::text IS NOT NULL AND s.oracl_code = $2)
                OR ($3::text IS NOT NULL AND (
-                    s.catalog_1c = $3
+                    s.etm_code = $3
+                    OR s.oracl_code = $3
+                    OR s.catalog_1c = $3
                     OR s.short_box_name_wms = $3
                     OR lower(coalesce(s.box_name, '')) = lower($3)
                ))
