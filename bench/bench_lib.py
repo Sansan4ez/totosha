@@ -621,7 +621,11 @@ def routing_accuracy_summary(dataset: list[dict[str, Any]], by_case: dict[str, d
             continue
         row = by_case.get(case_id)
         meta = row.get("meta") if isinstance(row, dict) and isinstance(row.get("meta"), dict) else {}
-        actual_route_id = str(meta.get("retrieval_route_id") or "")
+        # retrieval_route_id is collapsed to the shared knowledge_route_id for corp_kb.* routes
+        # (e.g. corp_kb.company_common and corp_kb.series_description both report
+        # "corp_kb.company_common" there); retrieval_leaf_route_id is the selector's actual leaf
+        # choice and is what golden routing.route_id values are expressed in.
+        actual_route_id = str(meta.get("retrieval_leaf_route_id") or meta.get("retrieval_route_id") or "")
         route_match = actual_route_id == expected_route_id
 
         route_totals[expected_route_id] = route_totals.get(expected_route_id, 0) + 1

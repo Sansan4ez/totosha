@@ -45,6 +45,25 @@ class RoutingAccuracySummaryTests(unittest.TestCase):
         self.assertEqual(summary["by_route"]["corp_kb.company_common"]["correct"], 0)
         self.assertEqual(summary["mismatches"][0]["actual_route_id"], "(missing)")
 
+    def test_leaf_route_id_takes_priority_over_collapsed_knowledge_route_id(self):
+        # retrieval_route_id is collapsed to the shared knowledge_route_id for corp_kb.* routes
+        # (company_common and series_description both report "corp_kb.company_common" there);
+        # retrieval_leaf_route_id carries the selector's actual leaf choice and must be preferred.
+        dataset = [{"id": "c1", "routing": {"route_id": "corp_kb.series_description", "family_id": "company_info"}}]
+        by_case = {
+            "c1": {
+                "meta": {
+                    "retrieval_route_id": "corp_kb.company_common",
+                    "retrieval_leaf_route_id": "corp_kb.series_description",
+                }
+            }
+        }
+
+        summary = routing_accuracy_summary(dataset, by_case)
+
+        self.assertEqual(summary["by_route"]["corp_kb.series_description"], {"correct": 1, "total": 1, "accuracy": 1.0})
+        self.assertEqual(summary["mismatches"], [])
+
     def test_aggregates_across_multiple_cases_for_the_same_route(self):
         dataset = [
             {"id": "c1", "routing": {"route_id": "corp_kb.company_common"}},
