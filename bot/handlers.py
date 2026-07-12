@@ -108,7 +108,7 @@ async def cmd_start(message: Message):
 @dp.message(Command("clear"))
 async def cmd_clear(message: Message):
     user_id = message.from_user.id
-    if await clear_session(user_id):
+    if await clear_session(user_id, message.chat.id):
         await message.reply(t("cmd_clear_ok"))
     else:
         await message.reply(t("cmd_clear_fail"))

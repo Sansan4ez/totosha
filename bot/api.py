@@ -51,15 +51,15 @@ async def call_core(
         return CoreResponse(None)
 
 
-async def clear_session(user_id: int) -> bool:
+async def clear_session(user_id: int, chat_id: int) -> bool:
     """Clear user session in core"""
     try:
         async with aiohttp.ClientSession() as session:
-            await session.post(
+            async with session.post(
                 f"{CORE_URL}/api/clear",
-                json={"user_id": user_id},
+                json={"user_id": user_id, "chat_id": chat_id},
                 headers=inject_trace_context(),
-            )
-        return True
+            ) as resp:
+                return resp.status == 200
     except:
         return False
