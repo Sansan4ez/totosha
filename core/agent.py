@@ -3294,6 +3294,43 @@ async def run_agent(
     source: str = "bot",
     execution_mode: str = EXECUTION_MODE_RUNTIME,
 ) -> str:
+    """Run agent for one user turn and persist the dialog pair in session history.
+
+    History is saved here, outside the loop body, so every exit path — including
+    routing fast paths, bounded-failure responses, and errors — contributes
+    context to the next turn.
+    """
+    final_response = ""
+    try:
+        final_response = await _run_agent_impl(
+            user_id,
+            chat_id,
+            message,
+            username=username,
+            chat_type=chat_type,
+            source=source,
+            execution_mode=execution_mode,
+        )
+        return clean_response(final_response) or "(no response)"
+    finally:
+        session = sessions.get(user_id, chat_id, source=source)
+        session.history.append({"role": "user", "content": message})
+        if final_response:
+            session.history.append({"role": "assistant", "content": final_response})
+        session.history = trim_history(session.history, CONFIG.max_history * 2, 30000)
+        save_session_to_file(session)
+        agent_logger.info(f"Response: {final_response[:100]}...")
+
+
+async def _run_agent_impl(
+    user_id: int,
+    chat_id: int,
+    message: str,
+    username: str = "",
+    chat_type: str = "private",
+    source: str = "bot",
+    execution_mode: str = EXECUTION_MODE_RUNTIME,
+) -> str:
     """Run ReAct agent loop"""
     execution_mode = normalize_execution_mode(execution_mode)
     session = sessions.get(user_id, chat_id, source=source)
@@ -4087,18 +4124,4 @@ async def run_agent(
                 final_response = f"Готово! {tool_outputs[-1]}" if len(tool_outputs) == 1 else "✅ Готово"
                 agent_logger.info(f"[fallback] Generated response from tool outputs")
     
-    # Save to history
-    session.history.append({"role": "user", "content": message})
-    if final_response:
-        session.history.append({"role": "assistant", "content": final_response})
-    
-    # Trim history
-    session.history = trim_history(session.history, CONFIG.max_history * 2, 30000)
-    
-    # Save to file for admin panel
-    save_session_to_file(session)
-    
-    final_response = clean_response(final_response)
-    agent_logger.info(f"Response: {final_response[:100]}...")
-    
-    return final_response or "(no response)"
+    return final_response
