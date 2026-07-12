@@ -220,10 +220,14 @@ class Rfc027LlmOnlyTests(unittest.TestCase):
         )
 
         self.assertIn("nl-nova.pdf", document_response)
-        self.assertEqual(document_exec.await_count, 2)
-        self.assertEqual(document_exec.await_args_list[1].args[1]["name"], "NL Nova")
+        # The certificate_by_lamp_name route card now merges the selector's declared args
+        # (name) into the primary call itself, so the certificate resolves on the first
+        # attempt and no family_local fallback round-trip is needed anymore.
+        self.assertEqual(document_exec.await_count, 1)
+        self.assertEqual(document_exec.await_args_list[0].args[1]["name"], "NL Nova")
         self.assertEqual(document_meta["finalizer_mode"], "llm")
-        self.assertEqual(document_meta["retrieval_used_fallback_scope"], "family_local")
+        self.assertEqual(document_meta["retrieval_used_fallback_scope"], "")
+        self.assertEqual(document_meta["retrieval_close_reason"], "route_selector_payload_sufficient")
         self.assertIn("РЖД", portfolio_response)
         self.assertEqual(portfolio_exec.await_count, 1)
         self.assertEqual(portfolio_exec.await_args_list[0].args[1]["kind"], "portfolio_by_sphere")
