@@ -5,7 +5,7 @@ import random
 import asyncio
 import aiohttp
 
-from config import CONFIG, PROXY_URL, MODEL, ALL_REACTIONS, DONE_EMOJIS
+from config import CONFIG, PROXY_URL, MODEL, ALL_REACTIONS, DONE_EMOJIS, REACTIONS_ENABLED
 
 
 last_reaction_time = 0.0
@@ -13,9 +13,11 @@ last_reaction_time = 0.0
 
 def should_react(text: str) -> bool:
     """Decide if should add reaction to message"""
+    if not REACTIONS_ENABLED:
+        return False
     global last_reaction_time
     now = asyncio.get_event_loop().time()
-    
+
     if now - last_reaction_time < CONFIG.reaction_min_interval:
         return False
     

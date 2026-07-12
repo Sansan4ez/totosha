@@ -13,7 +13,7 @@ from aiogram.enums import ChatType
 from config import (
     CONFIG, CORE_URL, MODEL, ADMIN_USER_ID,
     USERBOT_ID, MAX_BOT_REPLIES, BOT_COOLDOWN,
-    ASR_URL, ASR_MAX_DURATION
+    ASR_URL, ASR_MAX_DURATION, REACTIONS_ENABLED
 )
 from state import (
     bot, dp, bot_username, bot_id,
@@ -82,7 +82,9 @@ def should_respond(message: Message) -> tuple[bool, str, bool]:
 
 
 async def set_reaction(chat_id: int, message_id: int, emoji: str):
-    """Set reaction on message"""
+    """Set reaction on message (no-op unless REACTIONS_ENABLED)"""
+    if not REACTIONS_ENABLED:
+        return
     try:
         await bot.set_message_reaction(
             chat_id=chat_id,

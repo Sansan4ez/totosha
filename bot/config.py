@@ -28,6 +28,10 @@ BOT_PORT = int(os.getenv("BOT_PORT", "4001"))
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT_USERS", "10"))
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 
+# Emoji reactions on incoming messages (status + random "smart" reactions).
+# Disabled by default: reactions on user messages are unwanted in production.
+REACTIONS_ENABLED = os.getenv("REACTIONS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+
 
 @dataclass
 class Config:
