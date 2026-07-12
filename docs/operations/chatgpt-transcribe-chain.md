@@ -1,140 +1,48 @@
-# ChatGPT Transcribe Chain
+# ChatGPT Transcribe Chain (retired)
 
-Цепочка:
+**Статус: retired as of 2026-07-13.** Проект переключён с `../CLIProxyAPI-fork`
+(ветка `feature/chatgpt-transcribe-endpoint`) на чистый upstream
+`../CLIProxyAPI`. Chистый upstream не содержит маршрута `POST /transcribe`,
+поэтому ChatGPT-compatible voice path, описанный ниже, больше не работает.
 
-`bot -> proxy /transcribe -> cli-proxy-api /transcribe -> chatgpt backend /backend-api/transcribe`
+## Что это значило раньше
 
-## Что должно быть готово
+Цепочка `bot -> proxy /transcribe -> cli-proxy-api /transcribe -> chatgpt
+backend /backend-api/transcribe` зависела от кастомного патча в форке
+(`internal/api/handlers/openai/openai_transcribe_handler.go` и смежные
+файлы, ~1500 строк). Этот патч не был смёржен в upstream
+`router-for-me/CLIProxyAPI`, поэтому его больше нет в рантайме.
 
-- `bot` настроен на `API Type = ChatGPT`
-- `ASR URL = http://proxy:3200`
-- `proxy` собран с маршрутом `POST /transcribe`
-- `cli-proxy-api` собран из патч-ветки `feature/chatgpt-transcribe-endpoint`
-- runtime форк берётся из локального checkout `../CLIProxyAPI-fork`
-- `cli-proxy-api` стартует с рабочими `config.yaml` и `auths`
+## Текущее состояние
 
-## Fork Contract
+- `cli-proxy-api` собирается из `../CLIProxyAPI` (chистый upstream, main).
+- `POST /transcribe` и `/v0/management/transcribe-health` endpoints
+  отсутствуют.
+- `config.yaml` и `auths/*` перенесены из `../CLIProxyAPI-fork` без изменений
+  (см. `docker-compose.yml`), так что Codex/Claude/Gemini OAuth-проксирование
+  продолжает работать как прежде — сломан только `chatgpt`-ASR compat path.
+- В `core/admin_api.py` (`_test_asr_connection`) остался код, который
+  сообщает `status: ready` для `api_type == "chatgpt"` без реальной проверки
+  — это устаревшая информация, требует отдельного ревью, если voice ASR на
+  `chatgpt`-backend всё ещё используется где-то в конфигурации.
 
-Текущий ChatGPT-compatible voice path завязан не на generic upstream, а на локальный форк:
+## Рекомендация
 
-- branch contract: `feature/chatgpt-transcribe-endpoint`
-- local checkout: `../CLIProxyAPI-fork`
-- compatibility route: `POST /transcribe`
-- upstream target: `https://chatgpt.com/backend-api/transcribe`
+- Production ASR должен использовать `openai`-compatible или
+  `faster-whisper` backend (см. RFC-023) — они не зависят от кастомного
+  форка.
+- Если ChatGPT-compat voice path снова понадобится, патч из
+  `feature/chatgpt-transcribe-endpoint` (коммиты `61c39b43`, `8345446d`,
+  `e6a22216` в `/home/admin/CLIProxyAPI-fork`) можно re-apply поверх
+  текущего `../CLIProxyAPI` через cherry-pick/rebase.
 
-Не заменяйте этот путь generic `/v1/audio/transcriptions`-реализацией при разборе инцидентов. В этой цепочке нужно отличать два разных состояния:
-
-1. Compatibility path works:
-   `bot -> proxy -> cli-proxy-api /transcribe -> upstream /backend-api/transcribe` собирается и отвечает корректно.
-2. Upstream challenge blocks a working path:
-   локальный `/transcribe` маршрут работает, но upstream вместо JSON transcript возвращает HTML challenge.
-
-Во втором случае проблема не в локальном форке маршрута, а в web-session-backed upstream.
-
-## Сборка и запуск
-
-Поднять patched `cli-proxy-api` из локального checkout `../CLIProxyAPI-fork`:
+## Откат на форк (если нужно восстановить старое поведение)
 
 ```bash
+# в docker-compose.yml вернуть build/volumes на ../CLIProxyAPI-fork
 docker compose -f docker-compose.yml --profile cliproxy up -d --build cli-proxy-api
 ```
 
-Пересобрать проектный `proxy`:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.cliproxy.yml up -d --build proxy
-```
-
-## Smoke
-
-Проверить каталог моделей:
-
-```bash
-curl -sS -i \
-  -H 'Authorization: Bearer 57ea5e1d0ea3cf5910c33041d6fa02c1aabcce73cdec7ae37ec64d01606a03ba' \
-  http://127.0.0.1:8317/v1/models
-```
-
-Ожидание: `200 OK`.
-
-Сгенерировать короткий WAV и проверить `cli-proxy-api` напрямую:
-
-```bash
-python3 - <<'PY'
-import math, wave, struct
-path='/tmp/test-tone.wav'
-fr=16000
-secs=1
-amp=8000
-freq=440
-with wave.open(path,'w') as w:
-    w.setnchannels(1)
-    w.setsampwidth(2)
-    w.setframerate(fr)
-    frames=[]
-    for i in range(fr*secs):
-        sample=int(amp*math.sin(2*math.pi*freq*i/fr))
-        frames.append(struct.pack('<h', sample))
-    w.writeframes(b''.join(frames))
-print(path)
-PY
-
-curl -sS -i \
-  -H 'Authorization: Bearer 57ea5e1d0ea3cf5910c33041d6fa02c1aabcce73cdec7ae37ec64d01606a03ba' \
-  -F 'file=@/tmp/test-tone.wav;type=audio/wav' \
-  http://127.0.0.1:8317/transcribe
-```
-
-Ожидание: `200 OK` и JSON вида `{"text":"..."}`.
-
-## Operator Diagnostics
-
-Если `POST /transcribe` начинает падать, проверяйте не только smoke, но и per-credential состояние в самом форке:
-
-```bash
-curl -sS \
-  -H "Authorization: Bearer <CLIPROXY_MGMT_KEY>" \
-  http://127.0.0.1:8317/v0/management/transcribe-health
-
-curl -sS \
-  -H "Authorization: Bearer <CLIPROXY_MGMT_KEY>" \
-  http://127.0.0.1:8317/v0/management/auth-files
-```
-
-Ожидания:
-
-- `transcribe-health` показывает `backend_mode=chatgpt_compat`, success/failure/challenge counters и degraded credentials.
-- `auth-files` показывает, какой `auth_file` / `auth_index` ловит challenge и ушёл в cooldown.
-- Если challenge counters растут, а `POST /transcribe` smoke иногда проходит, это значит: compatibility path жив, но upstream challenge блокирует рабочий путь.
-
-Production recommendation:
-
-- default production ASR должен оставаться `openai` или `faster-whisper`;
-- `chatgpt` / `/transcribe` нужно держать как compatibility или fallback-only mode.
-
-Проверить цепочку через проектный `proxy`:
-
-```bash
-docker cp /tmp/test-tone.wav bot:/tmp/test-tone.wav
-docker exec bot curl -sS -i \
-  -F 'file=@/tmp/test-tone.wav;type=audio/wav' \
-  http://proxy:3200/transcribe
-```
-
-Ожидание: `200 OK` и JSON вида `{"text":"..."}`.
-
-## Откат
-
-1. Остановить patched контейнер:
-
-```bash
-docker rm -f cli-proxy-api
-```
-
-2. Поднять штатный compose-вариант `cli-proxy-api` из прежнего image/tag.
-
-3. Если нужно, откатить `proxy` на версию без `POST /transcribe` и пересобрать:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.cliproxy.yml up -d --build proxy
-```
+`../CLIProxyAPI-fork` не удалён и остаётся рабочим checkout'ом со своим
+`config.yaml`/`auths` (которые были только скопированы, не перемещены, в
+`../CLIProxyAPI`).
