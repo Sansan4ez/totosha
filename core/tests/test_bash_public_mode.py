@@ -25,14 +25,25 @@ def _load_bash_module():
     tools_package = types.ModuleType("tools")
     tools_package.sandbox = sandbox_module
 
+    # Stub the tools package only for the duration of loading bash.py: it binds
+    # execute_in_sandbox/mark_user_active by name at import time, so the loaded module keeps
+    # the stubs after sys.modules is restored. Leaving the stub in sys.modules would poison
+    # every later-collected test module that does `from tools import ...` in the same run.
+    saved = {name: sys.modules.get(name) for name in ("tools", "tools.sandbox")}
     sys.modules["tools"] = tools_package
     sys.modules["tools.sandbox"] = sandbox_module
-
-    bash_path = Path(__file__).resolve().parents[1] / "tools" / "bash.py"
-    spec = importlib.util.spec_from_file_location("core_bash_module", bash_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
+    try:
+        bash_path = Path(__file__).resolve().parents[1] / "tools" / "bash.py"
+        spec = importlib.util.spec_from_file_location("core_bash_module", bash_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+    finally:
+        for name, original in saved.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
     return module
 
 
