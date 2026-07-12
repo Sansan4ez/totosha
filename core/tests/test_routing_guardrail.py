@@ -921,8 +921,13 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_business_family_id"], "portfolio")
         self.assertEqual(meta["retrieval_route_stage"], "stage1_general")
         self.assertEqual(meta["retrieval_validation_status"], "ok")
-        self.assertEqual(meta["retrieval_fallback_route_count"], 0)
-        self.assertEqual(meta["retrieval_family_local_fallback_count"], 0)
+        # corp_db.portfolio_by_sphere declares 2 same-family fallbacks (corp_db.portfolio_lookup,
+        # corp_db.portfolio_examples_by_lamp; see core/routes/portfolio/portfolio_by_sphere.yaml).
+        # This test's "does not drift into catalog" intent is that an empty portfolio_by_sphere
+        # result still ends in a bounded "уточните" clarification rather than executing an
+        # unrelated catalog route -- declaring fallbacks doesn't change that outcome here.
+        self.assertEqual(meta["retrieval_fallback_route_count"], 2)
+        self.assertEqual(meta["retrieval_family_local_fallback_count"], 2)
         self.assertEqual(meta["retrieval_cross_family_fallback_count"], 0)
         self.assertEqual(meta["retrieval_close_reason"], "")
         self.assertEqual(meta["retrieval_used_fallback_route_id"], "")
