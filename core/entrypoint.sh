@@ -31,5 +31,11 @@ check_workspace_writable /workspace/_shared
 
 echo "✅ Workspace ready"
 
+echo "🔍 Validating route catalog..."
+if ! python -m documents.route_catalog_check; then
+    echo "❌ Route catalog check failed -- refusing to start with an invalid catalog"
+    exit 1
+fi
+
 # Start the application
 exec python -u main.py
