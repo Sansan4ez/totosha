@@ -116,10 +116,12 @@ finally:
 
 class RoutingGuardrailTests(unittest.TestCase):
     def test_company_fact_helpers_classify_subtypes_and_queries(self):
-        # RFC-028 workstream 3.4: agent.py no longer imports/uses expand_company_fact_query or
-        # rewrite_company_fact_search_args (the keyword-driven query/args rewrite was removed);
-        # those functions are still covered directly in tests/test_routing_policy.py. Only
-        # company_fact_intent_type remains re-exported and used in agent.py.
+        # RFC-028 workstream 3.4 removed the keyword-driven query/args rewrite entirely, but a
+        # post-deploy hotfix (e1436b9) reinstated a narrow, structurally-gated use of
+        # expand_company_fact_query in _route_execution_args -- see that function's docstring --
+        # scoped to route_hint["route_id"] == "corp_kb.company_common" only. rewrite_company_fact_
+        # search_args stays fully removed. Both expand_company_fact_query and
+        # company_fact_intent_type are still covered directly in tests/test_routing_policy.py.
         self.assertEqual(_MODULE._company_fact_intent_type("Подскажи контакты компании."), "contacts")
         self.assertEqual(_MODULE._company_fact_intent_type("Расскажи о компании"), "about_company")
         self.assertEqual(_MODULE._company_fact_intent_type("Какой официальный сайт компании?"), "website")
@@ -134,6 +136,25 @@ class RoutingGuardrailTests(unittest.TestCase):
                 )
             )
         self.assertEqual(voice_selection["selected"]["route_id"], "corp_kb.luxnet")
+
+    def test_route_execution_args_expands_raw_query_only_for_company_common_leaf(self):
+        message = "Расскажи о компании ЛАДзавод светотехники"
+        route_hint_common = {
+            "route_id": "corp_kb.company_common",
+            "tool_args": {"query": message},
+            "argument_schema": {"properties": {"query": {"type": "string"}}},
+        }
+        expanded_args = _MODULE._route_execution_args(route_hint_common, message)
+        self.assertNotEqual(expanded_args["query"], message)
+        self.assertEqual(expanded_args["query"], _MODULE._expand_company_fact_query(message))
+
+        route_hint_series = {
+            "route_id": "corp_kb.series_description",
+            "tool_args": {"query": message, "knowledge_route_id": "corp_kb.company_common"},
+            "argument_schema": {"properties": {"query": {"type": "string"}}},
+        }
+        series_args = _MODULE._route_execution_args(route_hint_series, message)
+        self.assertEqual(series_args["query"], message)
         weak_about_payload = {
             "status": "success",
             "results": [

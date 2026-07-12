@@ -554,14 +554,18 @@ def _route_execution_args(route_hint: dict[str, Any], query: str) -> dict[str, A
     properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
     if "query" in properties and not args.get("query"):
         args["query"] = query
-    # The selector often leaves query empty (or copies the raw message verbatim) for
-    # corp_kb.company_common, and the KB hybrid_search's matching is measurably worse against raw
-    # conversational phrasing than a canonical company-fact query shape (verified live: "Расскажи
-    # о компании ЛАДзавод светотехники" returns 0 results; "общая информация о компании ЛАДзавод
-    # светотехники" returns 20 for the identical KB scope). This is a narrow, verified-necessary
-    # exception to "the selector's own job fills query" -- not a reintroduction of RFC-028's
-    # removed keyword rewrite, which also touched topic_facets and every corp_kb route.
-    if str(args.get("knowledge_route_id") or "") == "corp_kb.company_common" and str(args.get("query") or "") == str(query or ""):
+    # The selector often leaves query empty (or copies the raw message verbatim) for the
+    # corp_kb.company_common LEAF route, and the KB hybrid_search's matching is measurably worse
+    # against raw conversational phrasing than a canonical company-fact query shape (verified live:
+    # "Расскажи о компании ЛАДзавод светотехники" returns 0 results; "общая информация о компании
+    # ЛАДзавод светотехники" returns 20 for the identical KB scope). Gate on route_hint["route_id"]
+    # (the leaf route), not tool_args["knowledge_route_id"]: corp_kb.series_description shares the
+    # same knowledge_route_id/source_files but must keep the user's series wording verbatim (see
+    # its argument_hints), so expanding its query here would erase the series name. This is a
+    # narrow, verified-necessary exception to "the selector's own job fills query" -- not a
+    # reintroduction of RFC-028's removed keyword rewrite, which also touched topic_facets and
+    # every corp_kb route.
+    if str(route_hint.get("route_id") or "") == "corp_kb.company_common" and str(args.get("query") or "") == str(query or ""):
         args["query"] = _expand_company_fact_query(query)
     return args
 
