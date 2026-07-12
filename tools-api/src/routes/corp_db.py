@@ -2650,6 +2650,99 @@ async def _filter_hybrid_lamp_rows(
     return enriched
 
 
+async def _scoped_kb_fallback_rows(
+    conn: asyncpg.Connection,
+    *,
+    query: str,
+    profile_name: str,
+    query_limit: int,
+    full_text_weight: float,
+    semantic_weight: float,
+    fuzzy_weight: float,
+    fuzzy_enabled: bool,
+    entity_types: list[str],
+    knowledge_route_id: str,
+    source_files: list[str] | None,
+    topic_facets: list[str] | None,
+    include_debug: bool,
+) -> tuple[list[dict[str, Any]], str]:
+    """Bounded fallback for authoritative KB scopes when lexical search comes back empty.
+
+    Colloquial phrasings ("что за фишка X?") often miss the full-text match even though
+    the scoped source file covers the entity. Retry the same scoped query semantically,
+    then with salient tokens, before reporting an empty scope.
+    """
+    embedding: list[float] | None = None
+    async with _observe_search_phase(kind="hybrid_search", profile=profile_name, phase="embedding"):
+        embedding = await _get_query_embedding(query)
+    if embedding is None:
+        CORP_DB_EMBEDDINGS_UNAVAILABLE_TOTAL.labels(profile_name).inc()
+    else:
+        async with _observe_search_phase(
+            kind="hybrid_search",
+            profile=profile_name,
+            phase="scoped_semantic_fallback",
+            attributes={"corp_db.semantic_enabled": True},
+        ):
+            rows = await _run_hybrid_query(
+                conn,
+                query=query,
+                embedding=embedding,
+                limit=query_limit,
+                full_text_weight=full_text_weight,
+                semantic_weight=semantic_weight,
+                fuzzy_weight=fuzzy_weight if fuzzy_enabled else 0.0,
+                entity_types=entity_types,
+                knowledge_route_id=knowledge_route_id,
+                source_files=source_files,
+                topic_facets=topic_facets,
+                include_debug=include_debug,
+            )
+        formatted = [_hybrid_row(row) for row in rows]
+        if formatted:
+            return formatted, "scoped_semantic_fallback"
+
+    token_queries: list[str] = []
+    normalized_query = _normalize_query_text(query)
+    if normalized_query and normalized_query != query:
+        token_queries.append(normalized_query)
+    strong_terms = _strong_query_terms(query)
+    if len(strong_terms) >= 2:
+        token_queries.append(" ".join(strong_terms[:4]))
+    token_queries.extend(strong_terms[:4])
+
+    seen_queries: set[str] = set()
+    for token_query in token_queries:
+        if not token_query or token_query in seen_queries:
+            continue
+        seen_queries.add(token_query)
+        async with _observe_search_phase(
+            kind="hybrid_search",
+            profile=profile_name,
+            phase="scoped_token_fallback",
+            attributes={"corp_db.retry_query": token_query[:120]},
+        ):
+            rows = await _run_hybrid_query(
+                conn,
+                query=token_query,
+                embedding=None,
+                limit=query_limit,
+                full_text_weight=max(full_text_weight, 1.05),
+                semantic_weight=0.0,
+                fuzzy_weight=1.1 if fuzzy_enabled else 0.0,
+                entity_types=entity_types,
+                knowledge_route_id=knowledge_route_id,
+                source_files=source_files,
+                topic_facets=topic_facets,
+                include_debug=include_debug,
+            )
+        formatted = [_hybrid_row(row) for row in rows]
+        if formatted:
+            return formatted, "scoped_token_fallback"
+
+    return [], "scoped_fallback_empty"
+
+
 async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int) -> dict[str, Any]:
     # Strategy:
     # 1) explicit structured lamp filters get the first, authoritative cheap path via lamp_filters;
@@ -2776,6 +2869,29 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
     primary_strategy = "lamp_filters" if direct_filter_rows and not rows else "primary"
 
     if source_file_scope or topic_facets:
+        scoped_strategy = primary_strategy
+        scoped_reason = "authoritative_scope_primary_only"
+        scoped_semantic_enabled = False
+        if not primary_rows:
+            primary_rows, fallback_strategy = await _scoped_kb_fallback_rows(
+                conn,
+                query=query,
+                profile_name=profile_name,
+                query_limit=query_limit,
+                full_text_weight=full_text_weight,
+                semantic_weight=semantic_weight,
+                fuzzy_weight=fuzzy_weight,
+                fuzzy_enabled=fuzzy_enabled,
+                entity_types=entity_types,
+                knowledge_route_id=knowledge_route_id,
+                source_files=source_file_scope or None,
+                topic_facets=topic_facets or None,
+                include_debug=bool(req.include_debug),
+            )
+            if primary_rows:
+                scoped_strategy = fallback_strategy
+                scoped_semantic_enabled = fallback_strategy == "scoped_semantic_fallback"
+            scoped_reason = fallback_strategy if primary_rows else "scoped_fallback_empty"
         return _success(
             "hybrid_search",
             query=query,
@@ -2783,16 +2899,16 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                 profile_name=profile_name,
                 entity_types=entity_types,
                 explicit_lamp_filters=explicit_lamp_filters,
-                search_strategy=primary_strategy,
+                search_strategy=scoped_strategy,
                 knowledge_route_id=knowledge_route_id,
                 source_file_scope=source_file_scope,
                 topic_facets=topic_facets,
             ),
             results=primary_rows,
             debug={
-                "strategy": primary_strategy,
-                "reason": "authoritative_scope_primary_only",
-                "semantic_enabled": False,
+                "strategy": scoped_strategy,
+                "reason": scoped_reason,
+                "semantic_enabled": scoped_semantic_enabled,
                 "fuzzy_enabled": fuzzy_enabled,
             }
             if req.include_debug

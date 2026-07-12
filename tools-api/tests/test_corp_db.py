@@ -1422,10 +1422,15 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["filters"]["knowledge_route_id"], "corp_kb.luxnet")
         self.assertEqual(payload["filters"]["source_file_scope"], ["about_Luxnet.md"])
         self.assertEqual(payload["filters"]["topic_facets"], ["definition"])
-        self.assertEqual(len(conn.queries), 1)
+        # Primary lexical query plus bounded scoped fallbacks (empty stub rows);
+        # every query must stay inside the authoritative kb_chunk scope.
+        self.assertGreaterEqual(len(conn.queries), 1)
         _, args = conn.queries[0]
         self.assertEqual(len(args), 8)
         self.assertEqual(args[7], ["kb_chunk"])
+        for _, fallback_args in conn.queries[1:]:
+            self.assertEqual(len(fallback_args), 8)
+            self.assertEqual(fallback_args[7], ["kb_chunk"])
 
     def test_category_mountings_accepts_series_filter(self):
         conn = QueryCaptureConn()
