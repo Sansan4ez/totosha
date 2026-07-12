@@ -23,6 +23,7 @@ STRINGS = {
         "voice_transcribe_fail": "🎤 Не удалось распознать: {error}",
         "voice_transcribe_temporary": "🎤 Временная ошибка распознавания речи на стороне сервиса. Попробуйте ещё раз или отправьте текстом.",
         "voice_empty": "🎤 Не удалось распознать речь",
+        "voice_disabled": "🎤 Распознавание голосовых сообщений сейчас отключено. Напишите, пожалуйста, текстом.",
         "voice_prefix": "[Голосовое сообщение, распознанный текст:]",
 
         # Messages
@@ -55,6 +56,7 @@ STRINGS = {
         "voice_transcribe_fail": "🎤 Failed to transcribe: {error}",
         "voice_transcribe_temporary": "🎤 Temporary speech recognition error on the service side. Try again or send text instead.",
         "voice_empty": "🎤 Could not recognize speech",
+        "voice_disabled": "🎤 Voice message transcription is currently disabled. Please send text instead.",
         "voice_prefix": "[Voice message, transcribed text:]",
 
         # Messages

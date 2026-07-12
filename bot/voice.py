@@ -105,7 +105,7 @@ async def transcribe_voice(file_url: str, duration: int) -> str:
     cfg = _get_asr_config()
     asr_url = cfg.get("url", "")
     if not asr_url or not cfg.get("enabled", True):
-        raise Exception("ASR not configured or disabled")
+        raise ASRTranscriptionError("disabled", "ASR not configured or disabled")
 
     asr_timeout = cfg.get("timeout", 60)
     asr_language = cfg.get("language", "ru")

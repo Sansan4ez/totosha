@@ -295,6 +295,8 @@ async def handle_voice(message: Message):
         if isinstance(e, ASRTranscriptionError):
             if e.code == "empty":
                 await rate_limiter.safe_send(chat_id, lambda: message.reply(t("voice_empty")))
+            elif e.code == "disabled":
+                await rate_limiter.safe_send(chat_id, lambda: message.reply(t("voice_disabled")))
             else:
                 await rate_limiter.safe_send(
                     chat_id,
