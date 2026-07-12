@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 import importlib.util
 from pathlib import Path
@@ -12,12 +13,38 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import ToolContext
 from documents.usage import load_usage_stats
 
+# doc_search.py has import-time fallbacks for opentelemetry/prometheus_client but imports
+# observability unconditionally, and the real observability module needs deps (fastapi) that
+# local runs may not have. Stub it only when it is genuinely unimportable, and only for the
+# duration of loading doc_search.py — a leaked stub would shadow the real module for every
+# test collected later in the same run.
+_load_stubs: dict[str, object] = {}
+if "observability" not in sys.modules:
+    try:
+        importlib.import_module("observability")
+    except Exception:
+        _load_stubs["observability"] = types.SimpleNamespace(
+            get_correlation_context=lambda: {},
+            update_correlation_context=lambda *args, **kwargs: {},
+        )
+
 _MODULE_PATH = Path(__file__).resolve().parents[1] / "tools" / "doc_search.py"
-_SPEC = importlib.util.spec_from_file_location("doc_search_tool_module", _MODULE_PATH)
+# Load under the canonical module name: doc_search.py registers prometheus metrics at import,
+# and a second registration (e.g. test_tools importing the real tools package later in the same
+# run) raises "Duplicated timeseries". With the canonical name in sys.modules, the later
+# `from tools.doc_search import ...` reuses this module object instead of re-executing the file.
+# The file-location load itself (rather than `import tools.doc_search`) stays: it dodges the
+# heavy tools/__init__.py, which needs deps like aiohttp that local runs may not have.
+_SPEC = importlib.util.spec_from_file_location("tools.doc_search", _MODULE_PATH)
 assert _SPEC and _SPEC.loader
 _MODULE = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = _MODULE
-_SPEC.loader.exec_module(_MODULE)
+try:
+    sys.modules.update(_load_stubs)
+    _SPEC.loader.exec_module(_MODULE)
+finally:
+    for _name in _load_stubs:
+        sys.modules.pop(_name, None)
 tool_doc_search = _MODULE.tool_doc_search
 
 

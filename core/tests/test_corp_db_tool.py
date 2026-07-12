@@ -11,18 +11,6 @@ from contextvars import ContextVar
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-sys.modules.setdefault("aiohttp", types.ModuleType("aiohttp"))
-sys.modules.setdefault(
-    "observability",
-    types.SimpleNamespace(
-        REQUEST_ID=ContextVar("request_id", default="-"),
-        get_correlation_context=lambda: {},
-        inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
-        update_correlation_context=lambda *args, **kwargs: {},
-    ),
-)
-
-
 class _DummySpan:
     def __enter__(self):
         return self
@@ -42,16 +30,47 @@ class _DummyTracer:
         return _DummySpan()
 
 
-sys.modules.setdefault(
-    "opentelemetry",
-    types.SimpleNamespace(trace=types.SimpleNamespace(get_tracer=lambda *args, **kwargs: _DummyTracer())),
-)
+# Stub corp_db.py's heavy dependencies only when the real module is unavailable in this
+# environment (local runs without aiohttp/otel installed), and only for the duration of
+# loading corp_db.py. Leaving stubs in sys.modules for the whole run poisons every module
+# imported later (e.g. an empty aiohttp ModuleType has no ClientError, breaking the real
+# scheduler client in test_tools). corp_db.py binds these names at import time, so the
+# loaded module keeps the stubs after they are removed; per-test patch.object(_MODULE,
+# "aiohttp", ...) covers every network path regardless of which binding was captured.
+_load_stubs: dict[str, object] = {}
+for _name, _stub in (
+    ("aiohttp", types.ModuleType("aiohttp")),
+    (
+        "observability",
+        types.SimpleNamespace(
+            REQUEST_ID=ContextVar("request_id", default="-"),
+            get_correlation_context=lambda: {},
+            inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
+            update_correlation_context=lambda *args, **kwargs: {},
+        ),
+    ),
+    (
+        "opentelemetry",
+        types.SimpleNamespace(trace=types.SimpleNamespace(get_tracer=lambda *args, **kwargs: _DummyTracer())),
+    ),
+):
+    if _name in sys.modules:
+        continue
+    try:
+        importlib.import_module(_name)
+    except Exception:
+        _load_stubs[_name] = _stub
 
 _MODULE_PATH = Path(__file__).resolve().parents[1] / "tools" / "corp_db.py"
 _SPEC = importlib.util.spec_from_file_location("corp_db_tool_module", _MODULE_PATH)
 assert _SPEC and _SPEC.loader
 _MODULE = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(_MODULE)
+try:
+    sys.modules.update(_load_stubs)
+    _SPEC.loader.exec_module(_MODULE)
+finally:
+    for _name in _load_stubs:
+        sys.modules.pop(_name, None)
 _serialize_runtime_payload = _MODULE._serialize_runtime_payload
 tool_corp_db_search = _MODULE.tool_corp_db_search
 
