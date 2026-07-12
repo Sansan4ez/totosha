@@ -94,6 +94,24 @@ def _load_api_module(*, run_agent_impl, load_config_impl=None):
     def _run_meta_reset(token):
         return None
 
+    # Stub api.py's dependencies only for the duration of loading it: api.py binds every one of
+    # these names at module top, so the loaded module keeps the stubs after sys.modules is
+    # restored below. Leaving the stubs in sys.modules would poison any module first imported
+    # later in the same run (e.g. the crippled aiohttp stub has no ClientError).
+    _stubbed_names = (
+        "config",
+        "logger",
+        "observability",
+        "agent",
+        "run_meta",
+        "tools.scheduler",
+        "admin_api",
+        "aiohttp",
+        "fastapi",
+        "pydantic",
+        "opentelemetry",
+    )
+    saved_modules = {name: sys.modules.get(name) for name in _stubbed_names}
     sys.modules["config"] = types.SimpleNamespace(
         CONFIG=types.SimpleNamespace(
             api_port=4000,
@@ -156,11 +174,18 @@ def _load_api_module(*, run_agent_impl, load_config_impl=None):
         )
     )
 
-    module_path = Path(__file__).resolve().parents[1] / "api.py"
-    spec = importlib.util.spec_from_file_location("core_api_correlation_module", module_path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        module_path = Path(__file__).resolve().parents[1] / "api.py"
+        spec = importlib.util.spec_from_file_location("core_api_correlation_module", module_path)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        for name, original in saved_modules.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
     return module, observe_recorder, chat_observe_recorder, update_recorder, run_meta_tokens
 
 
