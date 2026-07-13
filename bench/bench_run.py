@@ -314,6 +314,11 @@ def main() -> None:
                 "chat_type": "private",
                 "source": "bot",
                 "return_meta": True,
+                # Core only appends to meta["bench_artifacts"] (run_meta_append_artifact) when
+                # the request opts in via execution_mode="benchmark" -- runtime/bot traffic never
+                # sets this, so without it agent_chat/agent_chat_shadow bench cases always see an
+                # empty bench_artifacts list regardless of which internal code path handled them.
+                "execution_mode": "benchmark",
             }
 
             status = "ok"

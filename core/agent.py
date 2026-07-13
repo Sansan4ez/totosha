@@ -1330,6 +1330,7 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["topic_facets"] = list(state.get("topic_facets") or [])
         meta["finalizer_mode"] = str(state.get("finalizer_mode") or "")
         meta["retrieval_explicit_wiki_request"] = bool(state.get("explicit_wiki_request"))
+        meta["retrieval_wiki_after_corp_db_success"] = bool(state.get("wiki_after_corp_db_success"))
         meta["routing_guardrail_hits"] = int(state.get("guardrail_activations", 0))
         meta["application_recovery_outcome"] = str(state.get("application_recovery_outcome") or "")
         meta["company_fact_intent_type"] = str(state.get("company_fact_intent_type") or "")
@@ -3708,6 +3709,9 @@ async def _run_agent_impl(
                     tool_call_seq=0,
                 )
                 if primary_result.success:
+                    bench_artifact = primary_result.metadata.get("bench_artifact") if isinstance(primary_result.metadata, dict) else None
+                    if isinstance(bench_artifact, dict):
+                        run_meta_append_artifact(bench_artifact)
                     _record_tool_output_contract(primary_tool_name, primary_result, routing_state)
                     sphere_context_update = _resolved_sphere_context_from_tool(
                         tool_name=primary_tool_name,
