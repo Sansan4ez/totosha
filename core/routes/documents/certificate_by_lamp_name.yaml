@@ -3,8 +3,10 @@ route_family: corp_db.documents_by_lamp_name
 route_kind: corp_table
 authority: primary
 title: Certificate by lamp name
-summary: Catalog-backed route for certificate or declaration requests scoped to one lamp, model, or series
-  name.
+summary: Catalog-backed route for a certificate or declaration request scoped to exactly one lamp,
+  model, or series name. Do not use this when the request names two or more different lamp
+  models/series at once (e.g. certificates for several models in one message) -- use
+  corp_kb.company_common instead for broad or multi-model certificate list requests.
 topics:
 - documents
 - catalog
@@ -29,5 +31,8 @@ argument_hints:
   name: Extract the lamp, model, or series name whose certificate or declaration the user wants.
 fallback_route_ids:
 - corp_db.documents_by_lamp_name
+- corp_kb.company_common
+cross_family_fallback_route_ids:
+- corp_kb.company_common
 observability_labels:
   scope: certificate_by_lamp_name

@@ -1615,9 +1615,16 @@ def _detect_code_system(query: str) -> str | None:
     return None
 
 
+def _distinct_series_mentions(query: str) -> int:
+    query_text = _normalize(query)
+    return len({name.lower() for name in canonical_series_names() if name.lower() in query_text})
+
+
 def _is_documents_by_lamp_query(query: str) -> bool:
     query_text = _normalize(query)
     if not _is_explicit_document_request(query):
+        return False
+    if _distinct_series_mentions(query) > 1:
         return False
     if any(
         marker in query_text

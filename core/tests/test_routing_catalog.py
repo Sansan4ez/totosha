@@ -1037,7 +1037,7 @@ class RoutingCatalogTests(unittest.TestCase):
         )
         self.assertEqual(
             routes["corp_db.documents_by_lamp_name"]["fallback_policy"]["cross_family_route_ids"],
-            ["corp_db.catalog_lookup"],
+            ["corp_kb.company_common", "corp_db.catalog_lookup"],
         )
         self.assertEqual(routes["corp_db.passport_by_lamp_name"]["locked_args"]["document_type"], "passport")
         self.assertEqual(
@@ -1161,7 +1161,7 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertIn("corp_db.documents_by_lamp_name", route_ids)
         documents_leaf = next(leaf for leaf in families["documents"]["leaf_routes"] if leaf["route_id"] == "corp_db.documents_by_lamp_name")
         self.assertEqual(documents_leaf["fallback_policy"]["default_scope"], "family_local")
-        self.assertEqual(documents_leaf["fallback_policy"]["cross_family_route_ids"], ["corp_db.catalog_lookup"])
+        self.assertEqual(documents_leaf["fallback_policy"]["cross_family_route_ids"], ["corp_kb.company_common", "corp_db.catalog_lookup"])
 
     def test_selector_payload_exposes_document_type_and_family_local_fallback_for_subtype_routes(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:

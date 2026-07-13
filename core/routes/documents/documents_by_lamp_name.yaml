@@ -4,7 +4,9 @@ route_kind: corp_table
 authority: primary
 title: Documents by lamp name
 summary: Catalog-backed route for listing passports, certificates, manuals, IES files, and other linked
-  documents for a lamp or model family.
+  documents for exactly one lamp, model, or series name. Do not use this when the request names two
+  or more different lamp models/series at once -- use corp_kb.company_common instead for broad or
+  multi-model certificate/document list requests.
 topics:
 - documents
 - catalog
@@ -30,8 +32,10 @@ argument_hints:
   document_type: Use passport, certificate, manual, or ies when the user clearly asks for one document
     subtype instead of the full list.
 fallback_route_ids:
+- corp_kb.company_common
 - corp_db.catalog_lookup
 cross_family_fallback_route_ids:
+- corp_kb.company_common
 - corp_db.catalog_lookup
 observability_labels:
   scope: documents_by_lamp_name
