@@ -41,3 +41,4 @@ RFCs
 - `docs/rfc/RFC-026-canonical-route-arguments-and-bounded-portfolio-retrieval.md` — Proposed
 - `docs/rfc/RFC-027-three-stage-hierarchical-routing-evolution.md` — Implemented
 - `docs/rfc/RFC-028-declarative-route-catalog-and-sanitizing-selector-contract.md` — Implemented
+- `docs/rfc/RFC-029-two-call-selector-and-json-schema-tool-contracts.md` — Proposed
