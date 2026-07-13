@@ -1948,12 +1948,29 @@ async def _resolve_application_categories(
     *,
     sphere_id: int | None,
     application_key: str | None = None,
+    req: "CorpDbSearchRequest | None" = None,
 ) -> list[dict[str, Any]]:
     if sphere_id is None:
         return []
     curated_rows = await _fetch_curated_sphere_categories(conn, sphere_id=int(sphere_id))
     if curated_rows:
-        return await _enrich_display_categories_with_executables(conn, curated_rows)
+        enriched_curated = await _enrich_display_categories_with_executables(conn, curated_rows)
+        curated_category_ids = _ordered_unique_ints(
+            [
+                executable_id
+                for row in enriched_curated
+                for executable_id in row.get("executable_category_ids", [row["category_id"]])
+            ]
+        )
+        if req is not None:
+            probe_rows = await _fetch_application_lamps(conn, category_ids=curated_category_ids, req=req, fetch_limit=1)
+        else:
+            probe_rows = curated_category_ids
+        if probe_rows:
+            return enriched_curated
+        # Curated categories exist but have zero lamps matching the request (often a
+        # data-completeness gap) -- fall through to the application_key's category_queries
+        # fallback below instead of returning categories that can never yield recommended_lamps.
     if not application_key:
         return []
 
@@ -3754,6 +3771,7 @@ async def _application_recommendation(
             conn,
             sphere_id=int(sphere_id) if sphere_id is not None else None,
             application_key=str(resolved_application.get("application_key") or "") or None,
+            req=req,
         )
 
     if not categories:
