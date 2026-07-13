@@ -3,6 +3,8 @@
 import ArtifactPanel from "@/components/artifact-panel";
 import type { WidgetMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface MessageProps {
   message: WidgetMessage;
@@ -27,7 +29,13 @@ export default function Message({ message }: MessageProps) {
                 : "border border-white/80 bg-white/95 text-foreground",
           )}
         >
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          {isUser ? (
+            <div className="whitespace-pre-wrap">{message.content}</div>
+          ) : (
+            <div className="markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            </div>
+          )}
           {!isUser && message.artifact ? <ArtifactPanel artifact={message.artifact} /> : null}
         </div>
       </div>

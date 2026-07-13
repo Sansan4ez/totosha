@@ -38,7 +38,9 @@ def _is_separator_row(line: str) -> bool:
     return all(bool(re.fullmatch(r":?-{3,}:?", cell.replace(" ", ""))) for cell in cells)
 
 
-def _extract_markdown_table(text: str) -> Optional[dict]:
+def _extract_markdown_table(text: str) -> Optional[tuple[dict, str]]:
+    """Derive a widget artifact from the first markdown table and return it together
+    with the text cleaned of that table (the artifact renders it instead)."""
     lines = [line.rstrip() for line in text.splitlines()]
     for index in range(len(lines) - 1):
         header_line = lines[index]
@@ -101,7 +103,7 @@ def _extract_markdown_table(text: str) -> Optional[dict]:
                 }
             )
 
-        return {
+        artifact = {
             "type": "component_tree",
             "version": "v1",
             "payload": {
@@ -111,6 +113,9 @@ def _extract_markdown_table(text: str) -> Optional[dict]:
                 }
             },
         }
+        remaining_lines = lines[:index] + lines[index + 2 + len(row_lines) :]
+        cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(remaining_lines)).strip()
+        return artifact, cleaned
     return None
 
 
@@ -172,9 +177,12 @@ def extract_ui_artifact(text: str, source: str) -> tuple[str, Optional[dict]]:
     if explicit_artifact is not None:
         return cleaned_text or text, explicit_artifact
 
-    table_artifact = _extract_markdown_table(text)
-    if table_artifact is not None:
-        return text, table_artifact
+    table_extraction = _extract_markdown_table(text)
+    if table_extraction is not None:
+        table_artifact, cleaned_text = table_extraction
+        # The widget renders the artifact right below the message text, so leaving the
+        # markdown table in the text would show the same data twice (raw, then styled).
+        return cleaned_text or text, table_artifact
 
     card_artifact = _extract_field_list_card(text)
     if card_artifact is not None:

@@ -19,12 +19,32 @@ class WebArtifactsTests(unittest.TestCase):
 
         cleaned, artifact = extract_ui_artifact(text, "web")
 
-        self.assertEqual(cleaned, text)
+        self.assertEqual(cleaned, "# Price comparison")
         self.assertIsNotNone(artifact)
         self.assertEqual(artifact["type"], "component_tree")
         children = artifact["payload"]["root"]["children"]
         self.assertEqual(children[0]["name"], "header")
         self.assertEqual(children[1]["name"], "bar_chart")
+
+    def test_markdown_table_is_stripped_from_text_but_prose_kept(self):
+        text = """Вот варианты для офиса:
+
+| Модель | Мощность |
+| --- | --- |
+| A | 36 Вт |
+| B | 45 Вт |
+
+Могу подобрать аналоги.
+"""
+
+        cleaned, artifact = extract_ui_artifact(text, "web")
+
+        self.assertIsNotNone(artifact)
+        self.assertNotIn("| Модель |", cleaned)
+        self.assertIn("Вот варианты для офиса:", cleaned)
+        self.assertIn("Могу подобрать аналоги.", cleaned)
+        children = artifact["payload"]["root"]["children"]
+        self.assertEqual(children[-1]["name"], "table")
 
     def test_extracts_item_card_from_field_list(self):
         text = """Title: Widget Pro
