@@ -81,6 +81,8 @@ class LiveMigrationTests(unittest.TestCase):
         self.assertIn("ADD COLUMN IF NOT EXISTS parent_category_id", executed_sql)
         self.assertIn("CREATE TABLE IF NOT EXISTS corp.sphere_curated_categories", executed_sql)
         self.assertIn("DELETE FROM corp.sphere_curated_categories", executed_sql)
+        self.assertIn("CREATE OR REPLACE FUNCTION corp.corp_hybrid_search", executed_sql)
+        self.assertIn("source_files text[] DEFAULT NULL", executed_sql)
 
         sphere_upserts = [
             args for sql, args in conn.executemany_calls if "INSERT INTO corp.spheres" in sql

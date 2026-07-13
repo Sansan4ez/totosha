@@ -169,7 +169,19 @@ KB_ROUTE_SPECS = {
             },
             {
                 "match": "контактная информация",
-                "aliases": ["контакты компании", "телефон компании", "email компании", "адрес офиса", "почта компании"],
+                "aliases": [
+                    "контакты компании",
+                    "телефон компании",
+                    "email компании",
+                    "адрес офиса",
+                    "почта компании",
+                    "как позвонить",
+                    "позвонить в компанию",
+                    "как связаться",
+                    "связаться с компанией",
+                    "номер телефона",
+                    "электронная почта",
+                ],
                 "topic_facets": ["contacts"],
             },
             {
@@ -179,7 +191,18 @@ KB_ROUTE_SPECS = {
             },
             {
                 "match": "социальные сети компании",
-                "aliases": ["соцсети компании", "telegram компании", "youtube компании", "vk компании", "официальный сайт"],
+                "aliases": [
+                    "соцсети компании",
+                    "telegram компании",
+                    "телеграм",
+                    "youtube компании",
+                    "ютуб",
+                    "vk компании",
+                    "вк",
+                    "вконтакте",
+                    "группа вконтакте",
+                    "официальный сайт",
+                ],
                 "topic_facets": ["socials"],
             },
             {
@@ -764,7 +787,7 @@ def _validate_kb_route_rows(rows: list[dict]) -> dict:
     return {"sources": sources, "errors": errors}
 
 
-async def validate_search_docs(conn) -> dict:
+async def validate_search_docs(conn, *, embeddings_required: bool = True) -> dict:
     rows = [
         dict(row)
         for row in await conn.fetch(
@@ -779,6 +802,18 @@ async def validate_search_docs(conn) -> dict:
         )
     ]
     report = _validate_kb_route_rows(rows)
+    coverage = dict(
+        await conn.fetchrow(
+            "SELECT count(*) AS total, count(embedding) AS with_embedding FROM corp.corp_search_docs"
+        )
+    )
+    report["embedding_coverage"] = coverage
+    if embeddings_required and coverage["with_embedding"] < coverage["total"]:
+        report["errors"].append(
+            "embedding coverage check failed: "
+            f"{coverage['with_embedding']}/{coverage['total']} docs have embeddings; "
+            "semantic search is degraded (rebuild without --skip-embeddings)"
+        )
     query_results: dict[str, dict] = {}
     for case in KB_ROUTE_VALIDATION_CASES:
         matches = [
@@ -795,6 +830,7 @@ async def validate_search_docs(conn) -> dict:
                     0.6::double precision,
                     60::integer,
                     $2::text[],
+                    NULL::text[],
                     true::boolean
                 )
                 """,

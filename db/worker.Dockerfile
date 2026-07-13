@@ -18,6 +18,7 @@ COPY search_docs.py /app/search_docs.py
 COPY transform_catalog_json.py /app/transform_catalog_json.py
 COPY worker.py /app/worker.py
 COPY knowledge_base_manifest.yaml /app/knowledge_base_manifest.yaml
+COPY sql /app/sql
 
 ENTRYPOINT ["python3", "/app/worker.py"]
 CMD ["--help"]

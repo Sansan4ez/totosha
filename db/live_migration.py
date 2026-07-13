@@ -97,6 +97,20 @@ def build_category_parent_assignments(category_rows: list[dict]) -> list[tuple]:
     return assignments
 
 
+HYBRID_SEARCH_FUNCTION_SQL = Path(__file__).resolve().parent / "sql" / "corp_hybrid_search.sql"
+
+
+async def ensure_hybrid_search_function(conn) -> None:
+    """Re-apply the canonical corp_hybrid_search definition to a live database.
+
+    Fresh volumes get it from initdb, but live volumes keep whatever signature they
+    were initialized with; this converges them on every migrator run. The DDL ships
+    next to this module because its signature must match what the code calls.
+    """
+    ddl = HYBRID_SEARCH_FUNCTION_SQL.read_text(encoding="utf-8")
+    await conn.execute(ddl)
+
+
 async def ensure_rfc026_schema(conn, sources_dir: Path) -> dict[str, int]:
     categories_path = sources_dir / "categories.json"
     spheres_path = sources_dir / "spheres.json"
@@ -114,6 +128,8 @@ async def ensure_rfc026_schema(conn, sources_dir: Path) -> dict[str, int]:
     async with conn.transaction():
         for statement in RFC026_SCHEMA_STATEMENTS:
             await conn.execute(statement)
+
+        await ensure_hybrid_search_function(conn)
 
         if sphere_records:
             await conn.executemany(

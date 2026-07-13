@@ -98,12 +98,12 @@ async def main() -> None:
                     result = {
                         "command": "build-search-docs",
                         "counts": counts,
-                        "validation": await validate_search_docs(conn),
+                        "validation": await validate_search_docs(conn, embeddings_required=embeddings_enabled),
                     }
                 elif args.command == "validate-search-docs":
                     result = {
                         "command": "validate-search-docs",
-                        "validation": await validate_search_docs(conn),
+                        "validation": await validate_search_docs(conn, embeddings_required=embeddings_enabled),
                     }
                 else:
                     json_counts = await seed_json_sources(conn, args.sources_dir)
@@ -124,7 +124,7 @@ async def main() -> None:
                             "search_docs": doc_counts,
                         },
                         "validation": {
-                            "search_docs": await validate_search_docs(conn),
+                            "search_docs": await validate_search_docs(conn, embeddings_required=embeddings_enabled),
                         },
                     }
                 logger.info("Worker command completed command=%s", args.command)

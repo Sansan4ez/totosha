@@ -230,6 +230,9 @@ class SearchDocsTests(unittest.TestCase):
 
     def test_validate_search_docs_runs_metadata_and_query_checks(self):
         class FakeConn:
+            async def fetchrow(self, query, *args):
+                return {"total": 3, "with_embedding": 3}
+
             async def fetch(self, query, *args):
                 sql = str(query)
                 if "FROM corp.corp_search_docs" in sql:
@@ -319,9 +322,34 @@ class SearchDocsTests(unittest.TestCase):
 
         report = asyncio.run(validate_search_docs(FakeConn()))
         self.assertEqual(report["errors"], [])
+        self.assertEqual(report["embedding_coverage"], {"total": 3, "with_embedding": 3})
         self.assertTrue(report["queries"]["company_common"]["passed"])
         self.assertTrue(report["queries"]["luxnet"]["passed"])
         self.assertTrue(report["queries"]["lighting_norms"]["passed"])
+
+    def test_validate_search_docs_fails_when_embeddings_missing(self):
+        class FakeConn:
+            async def fetchrow(self, query, *args):
+                return {"total": 3, "with_embedding": 0}
+
+            async def fetch(self, query, *args):
+                return []
+
+        with self.assertRaises(RuntimeError) as ctx:
+            asyncio.run(validate_search_docs(FakeConn()))
+        self.assertIn("embedding coverage", str(ctx.exception))
+
+    def test_validate_search_docs_allows_missing_embeddings_when_not_required(self):
+        class FakeConn:
+            async def fetchrow(self, query, *args):
+                return {"total": 3, "with_embedding": 0}
+
+            async def fetch(self, query, *args):
+                return []
+
+        with self.assertRaises(RuntimeError) as ctx:
+            asyncio.run(validate_search_docs(FakeConn(), embeddings_required=False))
+        self.assertNotIn("embedding coverage", str(ctx.exception))
 
 
 if __name__ == "__main__":
