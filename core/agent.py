@@ -1016,6 +1016,8 @@ async def _try_family_local_route_fallbacks(
         _record_route_fallback_attempt(routing_state, next_fallback_id, local_to_family=local_to_family)
         _update_routing_observability(routing_state)
         _record_retrieval_attempt(fallback_tool_name, fallback_args, routing_state)
+        if fallback_tool_name == "corp_db_search":
+            _record_authoritative_kb_query(fallback_args, routing_state)
         tool_result = await execute_tool(
             fallback_tool_name,
             fallback_args,
@@ -1111,15 +1113,36 @@ def _is_authoritative_kb_tool_attempt(name: str, args: dict, state: dict[str, An
     if isinstance(requested_source_files, list) and isinstance(expected_source_files, list) and requested_source_files:
         if requested_source_files != expected_source_files:
             return False
-    # A transient tool-level error (timeout, transport failure) on the primary attempt carries no
-    # evidence about the KB content itself, unlike a genuine empty/weak content miss -- it doesn't
-    # burn the request's one sanctioned retry. Allow a single retry in that case before blocking.
-    if (
-        state.get("retrieval_evidence_status") == "error"
-        and int(state.get("authoritative_kb_attempt_count") or 0) < AUTHORITATIVE_KB_MAX_ATTEMPTS
-    ):
-        return False
+    # Two cases don't burn the request's one sanctioned retry:
+    # - a transient tool-level error (timeout, transport failure) carries no evidence about the
+    #   KB content itself;
+    # - an empty primary result retried with a genuinely reworded query: hybrid search matches
+    #   on wording (lexical/semantic query match), so a rephrase can surface content the raw
+    #   user utterance missed ("а как позвонить?" finds nothing while "контакты телефон" hits
+    #   the contacts chunk). A repeat of an already-tried query stays blocked.
+    if int(state.get("authoritative_kb_attempt_count") or 0) < AUTHORITATIVE_KB_MAX_ATTEMPTS:
+        evidence_status = state.get("retrieval_evidence_status")
+        if evidence_status == "error":
+            return False
+        if evidence_status == "empty" and _normalized_kb_query(args) not in set(
+            state.get("authoritative_kb_tried_queries") or []
+        ):
+            return False
     return True
+
+
+def _normalized_kb_query(args: dict) -> str:
+    return str(args.get("query") or "").strip().casefold()
+
+
+def _record_authoritative_kb_query(args: dict, state: dict[str, Any]) -> None:
+    tried = state.get("authoritative_kb_tried_queries")
+    if not isinstance(tried, list):
+        tried = []
+        state["authoritative_kb_tried_queries"] = tried
+    query = _normalized_kb_query(args)
+    if query not in tried:
+        tried.append(query)
 
 
 def _raw_browse_error(route_hint: dict[str, Any] | None, attempted_tool: str) -> str:
@@ -3637,6 +3660,7 @@ async def _run_agent_impl(
         "routing_catalog_origin": routing_catalog_origin,
         "routing_schema_version": routing_schema_version,
         "authoritative_kb_attempt_count": 0,
+        "authoritative_kb_tried_queries": [],
         "knowledge_route_id": authoritative_route_id,
         "document_id": selected_document_id,
         "source_file_scope": source_file_scope,
@@ -3674,6 +3698,7 @@ async def _run_agent_impl(
                 routing_state["retrieval_tool_used"] = True
                 if primary_tool_name == "corp_db_search" and _has_authoritative_kb_route(routing_state):
                     routing_state["authoritative_kb_attempt_count"] = int(routing_state.get("authoritative_kb_attempt_count") or 0) + 1
+                    _record_authoritative_kb_query(primary_args, routing_state)
                 _record_retrieval_attempt(primary_tool_name, primary_args, routing_state)
                 primary_result = await execute_tool(
                     primary_tool_name,
@@ -3881,11 +3906,10 @@ async def _run_agent_impl(
                     # RFC-028 workstream 3.4: no keyword-driven query/topic_facets rewrite. A
                     # repeat corp_db_search targeting the same authoritative KB scope (structural
                     # match on kind/knowledge_route_id/source_files, not keywords) is blocked
-                    # outright instead of rewritten -- the KB content can't change mid-request, so
-                    # retrying it (even reworded) can never produce new evidence. The primary
-                    # execution already tried this scope; declared same-family/cross-family
-                    # fallbacks are the only sanctioned retry path (see
-                    # _try_family_local_route_fallbacks).
+                    # once the scope's retry budget is spent (_is_authoritative_kb_tool_attempt
+                    # exempts one reworded retry after a transient error or an empty primary).
+                    # Beyond that, declared same-family/cross-family fallbacks are the only
+                    # sanctioned retry path (see _try_family_local_route_fallbacks).
                     authoritative_kb_call_blocked = True
                     routing_state["guardrail_activations"] += 1
                     _update_routing_observability(routing_state, blocked_tool=name)
@@ -3912,14 +3936,15 @@ async def _run_agent_impl(
                 else:
                     # Execute tool. A repeat authoritative KB attempt only reaches here when the
                     # elif above granted the one sanctioned retry after a transient primary error
-                    # (see _is_authoritative_kb_tool_attempt) -- count it so a second failure is
-                    # blocked instead of retried indefinitely.
+                    # or an empty primary result (see _is_authoritative_kb_tool_attempt) -- count
+                    # it so a second failure is blocked instead of retried indefinitely.
                     if (
                         name == "corp_db_search"
                         and _has_authoritative_kb_route(routing_state)
                         and str(args.get("knowledge_route_id") or routing_state.get("knowledge_route_id") or "") == str(routing_state.get("knowledge_route_id") or "")
                     ):
                         routing_state["authoritative_kb_attempt_count"] = int(routing_state.get("authoritative_kb_attempt_count") or 0) + 1
+                        _record_authoritative_kb_query(args, routing_state)
                     _record_retrieval_attempt(name, args, routing_state)
                     tool_result = await execute_tool(
                         name,

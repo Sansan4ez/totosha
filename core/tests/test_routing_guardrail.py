@@ -2090,16 +2090,21 @@ class RoutingGuardrailTests(unittest.TestCase):
         )
 
         self.assertIn("Luxnet", response)
-        self.assertEqual(exec_mock.await_count, 2)
+        # After an empty primary the guardrail still blocks a same-query repeat ("luxnet",
+        # hit 1) but grants the one reworded retry ("что такое luxnet"), which executes
+        # after the doc_search detour.
+        self.assertEqual(exec_mock.await_count, 3)
         self.assertEqual(exec_mock.await_args_list[0].args[0], "corp_db_search")
         self.assertEqual(exec_mock.await_args_list[1].args[0], "doc_search")
+        self.assertEqual(exec_mock.await_args_list[2].args[0], "corp_db_search")
         self.assertEqual(exec_mock.await_args_list[0].args[1]["knowledge_route_id"], "corp_kb.luxnet")
-        self.assertEqual(meta["routing_guardrail_hits"], 2)
+        self.assertEqual(exec_mock.await_args_list[2].args[1]["query"], "что такое luxnet")
+        self.assertEqual(meta["routing_guardrail_hits"], 1)
         self.assertEqual(meta["retrieval_route_family"], "corp_kb.luxnet")
         self.assertEqual(meta["knowledge_route_id"], "corp_kb.luxnet")
         self.assertEqual(meta["retrieval_retry_count"], 0)
-        self.assertEqual(meta["retrieval_phase"], "open")
-        self.assertEqual(meta["retrieval_close_reason"], "")
+        # The reworded retry returned sufficient evidence, so retrieval closes.
+        self.assertEqual(meta["retrieval_phase"], "closed")
 
     def test_about_company_uses_llm_finalization_with_full_runtime_payload_in_runtime_mode(self):
         response, exec_mock, meta = self._run_flow(
