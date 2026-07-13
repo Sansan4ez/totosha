@@ -130,7 +130,7 @@ MOUNTING_HINTS = {
     "потолоч": "потол",
     "настенн": "настен",
 }
-APPLICATION_ALIAS_VERSION = "v1"
+APPLICATION_ALIAS_VERSION = "v2"
 APPLICATION_PROFILES: dict[str, dict[str, Any]] = {
     "sports_high_power": {
         "sphere_name": "Спортивное и освещение высокой мощности",
@@ -192,6 +192,28 @@ APPLICATION_PROFILES: dict[str, dict[str, Any]] = {
             "Светильники на лире",
         ),
         "follow_up_question": "Уточните, нужен свет для мачт/перрона или для проездов и прилегающей территории?",
+    },
+    "street_road_lighting": {
+        "sphere_name": "Наружное, уличное и дорожное освещение",
+        "aliases": (
+            "столб",
+            "опора освещения",
+            "уличное освещение",
+            "уличный светильник",
+            "дорожное освещение",
+            "фонарь",
+            "мачта",
+            "парковка",
+            "двор",
+            "street lighting",
+            "road lighting",
+        ),
+        "category_queries": (
+            "Консольные светильники",
+            "LAD LED R500 G",
+            "LAD LED R700",
+        ),
+        "follow_up_question": "Уточните высоту опоры/мачты и тип территории: улица, двор, парковка или проезд?",
     },
     "warehouse": {
         "sphere_name": "Складские помещения",
@@ -2091,6 +2113,49 @@ def _application_score_lamp(
             score += 2.5
         if power < 60 or _application_text_contains_any(category_name, ("line", "nova", "vega")):
             score -= 7.0
+    elif application_key == "street_road_lighting":
+        # Free-form user query -- match against stemmed terms (like _synonym_application_score
+        # does for aliases) rather than _application_text_contains_any's whole-word phrase
+        # check, which misses ordinary Russian inflections (e.g. "дачи", "компактный").
+        query_stem_terms = set(_application_terms(query))
+        wants_compact = bool(
+            query_stem_terms
+            & {
+                "дача", "дачи", "дачу", "даче", "дачей", "дачных", "дачн",
+                "приусадебн", "частн", "загородн", "двор", "дворов",
+                "участок", "участк", "компактн", "небольш", "маленьк", "садов",
+            }
+        )
+        wants_heavy_duty = bool(
+            query_stem_terms
+            & {"трасс", "шосс", "магистраль", "магистрал", "магистральн", "проспект", "автомагистраль", "хайвей"}
+        )
+        if wants_compact and not wants_heavy_duty:
+            if power <= 100:
+                score += 5.0
+                reasons.append("компактная мощность подходит для дачного/дворового освещения")
+            elif power <= 200:
+                score += 1.0
+            else:
+                score -= 8.0
+                reasons.append("слишком мощная модель для небольшого участка")
+        elif wants_heavy_duty:
+            if power >= 300:
+                score += 5.0
+                reasons.append("высокая мощность подходит для трассы или магистрали")
+            elif power < 150:
+                score -= 4.0
+        else:
+            if 100 <= power <= 300:
+                score += 4.0
+                reasons.append("мощность в типичном диапазоне для уличного и дорожного освещения")
+            elif power > 500:
+                score -= 3.0
+        if _application_text_contains_any(mounting, ("консоль", "лира", "кронштейн")):
+            score += 2.0
+            reasons.append("монтаж подходит для установки на опору")
+        if ip_rating >= 65:
+            score += 1.5
     elif application_key == "warehouse":
         if 40 <= power <= 220:
             score += 4.0
@@ -3799,7 +3864,12 @@ async def _application_recommendation(
             for executable_id in row.get("executable_category_ids", [row["category_id"]])
         ]
     )
-    fetch_limit = max(lamp_limit * 6, 12)
+    # A resolved application can expand to many leaf categories (e.g. one broad family
+    # spanning dozens of power/size variants); a small fetch_limit combined with
+    # `ORDER BY name LIMIT` risks sampling only an arbitrary DB-order slice before
+    # application-aware scoring ever sees the rest of the candidates. Scale with the
+    # number of executable categories involved, capped to bound query cost.
+    fetch_limit = min(max(lamp_limit * 6, 12, len(category_ids) * 6), 300)
     recommended_lamps: list[dict[str, Any]] = []
     async with _observe_search_phase(
         kind="application_recommendation",
