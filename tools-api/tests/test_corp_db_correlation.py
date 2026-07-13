@@ -16,6 +16,9 @@ class _Metric:
     def observe(self, *args, **kwargs):
         return None
 
+    def set(self, *args, **kwargs):
+        return None
+
 
 class _DummySpan:
     def __enter__(self):
@@ -90,7 +93,7 @@ def _load_route_module(*, update_recorder):
     sys.modules["pgvector"] = types.ModuleType("pgvector")
     sys.modules["pgvector.asyncpg"] = types.SimpleNamespace(register_vector=lambda *args, **kwargs: None)
     sys.modules["pydantic"] = types.SimpleNamespace(BaseModel=_FakeBaseModel, Field=_fake_field)
-    sys.modules["prometheus_client"] = types.SimpleNamespace(Counter=lambda *args, **kwargs: _Metric(), Histogram=lambda *args, **kwargs: _Metric())
+    sys.modules["prometheus_client"] = types.SimpleNamespace(Counter=lambda *args, **kwargs: _Metric(), Gauge=lambda *args, **kwargs: _Metric(), Histogram=lambda *args, **kwargs: _Metric())
     sys.modules["opentelemetry"] = types.SimpleNamespace(trace=types.SimpleNamespace(get_tracer=lambda *args, **kwargs: _DummyTracer()))
 
     src_pkg = types.ModuleType("src")

@@ -48,3 +48,14 @@ groups:
           summary: The route selector keeps proposing fallback routes the catalog does not declare.
           impact: RFC-028 sanitization hides this from users as a successful answer, but it means core/routes/ has an undeclared sibling-fallback gap (see routes/index.md) that should be fixed as data, the same class of bug behind the 2026-07-06 incident (trace 7852fc7fe6909eec06529a124817e571).
           runbook: docs/operations/observability-runbook.md
+      - alert: CorpDbSearchDocsMissingEmbeddings
+        expr: max(corp_db_search_docs_missing_embeddings) > 0
+        for: 15m
+        labels:
+          severity: warning
+          alert_id: OBS-ALERT-007
+          service: tools-api
+        annotations:
+          summary: '{{ $value }} corp_search_docs rows have no embedding.'
+          impact: Semantic retrieval is blind to these documents, so colloquial queries ("а как позвонить?") silently fall back to lexical-only matching and return empty for scoped KB lookups. Rebuild search docs without --skip-embeddings.
+          runbook: docs/operations/observability-runbook.md

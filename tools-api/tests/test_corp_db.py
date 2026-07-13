@@ -1423,14 +1423,18 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["filters"]["source_file_scope"], ["about_Luxnet.md"])
         self.assertEqual(payload["filters"]["topic_facets"], ["definition"])
         # Primary lexical query plus bounded scoped fallbacks (empty stub rows);
-        # every query must stay inside the authoritative kb_chunk scope.
-        self.assertGreaterEqual(len(conn.queries), 1)
-        _, args = conn.queries[0]
-        self.assertEqual(len(args), 8)
-        self.assertEqual(args[7], ["kb_chunk"])
-        for _, fallback_args in conn.queries[1:]:
-            self.assertEqual(len(fallback_args), 8)
-            self.assertEqual(fallback_args[7], ["kb_chunk"])
+        # every hybrid query must stay inside the authoritative kb_chunk scope and push
+        # the source-file scope down into SQL so ranking happens within the scope.
+        hybrid_queries = [
+            (query_text, args)
+            for query_text, args in conn.queries
+            if "corp_hybrid_search" in query_text
+        ]
+        self.assertGreaterEqual(len(hybrid_queries), 1)
+        for _, args in hybrid_queries:
+            self.assertEqual(len(args), 10)
+            self.assertEqual(args[7], ["kb_chunk"])
+            self.assertEqual(args[8], ["about_Luxnet.md"])
 
     def test_category_mountings_accepts_series_filter(self):
         conn = QueryCaptureConn()

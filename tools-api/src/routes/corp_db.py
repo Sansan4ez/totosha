@@ -17,7 +17,7 @@ from openai import AsyncOpenAI
 from opentelemetry import trace
 from pgvector.asyncpg import register_vector
 from pydantic import BaseModel, Field
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 from src.observability import (
     REGISTRY,
@@ -438,6 +438,18 @@ CORP_DB_EMBEDDINGS_UNAVAILABLE_TOTAL = Counter(
     labelnames=("profile",),
     registry=REGISTRY,
 )
+CORP_DB_DOCS_TOTAL = Gauge(
+    "corp_db_search_docs_total",
+    "Number of documents in corp_search_docs.",
+    registry=REGISTRY,
+)
+CORP_DB_DOCS_MISSING_EMBEDDINGS = Gauge(
+    "corp_db_search_docs_missing_embeddings",
+    "Number of corp_search_docs rows without an embedding (semantic search is blind to them).",
+    registry=REGISTRY,
+)
+_EMBEDDING_COVERAGE_REFRESH_SECONDS = 300.0
+_embedding_coverage_checked_at = 0.0
 
 
 class CorpDbSearchRequest(BaseModel):
@@ -992,6 +1004,33 @@ async def _get_pool() -> asyncpg.Pool:
     return _pool
 
 
+async def _maybe_refresh_embedding_coverage(conn: asyncpg.Connection) -> None:
+    """Expose corpus embedding coverage as gauges so a rebuild done with
+    --skip-embeddings (semantic search silently dead) is visible in monitoring."""
+    global _embedding_coverage_checked_at
+    now = perf_counter()
+    if _embedding_coverage_checked_at and now - _embedding_coverage_checked_at < _EMBEDDING_COVERAGE_REFRESH_SECONDS:
+        return
+    _embedding_coverage_checked_at = now
+    try:
+        row = await conn.fetchrow(
+            "SELECT count(*) AS total, count(embedding) AS with_embedding FROM corp.corp_search_docs"
+        )
+    except Exception as exc:
+        logger.warning("corp-db embedding coverage check failed: %s", exc)
+        return
+    total = int(row["total"])
+    missing = total - int(row["with_embedding"])
+    CORP_DB_DOCS_TOTAL.set(total)
+    CORP_DB_DOCS_MISSING_EMBEDDINGS.set(missing)
+    if missing:
+        logger.warning(
+            "corp-db semantic search degraded: %d/%d corp_search_docs rows have no embedding",
+            missing,
+            total,
+        )
+
+
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
@@ -1015,7 +1054,7 @@ async def _get_query_embedding(query: str) -> list[float] | None:
         return None
 
 
-def _hybrid_row(record: asyncpg.Record) -> dict[str, Any]:
+def _hybrid_row(record: asyncpg.Record, *, include_debug: bool = False) -> dict[str, Any]:
     metadata = _json_object(record["metadata"])
     result = {
         "entity_type": record["entity_type"],
@@ -1035,7 +1074,7 @@ def _hybrid_row(record: asyncpg.Record) -> dict[str, Any]:
         result["facts"] = _json_object(metadata.get("facts"))
     else:
         result["preview"] = _preview(record["content"])
-    if record["debug_info"] is not None:
+    if include_debug and record["debug_info"] is not None:
         result["debug_info"] = record["debug_info"]
     return result
 
@@ -2510,10 +2549,14 @@ async def _run_hybrid_query(
     topic_facets: list[str] | None,
     include_debug: bool,
 ) -> list[asyncpg.Record]:
+    # source_files must reach SQL so scoped lookups rank within the scope instead of
+    # post-filtering a corpus-wide top-N (which silently destroys recall for small
+    # scopes). debug_info is always requested because _rows_have_lexical_signal needs
+    # it; _hybrid_row strips it from responses unless the caller asked for debug.
     rows = await conn.fetch(
         """
         SELECT doc_id, entity_type, entity_id, title, content, metadata, score, debug_info
-        FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8)
+        FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         """,
         query,
         embedding,
@@ -2523,6 +2566,8 @@ async def _run_hybrid_query(
         fuzzy_weight,
         60,
         entity_types,
+        source_files,
+        True,
     )
     return [
         row
@@ -2702,7 +2747,7 @@ async def _scoped_kb_fallback_rows(
                 topic_facets=topic_facets,
                 include_debug=include_debug,
             )
-        formatted = [_hybrid_row(row) for row in rows]
+        formatted = [_hybrid_row(row, include_debug=include_debug) for row in rows]
         if formatted:
             return formatted, "scoped_semantic_fallback"
 
@@ -2740,7 +2785,7 @@ async def _scoped_kb_fallback_rows(
                 topic_facets=topic_facets,
                 include_debug=include_debug,
             )
-        formatted = [_hybrid_row(row) for row in rows]
+        formatted = [_hybrid_row(row, include_debug=include_debug) for row in rows]
         if formatted:
             return formatted, "scoped_token_fallback"
 
@@ -2841,7 +2886,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
             topic_facets=topic_facets or None,
             include_debug=req.include_debug,
         )
-    primary_rows = [_hybrid_row(row) for row in rows]
+    primary_rows = [_hybrid_row(row, include_debug=bool(req.include_debug)) for row in rows]
     if explicit_lamp_filters and primary_rows:
         primary_rows = await _filter_hybrid_lamp_rows(conn, primary_rows, req)
 
@@ -2978,7 +3023,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                     topic_facets=topic_facets or None,
                     include_debug=req.include_debug,
                 )
-            formatted_semantic = [_hybrid_row(row) for row in semantic_rows]
+            formatted_semantic = [_hybrid_row(row, include_debug=bool(req.include_debug)) for row in semantic_rows]
             if explicit_lamp_filters and formatted_semantic:
                 formatted_semantic = await _filter_hybrid_lamp_rows(conn, formatted_semantic, req)
             if formatted_semantic:
@@ -3040,7 +3085,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                     topic_facets=topic_facets or None,
                     include_debug=req.include_debug,
                 )
-            formatted = [_hybrid_row(row) for row in retry_rows]
+            formatted = [_hybrid_row(row, include_debug=bool(req.include_debug)) for row in retry_rows]
             if explicit_lamp_filters and formatted:
                 formatted = await _filter_hybrid_lamp_rows(conn, formatted, req)
             if not formatted and label.startswith("token:") and _should_run_alias_fallback_for_token(token_query):
@@ -3057,7 +3102,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                         entity_types=entity_types,
                         source_files=source_file_scope or None,
                     )
-                formatted = [_hybrid_row(row) for row in alias_rows]
+                formatted = [_hybrid_row(row, include_debug=bool(req.include_debug)) for row in alias_rows]
                 if explicit_lamp_filters and formatted:
                     formatted = await _filter_hybrid_lamp_rows(conn, formatted, req)
             if formatted:
@@ -4040,6 +4085,7 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
     try:
         pool = await _get_pool()
         async with pool.acquire() as conn:
+            await _maybe_refresh_embedding_coverage(conn)
             if req.kind == "hybrid_search":
                 result = await _hybrid_search(conn, req, limit)
             elif req.kind == "lamp_exact":
