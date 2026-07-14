@@ -15,6 +15,9 @@ class Rfc027LlmOnlyTests(unittest.TestCase):
         self.helper = guardrail.RoutingGuardrailTests()
 
     def _selector_response(self, *, family_id: str, route_id: str, tool_args: dict | None = None) -> dict:
+        """Legacy single-call selector shape: the guardrail harness splits it into the RFC-029
+        Call A (route choice, tool_args ignored) and a synthesized Call B (argument builder)
+        response carrying the embedded tool_args."""
         return {
             "choices": [
                 {
@@ -183,7 +186,7 @@ class Rfc027LlmOnlyTests(unittest.TestCase):
         document_selector = self._selector_response(
             family_id="documents",
             route_id="corp_db.certificate_by_lamp_name",
-            tool_args={"name": "NL Nova"},
+            tool_args={"names": ["NL Nova"]},
         )
         document_response, document_exec, document_meta = self.helper._run_flow(
             user_message="Нужен сертификат NL Nova",
@@ -228,7 +231,7 @@ class Rfc027LlmOnlyTests(unittest.TestCase):
         # (name) into the primary call itself, so the certificate resolves on the first
         # attempt and no family_local fallback round-trip is needed anymore.
         self.assertEqual(document_exec.await_count, 1)
-        self.assertEqual(document_exec.await_args_list[0].args[1]["name"], "NL Nova")
+        self.assertEqual(document_exec.await_args_list[0].args[1]["names"], ["NL Nova"])
         self.assertEqual(document_meta["finalizer_mode"], "llm")
         self.assertEqual(document_meta["retrieval_used_fallback_scope"], "")
         self.assertEqual(document_meta["retrieval_close_reason"], "route_selector_payload_sufficient")

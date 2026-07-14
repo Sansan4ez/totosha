@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "document_type": {
+      "enum": [
+        "passport",
+        "certificate",
+        "manual",
+        "ies"
+      ],
+      "type": "string"
+    },
+    "names": {
+      "items": {
+        "maxLength": 240,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "type": "array"
+    },
+    "offset": {
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "query": {
+      "maxLength": 500,
+      "type": "string"
+    }
+  },
+  "required": [
+    "names"
+  ],
+  "type": "object"
+}

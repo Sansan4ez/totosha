@@ -4,6 +4,9 @@ route_kind: corp_table
 authority: primary
 title: Codes and SKU lookup
 summary: Structured codes route for reverse code-to-lamp lookup and broader code-family questions.
+when_to_use: Select for reverse lookup from a code (ETM, ORACL, SKU, article) to the lamp, or for broad
+  code-family questions.
+schema_ref: sku_lookup.schema.json
 topics:
 - catalog
 - sku

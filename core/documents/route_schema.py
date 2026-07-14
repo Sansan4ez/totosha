@@ -37,6 +37,22 @@ from typing import Any
 MAX_COMPACT_ENUM_VALUES = 60
 MAX_COMPACT_ENUM_VALUE_LENGTH = 80
 MAX_SELECTOR_STRING_LENGTH = 600
+MAX_DOCUMENT_LOOKUP_NAMES = 5
+
+# RFC-029 workstream 5: closed value sets the argument builder fills directly instead of
+# tools-api re-deriving them from the raw query with alias lists and a hand-rolled stemmer.
+# application_key values mirror tools-api APPLICATION_PROFILES keys.
+APPLICATION_KEY_ENUM = (
+    "sports_high_power",
+    "quarry_heavy_duty",
+    "airport_apron",
+    "street_road_lighting",
+    "warehouse",
+    "office",
+    "high_bay",
+    "aggressive_environment",
+)
+CONTEXT_PROFILE_ENUM = ("residential_compact", "standard", "heavy_duty")
 
 ROUTE_CONTRACT_FIELDS = (
     "argument_schema",
@@ -219,6 +235,14 @@ def _corp_db_argument_properties() -> dict[str, dict[str, Any]]:
         "limit": {"type": "integer", "minimum": 1, "maximum": 50},
         "offset": {"type": "integer", "minimum": 0, "maximum": 10000},
         "name": _string_property(240),
+        "names": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": MAX_DOCUMENT_LOOKUP_NAMES,
+            "items": {"type": "string", "maxLength": 240},
+        },
+        "application_key": {"type": "string", "enum": list(APPLICATION_KEY_ENUM)},
+        "context_profile": {"type": "string", "enum": list(CONTEXT_PROFILE_ENUM)},
         "document_type": {"type": "string", "enum": ["passport", "certificate", "manual", "ies"]},
         "lookup_direction": {"type": "string", "enum": ["by_name", "by_code"]},
         "code_system": {
@@ -686,15 +710,231 @@ def _build_repair_prompt(error: RouteSelectorOutputError) -> str:
     )
 
 
-def _selector_error_result(error: RouteSelectorOutputError, *, repair_attempted: bool) -> SelectorValidationResult:
+def _build_route_choice_repair_prompt(error: RouteSelectorOutputError) -> str:
+    return (
+        "Return one corrected strict JSON object with selected_family_id, selected_route_id, and optional "
+        "fallback_route_ids that stay inside the selected family unless the selected leaf explicitly allows "
+        f"cross-family fallbacks. Do not include tool_args. Error: {error.message}"
+    )
+
+
+def _build_route_arguments_repair_prompt(error: RouteSelectorOutputError) -> str:
+    return (
+        "Return one corrected strict JSON object containing only argument fields declared by the route's "
+        "argument schema. Fill a field only when the user's message states its value; omit fields the "
+        f"message does not specify. Error: {error.message}"
+    )
+
+
+def _selector_error_result(
+    error: RouteSelectorOutputError,
+    *,
+    repair_attempted: bool,
+    repair_prompt_builder=_build_repair_prompt,
+) -> SelectorValidationResult:
     repairable = (not repair_attempted) and error.code in {"invalid_json", "invalid_tool_args", "missing_required"}
     return SelectorValidationResult(
         valid=False,
         error_code=error.code,
         error=error.message,
         repairable=repairable,
-        repair_prompt=_build_repair_prompt(error) if repairable else "",
+        repair_prompt=repair_prompt_builder(error) if repairable else "",
     )
+
+
+def _sanitize_fallback_route_ids(
+    requested_fallback_route_ids: list[str],
+    *,
+    route: dict[str, Any],
+    routes_by_id: dict[str, dict[str, Any]],
+    route_family_id: str,
+    sanitization_actions: list[str],
+) -> list[str]:
+    route_fallback_ids = set(_dedupe_strings(route.get("fallback_route_ids") or []))
+    fallback_policy = route.get("fallback_policy") if isinstance(route.get("fallback_policy"), dict) else {}
+    cross_family_fallback_ids = set(
+        _dedupe_strings(
+            fallback_policy.get("cross_family_route_ids")
+            or route.get("cross_family_fallback_route_ids")
+            or []
+        )
+    )
+    same_family_fallback_ids = set(
+        _dedupe_strings(
+            fallback_policy.get("same_family_route_ids")
+            or [route_id for route_id in route_fallback_ids if route_id not in cross_family_fallback_ids]
+        )
+    )
+    declared_fallback_ids = same_family_fallback_ids | cross_family_fallback_ids
+    fallback_route_ids: list[str] = []
+    for fallback_id in requested_fallback_route_ids:
+        fallback_route = routes_by_id.get(fallback_id)
+        if fallback_route is None:
+            sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
+            continue
+        if fallback_id not in declared_fallback_ids:
+            sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
+            continue
+        fallback_family_id = _route_selector_family_id(fallback_route)
+        if fallback_id in same_family_fallback_ids and fallback_family_id != route_family_id:
+            # The catalog itself declares this as a same-family fallback but the fallback
+            # route's actual family differs (a catalog data bug caught by RFC-028's CI
+            # invariant check). Drop it here rather than fail the whole request on a data bug.
+            sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
+            continue
+        fallback_route_ids.append(fallback_id)
+    return fallback_route_ids
+
+
+def route_has_selector_fillable_arguments(route: dict[str, Any]) -> bool:
+    """RFC-029 workstream 2: whether Call B (argument construction) is needed at all.
+
+    A route whose selector-visible argument schema declares no properties is fully
+    locked/templated; Call B is skipped for it.
+    """
+    schema = route.get("argument_schema") if isinstance(route.get("argument_schema"), dict) else {}
+    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    locked_keys = set((route.get("locked_args") or {}).keys()) if isinstance(route.get("locked_args"), dict) else set()
+    template_keys = (
+        set((route.get("executor_args_template") or {}).keys())
+        if isinstance(route.get("executor_args_template"), dict)
+        else set()
+    )
+    return any(key not in locked_keys and key not in template_keys for key in properties)
+
+
+def validate_route_choice_output(
+    selector_output: str | dict[str, Any],
+    routes: list[dict[str, Any]],
+    *,
+    repair_attempted: bool = False,
+) -> SelectorValidationResult:
+    """RFC-029 Call A: validate route selection only — no tool_args are accepted here.
+
+    Output shape and sanitizing rules match RFC-028's validate_selector_output for the
+    route/family/fallback fields; a stray tool_args key (the pre-RFC-029 single-call shape)
+    is ignored silently, never filled or validated — argument construction is Call B's job.
+    The bypass check still scans the full raw payload including any stray tool_args.
+    """
+    try:
+        if isinstance(selector_output, str):
+            try:
+                parsed = json.loads(selector_output)
+            except json.JSONDecodeError as exc:
+                raise RouteSelectorOutputError("invalid_json", f"selector output is not valid JSON: {exc}") from exc
+        else:
+            parsed = selector_output
+        if not isinstance(parsed, dict):
+            raise RouteSelectorOutputError("invalid_json", "selector output must be a JSON object")
+
+        bypass_key = _contains_selector_bypass(parsed)
+        if bypass_key:
+            raise RouteSelectorOutputError("unsafe_selector_output", f"selector output contains unsafe key {bypass_key}")
+
+        sanitization_actions: list[str] = []
+        unsafe_root_keys = [key for key in parsed if key not in SAFE_SELECTOR_KEYS]
+        if unsafe_root_keys:
+            parsed = {key: value for key, value in parsed.items() if key in SAFE_SELECTOR_KEYS}
+            sanitization_actions.append(SANITIZE_DROPPED_ROOT_KEY)
+
+        routes_by_id = _visible_routes_by_id(routes)
+        selected_route_id = str(parsed.get("selected_route_id") or "").strip()
+        if not selected_route_id:
+            raise RouteSelectorOutputError("missing_required", "selected_route_id is required")
+        route = routes_by_id.get(selected_route_id)
+        if route is None:
+            raise RouteSelectorOutputError("unsafe_selector_output", f"selected route {selected_route_id} is not visible")
+
+        selected_family_id = str(parsed.get("selected_family_id") or "").strip()
+        route_family_id = _route_selector_family_id(route)
+        if selected_family_id and selected_family_id != route_family_id:
+            selected_family_id = route_family_id
+            sanitization_actions.append(SANITIZE_DERIVED_FAMILY)
+        if not selected_family_id:
+            selected_family_id = route_family_id
+
+        fallback_route_ids = _sanitize_fallback_route_ids(
+            _dedupe_strings(parsed.get("fallback_route_ids") or []),
+            route=route,
+            routes_by_id=routes_by_id,
+            route_family_id=route_family_id,
+            sanitization_actions=sanitization_actions,
+        )
+
+        return SelectorValidationResult(
+            valid=True,
+            selected_family_id=selected_family_id,
+            selected_route_id=selected_route_id,
+            route=dict(route),
+            tool_args={},
+            fallback_route_ids=fallback_route_ids,
+            sanitization_actions=sanitization_actions,
+        )
+    except RouteSelectorOutputError as exc:
+        return _selector_error_result(
+            exc,
+            repair_attempted=repair_attempted,
+            repair_prompt_builder=_build_route_choice_repair_prompt,
+        )
+
+
+def validate_route_arguments_output(
+    argument_output: str | dict[str, Any],
+    route: dict[str, Any],
+    *,
+    repair_attempted: bool = False,
+) -> SelectorValidationResult:
+    """RFC-029 Call B: validate argument-builder output against exactly one route's schema.
+
+    The output *is* the tool_args object (native structured output), optionally wrapped in a
+    single tool_args key. A schema violation here is Call-B-local repair-or-fail-closed; the
+    route choice from Call A is never re-run because of it.
+    """
+    route_id = str(route.get("route_id") or "").strip()
+    route_family_id = _route_selector_family_id(route)
+    try:
+        if isinstance(argument_output, str):
+            try:
+                parsed = json.loads(argument_output)
+            except json.JSONDecodeError as exc:
+                raise RouteSelectorOutputError("invalid_json", f"argument builder output is not valid JSON: {exc}") from exc
+        else:
+            parsed = argument_output
+        if not isinstance(parsed, dict):
+            raise RouteSelectorOutputError("invalid_json", "argument builder output must be a JSON object")
+
+        bypass_key = _contains_selector_bypass(parsed)
+        if bypass_key:
+            raise RouteSelectorOutputError(
+                "unsafe_selector_output", f"argument builder output contains unsafe key {bypass_key}"
+            )
+
+        sanitization_actions: list[str] = []
+        if isinstance(parsed.get("tool_args"), dict) and set(parsed) <= SAFE_SELECTOR_KEYS:
+            # Model answered in Call-A envelope shape; unwrap and keep only the arguments.
+            parsed = dict(parsed["tool_args"])
+            sanitization_actions.append(SANITIZE_DROPPED_ROOT_KEY)
+
+        _check_locked_args_override(route, parsed)
+        selector_tool_args, dropped_tool_arg_keys = sanitize_unknown_tool_args(route, parsed)
+        if dropped_tool_arg_keys:
+            sanitization_actions.append(SANITIZE_DROPPED_TOOL_ARG)
+        final_args = merge_route_tool_args(route, selector_tool_args, validate_required=True)
+
+        return SelectorValidationResult(
+            valid=True,
+            selected_family_id=route_family_id,
+            selected_route_id=route_id,
+            route=dict(route),
+            tool_args=final_args,
+            sanitization_actions=sanitization_actions,
+        )
+    except RouteSelectorOutputError as exc:
+        return _selector_error_result(
+            exc,
+            repair_attempted=repair_attempted,
+            repair_prompt_builder=_build_route_arguments_repair_prompt,
+        )
 
 
 def validate_selector_output(
@@ -753,40 +993,13 @@ def validate_selector_output(
             sanitization_actions.append(SANITIZE_DROPPED_TOOL_ARG)
         final_args = merge_route_tool_args(route, selector_tool_args, validate_required=True)
 
-        route_fallback_ids = set(_dedupe_strings(route.get("fallback_route_ids") or []))
-        fallback_policy = route.get("fallback_policy") if isinstance(route.get("fallback_policy"), dict) else {}
-        cross_family_fallback_ids = set(
-            _dedupe_strings(
-                fallback_policy.get("cross_family_route_ids")
-                or route.get("cross_family_fallback_route_ids")
-                or []
-            )
+        fallback_route_ids = _sanitize_fallback_route_ids(
+            _dedupe_strings(parsed.get("fallback_route_ids") or []),
+            route=route,
+            routes_by_id=routes_by_id,
+            route_family_id=route_family_id,
+            sanitization_actions=sanitization_actions,
         )
-        same_family_fallback_ids = set(
-            _dedupe_strings(
-                fallback_policy.get("same_family_route_ids")
-                or [route_id for route_id in route_fallback_ids if route_id not in cross_family_fallback_ids]
-            )
-        )
-        declared_fallback_ids = same_family_fallback_ids | cross_family_fallback_ids
-        requested_fallback_route_ids = _dedupe_strings(parsed.get("fallback_route_ids") or [])
-        fallback_route_ids: list[str] = []
-        for fallback_id in requested_fallback_route_ids:
-            fallback_route = routes_by_id.get(fallback_id)
-            if fallback_route is None:
-                sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
-                continue
-            if fallback_id not in declared_fallback_ids:
-                sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
-                continue
-            fallback_family_id = _route_selector_family_id(fallback_route)
-            if fallback_id in same_family_fallback_ids and fallback_family_id != route_family_id:
-                # The catalog itself declares this as a same-family fallback but the fallback
-                # route's actual family differs (a catalog data bug caught by RFC-028's CI
-                # invariant check). Drop it here rather than fail the whole request on a data bug.
-                sanitization_actions.append(SANITIZE_DROPPED_FALLBACK)
-                continue
-            fallback_route_ids.append(fallback_id)
 
         return SelectorValidationResult(
             valid=True,

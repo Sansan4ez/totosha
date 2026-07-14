@@ -115,6 +115,22 @@ class LampExactConn:
         return []
 
 
+class LampSeriesPrefixConn(LampExactConn):
+    """Exact name match finds nothing; only the series-prefix LIKE query matches."""
+
+    def __init__(self):
+        super().__init__()
+        self.last_prefix_patterns = None
+
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "FROM corp.v_catalog_lamps_agent" in sql and "LIKE ANY" not in sql:
+            return []
+        if "FROM corp.v_catalog_lamps_agent" in sql and "LIKE ANY" in sql:
+            self.last_prefix_patterns = list(args[0])
+        return await super().fetch(query, *args)
+
+
 class RoutingConn:
     async def fetch(self, query, *args):
         sql = str(query)
@@ -1008,7 +1024,7 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "application_recommendation", "query": "подбери освещение для спортивного стадиона"},
+                json={"kind": "application_recommendation", "query": "подбери освещение для спортивного стадиона", "application_key": "sports_high_power"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1016,7 +1032,7 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["kind"], "application_recommendation")
         self.assertEqual(payload["resolved_application"]["application_key"], "sports_high_power")
-        self.assertEqual(payload["resolved_application"]["resolution_strategy"], "synonym_map")
+        self.assertEqual(payload["resolved_application"]["resolution_strategy"], "selector_argument")
         self.assertEqual(payload["categories"][0]["category_name"], "LAD LED R500 SPORT")
         self.assertEqual(payload["categories"][0]["image_url"], "https://ladzavod.ru/img/r500-sport.png")
         self.assertEqual(payload["categories"][1]["executable_category_ids"], [68, 69])
@@ -1107,7 +1123,7 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "application_recommendation", "query": "подбери мощный светильник для карьерна"},
+                json={"kind": "application_recommendation", "query": "подбери мощный светильник для карьерна", "application_key": "quarry_heavy_duty"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1124,7 +1140,7 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "application_recommendation", "query": "подбери освещение для аэропортового перрона"},
+                json={"kind": "application_recommendation", "query": "подбери освещение для аэропортового перрона", "application_key": "airport_apron"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1140,7 +1156,7 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "application_recommendation", "query": "подбери освещение для склада"},
+                json={"kind": "application_recommendation", "query": "подбери освещение для склада", "application_key": "warehouse"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1156,7 +1172,7 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "application_recommendation", "query": "подбери светильник для офисного кабинета"},
+                json={"kind": "application_recommendation", "query": "подбери светильник для офисного кабинета", "application_key": "office"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1172,7 +1188,7 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "application_recommendation", "query": "подбери освещение для высоких пролетов склада"},
+                json={"kind": "application_recommendation", "query": "подбери освещение для высоких пролетов склада", "application_key": "high_bay"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1188,7 +1204,7 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "application_recommendation", "query": "подбери светильник для агрессивной среды"},
+                json={"kind": "application_recommendation", "query": "подбери светильник для агрессивной среды", "application_key": "aggressive_environment"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1196,7 +1212,9 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["resolved_application"]["application_key"], "aggressive_environment")
         self.assertTrue(payload["recommended_lamps"][0]["url"].startswith("https://ladzavod.ru/catalog/"))
 
-    def test_application_recommendation_returns_ambiguity_payload(self):
+    def test_application_recommendation_without_key_asks_for_clarification(self):
+        # RFC-029 workstream 5 (final step): no selector application_key -> no free-text
+        # guessing; the executor answers with a clarification prompt instead.
         conn = ApplicationRecommendationConn()
         with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
             from app import app
@@ -1209,10 +1227,127 @@ class CorpDbRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["status"], "needs_clarification")
-        self.assertEqual(payload["resolved_application"]["resolution_strategy"], "ambiguity")
-        self.assertGreaterEqual(len(payload["resolved_application"]["candidates"]), 2)
+        self.assertEqual(payload["status"], "empty")
+        self.assertEqual(payload["resolved_application"]["resolution_strategy"], "missing_application_key")
+        self.assertIn("объект применения", payload["follow_up_question"])
         self.assertEqual(payload["recommended_lamps"], [])
+
+    def test_lamp_documents_index_resolves_series_name_via_prefix_fallback(self):
+        # RFC-029 workstream 3: "LAD LED R500" is a series, catalog names are full SKUs;
+        # when exact match finds nothing the lookup prefix-matches at a -/space boundary
+        # so certificate requests stop relying on the cross-family KB fallback.
+        conn = LampSeriesPrefixConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "lamp_documents_index",
+                    "names": ["LAD LED R500"],
+                    "document_type": "certificate",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["results"][0]["name"], "LAD LED R500-9-30-6-650LZD")
+        self.assertEqual(
+            payload["results"][0]["primary_document"]["url"],
+            "https://ladzavod.ru/storage/certificate-2014.pdf",
+        )
+        self.assertIn("lad led r500-%", conn.last_prefix_patterns)
+
+    def test_lamp_documents_index_accepts_bounded_names_array(self):
+        # RFC-029 workstream 3: one request covers up to five names; duplicate lamps dedupe.
+        conn = LampExactConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "lamp_documents_index",
+                    "names": ["LAD LED R500-9-30-6-650LZD", "R500-9-30-6-650LZD"],
+                    "document_type": "passport",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["filters"]["names"], ["LAD LED R500-9-30-6-650LZD", "R500-9-30-6-650LZD"])
+        # Both names resolve to the same lamp; the payload dedupes by lamp_id.
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["primary_document"]["document_type"], "passport")
+
+    def test_lamp_documents_index_rejects_more_than_five_names(self):
+        conn = LampExactConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "lamp_documents_index",
+                    "names": [f"MODEL-{index}" for index in range(6)],
+                },
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_application_recommendation_uses_selector_application_key(self):
+        # RFC-029 workstream 5: a selector-supplied application_key skips the alias/stem
+        # free-text resolution entirely.
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "application_recommendation",
+                    "query": "покажи светильник на столб на высоту 4 метра",
+                    "application_key": "street_road_lighting",
+                    "context_profile": "residential_compact",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["resolved_application"]["application_key"], "street_road_lighting")
+        self.assertEqual(payload["resolved_application"]["resolution_strategy"], "selector_argument")
+        self.assertEqual(payload["filters"]["context_profile"], "residential_compact")
+
+    def test_application_score_lamp_street_power_band_follows_context_profile(self):
+        from src.routes.corp_db import CorpDbSearchRequest, _application_score_lamp
+
+        compact_lamp = {"power_w": 60, "luminous_flux_lm": 7000, "ingress_protection": "IP65", "mounting_type": "Консоль", "category_name": "Консольные светильники"}
+        heavy_lamp = {"power_w": 700, "luminous_flux_lm": 90000, "ingress_protection": "IP67", "mounting_type": "Лира", "category_name": "LAD LED R700"}
+        query = "покажи светильник на столб"
+
+        def score(row, context_profile):
+            req = CorpDbSearchRequest(
+                kind="application_recommendation",
+                query=query,
+                application_key="street_road_lighting",
+                context_profile=context_profile,
+            )
+            value, _reasons = _application_score_lamp(row, application_key="street_road_lighting", req=req, query=query)
+            return value
+
+        # residential_compact prefers the compact lamp and penalizes the 700 W floodlight.
+        self.assertGreater(score(compact_lamp, "residential_compact"), score(heavy_lamp, "residential_compact"))
+        # heavy_duty flips the preference.
+        self.assertGreater(score(heavy_lamp, "heavy_duty"), score(compact_lamp, "heavy_duty"))
+        # default standard band favors mid-power street lamps over the 700 W floodlight.
+        mid_lamp = dict(compact_lamp, power_w=150)
+        self.assertGreater(score(mid_lamp, None), score(heavy_lamp, None))
 
     def test_normalize_query_text_normalizes_units(self):
         from src.routes.corp_db import _normalize_query_text
@@ -1687,7 +1822,7 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "application_recommendation", "query": "подбери освещение для спортивного стадиона"},
+                json={"kind": "application_recommendation", "query": "подбери освещение для спортивного стадиона", "application_key": "sports_high_power"},
             )
             self.assertEqual(response.status_code, 200)
 

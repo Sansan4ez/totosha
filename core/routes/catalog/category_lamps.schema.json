@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "maxLength": 240,
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "query": {
+      "maxLength": 500,
+      "type": "string"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

@@ -1,0 +1,190 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "beam_pattern": {
+      "maxLength": 160,
+      "type": "string"
+    },
+    "category": {
+      "maxLength": 240,
+      "type": "string"
+    },
+    "cct_k_max": {
+      "type": "integer"
+    },
+    "cct_k_min": {
+      "type": "integer"
+    },
+    "climate_execution": {
+      "maxLength": 160,
+      "type": "string"
+    },
+    "cri_ra_max": {
+      "type": "integer"
+    },
+    "cri_ra_min": {
+      "type": "integer"
+    },
+    "dimensions_raw": {
+      "maxLength": 120,
+      "type": "string"
+    },
+    "electrical_protection_class": {
+      "maxLength": 80,
+      "type": "string"
+    },
+    "explosion_protected": {
+      "type": "boolean"
+    },
+    "explosion_protection_marking": {
+      "maxLength": 160,
+      "type": "string"
+    },
+    "flux_lm_max": {
+      "type": "integer"
+    },
+    "flux_lm_min": {
+      "type": "integer"
+    },
+    "height_mm_max": {
+      "type": "number"
+    },
+    "height_mm_min": {
+      "type": "number"
+    },
+    "ip": {
+      "maxLength": 12,
+      "pattern": "^[A-Za-z0-9 .+-]+$",
+      "type": "string"
+    },
+    "length_mm_max": {
+      "type": "number"
+    },
+    "length_mm_min": {
+      "type": "number"
+    },
+    "limit": {
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "mounting_type": {
+      "enum": [
+        "консольное",
+        "регулируемая консоль",
+        "П-образная лира",
+        "П-образная лира для установки на трос через рым-болт",
+        "П-образная лира для установки на тросе",
+        "крепление на цепях по спецзаказу",
+        "крепление на цепях по спецзаказу LCH1",
+        "карабин",
+        "вертикальная лира по спецзаказу",
+        "косая лира по спецзаказу",
+        "двутавр по спецзаказу",
+        "крепление на жесткую поперечину",
+        "крепление дюбель-гвоздь",
+        "П-образная лира для установки на стене",
+        "П-образная лира для установки на потолок",
+        "крепление на рым-болт",
+        "накладной корпус",
+        "установка на тросе по спецзаказу",
+        "встриваемый корпус",
+        "накладной корпус NL VEGA"
+      ],
+      "type": "string"
+    },
+    "offset": {
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "power_factor_min_max": {
+      "type": "number"
+    },
+    "power_factor_min_min": {
+      "type": "number"
+    },
+    "power_factor_operator": {
+      "maxLength": 8,
+      "type": "string"
+    },
+    "power_w_max": {
+      "type": "integer"
+    },
+    "power_w_min": {
+      "type": "integer"
+    },
+    "query": {
+      "maxLength": 500,
+      "type": "string"
+    },
+    "supply_voltage_raw": {
+      "maxLength": 120,
+      "type": "string"
+    },
+    "temp_c_max": {
+      "type": "integer"
+    },
+    "temp_c_min": {
+      "type": "integer"
+    },
+    "voltage_kind": {
+      "enum": [
+        "AC",
+        "DC",
+        "AC/DC"
+      ],
+      "type": "string"
+    },
+    "voltage_max_v_max": {
+      "type": "number"
+    },
+    "voltage_max_v_min": {
+      "type": "number"
+    },
+    "voltage_min_v_max": {
+      "type": "number"
+    },
+    "voltage_min_v_min": {
+      "type": "number"
+    },
+    "voltage_nominal_v_max": {
+      "type": "number"
+    },
+    "voltage_nominal_v_min": {
+      "type": "number"
+    },
+    "voltage_tol_minus_pct_max": {
+      "type": "number"
+    },
+    "voltage_tol_minus_pct_min": {
+      "type": "number"
+    },
+    "voltage_tol_plus_pct_max": {
+      "type": "number"
+    },
+    "voltage_tol_plus_pct_min": {
+      "type": "number"
+    },
+    "warranty_years_max": {
+      "type": "integer"
+    },
+    "warranty_years_min": {
+      "type": "integer"
+    },
+    "weight_kg_max": {
+      "type": "number"
+    },
+    "weight_kg_min": {
+      "type": "number"
+    },
+    "width_mm_max": {
+      "type": "number"
+    },
+    "width_mm_min": {
+      "type": "number"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

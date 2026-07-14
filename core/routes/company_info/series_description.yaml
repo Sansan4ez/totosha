@@ -4,6 +4,10 @@ route_kind: corp_table
 authority: primary
 title: Series descriptions and lineup overview
 summary: Dedicated company-KB leaf route for broad series overviews and series-level descriptions.
+when_to_use: >-
+  Select for broad series-level overviews: what series exist, or describe a series or the lineup at
+  model-family level.
+schema_ref: series_description.schema.json
 topics:
 - series
 - catalog

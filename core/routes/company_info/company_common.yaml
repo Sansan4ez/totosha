@@ -4,9 +4,13 @@ route_kind: corp_table
 authority: primary
 title: Company common knowledge base
 summary: Source-scoped company KB for contacts, website, legal details, address, service, warranty, canonical
-  series overviews, and general company facts. Also the correct route for broad or multi-model
-  certificate/declaration requests (e.g. certificates for several different lamp models or series
-  named in one message) -- certificate_by_lamp_name only supports exactly one model/series at a time.
+  series overviews, and general company facts. Also the route for broad certificate/declaration
+  questions with no concrete model names -- certificate_by_lamp_name handles requests that name
+  specific models/series (up to five per message).
+when_to_use: >-
+  Select for general company facts: contacts, website, legal details, address, service, warranty, and
+  company-wide overviews not tied to specific named lamp models.
+schema_ref: company_common.schema.json
 topics:
 - company
 - contacts

@@ -357,7 +357,10 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(context["sphere_name"], "РЖД")
 
     def test_llm_route_selector_validates_route_and_tool_args(self):
-        selector_response = {
+        # RFC-029: route choice (Call A) and argument construction (Call B) are two calls
+        # with two distinct payloads; Call A carries no argument schema, Call B carries
+        # only the selected route's own schema.
+        choice_response = {
             "choices": [
                 {
                     "message": {
@@ -366,10 +369,6 @@ class RoutingGuardrailTests(unittest.TestCase):
                                 "selected_route_id": "corp_kb.company_common",
                                 "confidence": "high",
                                 "reason": "company certification question",
-                                "tool_args": {
-                                    "query": "сертификаты декларации CE EAC",
-                                    "topic_facets": ["certification"],
-                                },
                             },
                             ensure_ascii=False,
                         )
@@ -378,12 +377,36 @@ class RoutingGuardrailTests(unittest.TestCase):
                 }
             ]
         }
+        arguments_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "query": "сертификаты декларации CE EAC",
+                                "topic_facets": ["certification"],
+                            },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        purposes: list[str] = []
 
         async def fake_call_llm(messages, tool_definitions, model_override="", purpose="agent_loop"):
             self.assertEqual(tool_definitions, [])
+            purposes.append(purpose)
+            if purpose == "route_selector":
+                self.assertIn("corp_kb.company_common", messages[-1]["content"])
+                self.assertNotIn("argument_schema", messages[-1]["content"])
+                return choice_response
+            self.assertEqual(purpose, "route_argument_builder")
+            self.assertIn("argument_schema", messages[-1]["content"])
             self.assertIn("corp_kb.company_common", messages[-1]["content"])
-            self.assertEqual(purpose, "route_selector")
-            return selector_response
+            self.assertNotIn("corp_db.catalog_lookup", messages[-1]["content"])
+            return arguments_response
 
         with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
             os.environ,
@@ -394,6 +417,7 @@ class RoutingGuardrailTests(unittest.TestCase):
                 _MODULE._select_route_with_llm("какие есть сертификаты?")
             )
 
+        self.assertEqual(purposes, ["route_selector", "route_argument_builder"])
         self.assertEqual(route_hint["route_id"], "corp_kb.company_common")
         self.assertEqual(route_hint["tool_args"]["knowledge_route_id"], "corp_kb.company_common")
         self.assertEqual(route_hint["tool_args"]["topic_facets"], ["certification"])
@@ -401,9 +425,13 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertIn("query", route_hint["validated_arg_keys"])
         self.assertIn("topic_facets", route_hint["validated_arg_keys"])
         self.assertGreater(route_hint["selector_latency_ms"], 0)
+        self.assertGreater(route_hint["selector_a_latency_ms"], 0)
+        self.assertGreater(route_hint["selector_b_latency_ms"], 0)
+        self.assertEqual(route_hint["argument_builder_status"], "valid")
         self.assertEqual(route_selection["selector"]["status"], "valid")
         self.assertEqual(route_selection["selector"]["confidence"], "high")
         self.assertEqual(route_selection["selector"]["repair_status"], "not_needed")
+        self.assertEqual(route_selection["selector"]["argument_builder_status"], "valid")
         self.assertIn("query", route_selection["selector"]["validated_arg_keys"])
         self.assertIn("catalog_version", route_selection)
         self.assertIn("schema_version", route_selection)
@@ -427,9 +455,15 @@ class RoutingGuardrailTests(unittest.TestCase):
 
         self.assertEqual(
             set(properties),
-            {"query", "limit_categories", "limit_lamps", "limit_portfolio"},
+            {"query", "application_key", "context_profile", "limit_categories", "limit_lamps", "limit_portfolio"},
         )
         self.assertEqual(route["argument_schema"]["required"], ["query"])
+        # RFC-029 workstream 5: selector-fillable enums replacing executor-side text matching.
+        self.assertEqual(
+            properties["context_profile"]["enum"],
+            ["residential_compact", "standard", "heavy_duty"],
+        )
+        self.assertIn("street_road_lighting", properties["application_key"]["enum"])
 
     def test_document_subtype_selector_payload_stays_inside_documents_family(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -502,12 +536,22 @@ class RoutingGuardrailTests(unittest.TestCase):
                             {
                                 "selected_route_id": "corp_kb.company_common",
                                 "confidence": "medium",
-                                "reason": "repaired args",
-                                "tool_args": {
-                                    "query": "сертификаты декларации",
-                                    "topic_facets": ["certification"],
-                                },
+                                "reason": "repaired route choice",
                             },
+                            ensure_ascii=False,
+                        )
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "model": "selector-test-model",
+        }
+        arguments_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {"query": "сертификаты декларации", "topic_facets": ["certification"]},
                             ensure_ascii=False,
                         )
                     },
@@ -521,7 +565,9 @@ class RoutingGuardrailTests(unittest.TestCase):
             os.environ,
             {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
             clear=False,
-        ), patch.object(_MODULE, "call_llm", AsyncMock(side_effect=[invalid_response, repaired_response])):
+        ), patch.object(
+            _MODULE, "call_llm", AsyncMock(side_effect=[invalid_response, repaired_response, arguments_response])
+        ):
             route_selection, route_hint, _secondary = asyncio.run(
                 _MODULE._select_route_with_llm("какие есть сертификаты?")
             )
@@ -532,19 +578,27 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertTrue(route_selection["selector"]["repair_attempted"])
         self.assertEqual(route_selection["selector"]["validation_error_code"], "invalid_json")
         self.assertEqual(route_selection["selector"]["model"], "selector-test-model")
+        self.assertEqual(route_selection["selector"]["argument_builder_status"], "valid")
 
     def test_llm_route_selector_sanitizes_unknown_tool_arg_without_repair_round_trip(self):
-        # RFC-028: an unknown tool_args field is dropped silently; it must not trigger the
-        # repair round-trip (a single call_llm side effect proves at most one call happens).
-        selector_response = {
+        # RFC-028 (via RFC-029 Call B): an unknown argument field is dropped silently; it must
+        # not trigger the repair round-trip (exactly two calls — no third repair call happens).
+        choice_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"selected_route_id": "corp_kb.company_common"}, ensure_ascii=False)
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+        arguments_response = {
             "choices": [
                 {
                     "message": {
                         "content": json.dumps(
-                            {
-                                "selected_route_id": "corp_kb.company_common",
-                                "tool_args": {"query": "сертификаты", "undeclared": "drop me"},
-                            },
+                            {"query": "сертификаты", "undeclared": "drop me"},
                             ensure_ascii=False,
                         )
                     },
@@ -557,7 +611,7 @@ class RoutingGuardrailTests(unittest.TestCase):
             os.environ,
             {"CORP_DOCS_ROOT": str(Path(docs_tmp))},
             clear=False,
-        ), patch.object(_MODULE, "call_llm", AsyncMock(side_effect=[selector_response])):
+        ), patch.object(_MODULE, "call_llm", AsyncMock(side_effect=[choice_response, arguments_response])):
             route_selection, route_hint, _secondary = asyncio.run(
                 _MODULE._select_route_with_llm("какие есть сертификаты?")
             )
@@ -566,6 +620,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertNotIn("undeclared", route_hint["tool_args"])
         self.assertEqual(route_hint["tool_args"]["query"], "сертификаты")
         self.assertFalse(route_selection["selector"]["repair_attempted"])
+        self.assertFalse(route_selection["selector"]["argument_builder_repair_attempted"])
         self.assertIn("dropped_unknown_tool_arg", route_selection["selector"]["sanitization_actions"])
 
     def test_route_selector_llm_outage_returns_temporary_unavailable(self):
@@ -740,7 +795,7 @@ class RoutingGuardrailTests(unittest.TestCase):
                                 "selected_route_id": "corp_db.passport_by_lamp_name",
                                 "confidence": "high",
                                 "reason": "passport request by lamp",
-                                "tool_args": {"name": "NL Nova"},
+                                "tool_args": {"names": ["NL Nova"]},
                             },
                             ensure_ascii=False,
                         )
@@ -774,7 +829,7 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(first_args["kind"], "lamp_documents_index")
         self.assertEqual(first_args["document_type"], "passport")
         self.assertEqual(second_args["kind"], "lamp_documents_index")
-        self.assertEqual(second_args["name"], "NL Nova")
+        self.assertEqual(second_args["names"], ["NL Nova"])
         self.assertNotIn("document_type", second_args)
         self.assertEqual(meta["retrieval_business_family_id"], "documents")
         self.assertEqual(meta["retrieval_route_stage"], "stage3_optimized")
@@ -1079,6 +1134,30 @@ class RoutingGuardrailTests(unittest.TestCase):
         selection["selected_route_stage"] = str(matched_route.get("route_stage") or selection.get("selected_route_stage") or "")
         return selection
 
+    def _argument_builder_response_for(self, selector_response: dict) -> dict | None:
+        """RFC-029 two-call selector: synthesize the Call B (argument builder) response that
+        returns the tool_args embedded in a legacy single-call selector response."""
+        if "error" in selector_response:
+            return None
+        try:
+            choices = selector_response.get("choices") or []
+            content = str(((choices[0].get("message") or {}) if choices else {}).get("content") or "")
+            payload = json.loads(content)
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        tool_args = payload.get("tool_args") if isinstance(payload.get("tool_args"), dict) else {}
+        return {
+            "choices": [
+                {
+                    "message": {"content": json.dumps(tool_args, ensure_ascii=False)},
+                    "finish_reason": "stop",
+                }
+            ],
+            "model": str(selector_response.get("model") or "selector-test-model"),
+        }
+
     def _selector_response(self, selection: dict, *, tool_args_override: dict | None = None) -> dict:
         selected = dict(selection.get("selected") or {})
         argument_schema = selected.get("argument_schema") if isinstance(selected.get("argument_schema"), dict) else {}
@@ -1175,9 +1254,9 @@ class RoutingGuardrailTests(unittest.TestCase):
 
         async def fake_call_llm(messages, tool_definitions, model_override="", purpose="agent_loop"):
             llm_calls.append(messages)
-            if str(purpose).startswith("route_selector"):
+            if str(purpose).startswith(("route_selector", "route_argument_builder")):
                 if not selector_llm_responses:
-                    raise AssertionError("unexpected extra route_selector call_llm invocation")
+                    raise AssertionError(f"unexpected extra {purpose} call_llm invocation")
                 return selector_llm_responses.pop(0)
             if purpose == "finalizer":
                 for index, response in enumerate(llm_responses):
@@ -1279,7 +1358,11 @@ class RoutingGuardrailTests(unittest.TestCase):
                 if route_selector_enabled:
                     if llm_responses and (self._looks_like_selector_response(llm_responses[0]) or "error" in llm_responses[0]):
                         while llm_responses and (self._looks_like_selector_response(llm_responses[0]) or "error" in llm_responses[0]):
-                            selector_llm_responses.append(llm_responses.pop(0))
+                            selector_like = llm_responses.pop(0)
+                            selector_llm_responses.append(selector_like)
+                            builder_response = self._argument_builder_response_for(selector_like)
+                            if builder_response is not None:
+                                selector_llm_responses.append(builder_response)
                     else:
                         planned_tool_name = ""
                         planned_tool_args: dict = {}
@@ -1298,12 +1381,14 @@ class RoutingGuardrailTests(unittest.TestCase):
                         if not planned_tool_name:
                             planned_tool_name, planned_tool_args = default_sequence[0]
                         selection = self._selection_for_planned_tool(user_message, planned_tool_name, planned_tool_args)
-                        selector_llm_responses = [
-                            self._selector_response(
-                                selection,
-                                tool_args_override=planned_tool_args if isinstance(planned_tool_args, dict) else None,
-                            )
-                        ]
+                        selector_call_a = self._selector_response(
+                            selection,
+                            tool_args_override=planned_tool_args if isinstance(planned_tool_args, dict) else None,
+                        )
+                        selector_llm_responses = [selector_call_a]
+                        builder_response = self._argument_builder_response_for(selector_call_a)
+                        if builder_response is not None:
+                            selector_llm_responses.append(builder_response)
                 _MODULE.sessions.sessions.clear()
                 response = asyncio.run(
                     _MODULE.run_agent(

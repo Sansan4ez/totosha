@@ -117,6 +117,19 @@ class ScriptedRouteSelectorLLM:
         return self._responses.pop(0)
 
 
+def _choice(route_id: str, *, family_id: str = "", fallback_route_ids: list[str] | None = None) -> dict:
+    payload: dict = {"selected_route_id": route_id}
+    if family_id:
+        payload["selected_family_id"] = family_id
+    if fallback_route_ids:
+        payload["fallback_route_ids"] = fallback_route_ids
+    return _llm_response(json.dumps(payload, ensure_ascii=False))
+
+
+def _arguments(tool_args: dict) -> dict:
+    return _llm_response(json.dumps(tool_args, ensure_ascii=False))
+
+
 class RouteSelectorFakeTests(unittest.TestCase):
     def _run(self, query: str, fake: ScriptedRouteSelectorLLM):
         with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
@@ -125,74 +138,81 @@ class RouteSelectorFakeTests(unittest.TestCase):
             return asyncio.run(_MODULE._select_route_with_llm(query, llm_caller=fake))
 
     def test_2026_07_06_incident_replay_now_succeeds_with_the_fallback_honored(self):
-        # Replays the exact 2026-07-06 selector output (trace 7852fc7fe6909eec06529a124817e571).
-        # Workstream 2 fixed the catalog gap directly (corp_kb.company_common and
-        # corp_kb.series_description now declare each other as fallbacks), so this fallback is
-        # no longer undeclared -- it's honored outright, with zero sanitization needed. Combined
-        # with workstream 1 (which would have sanitized it away instead of failing closed even
-        # without the catalog fix), this closes the incident from both directions.
+        # Replays the 2026-07-06 selector choice (trace 7852fc7fe6909eec06529a124817e571) in the
+        # RFC-029 two-call shape. Workstream 2 of RFC-028 fixed the catalog gap directly
+        # (corp_kb.company_common and corp_kb.series_description now declare each other as
+        # fallbacks), so this fallback is honored outright, with zero sanitization needed.
         fake = ScriptedRouteSelectorLLM(
             [
-                _llm_response(
-                    json.dumps(
-                        {
-                            "selected_route_id": "corp_kb.company_common",
-                            "tool_args": {"query": "светильники в реестре минпромторга"},
-                            "fallback_route_ids": ["corp_kb.series_description"],
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+                _choice("corp_kb.company_common", fallback_route_ids=["corp_kb.series_description"]),
+                _arguments({"query": "светильники в реестре минпромторга"}),
             ]
         )
 
         route_selection, route_hint, _secondary = self._run("светильники в реестре минпромторга", fake)
 
         self.assertEqual(route_hint["route_id"], "corp_kb.company_common")
-        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual([purpose for _, purpose in fake.calls], ["route_selector", "route_argument_builder"])
         self.assertEqual(route_selection["selector"]["sanitization_actions"], [])
         self.assertEqual(route_hint["selector_fallback_route_ids"], ["corp_kb.series_description"])
+        self.assertEqual(route_selection["selector"]["argument_builder_status"], "valid")
+
+    def test_call_a_payload_has_no_keywords_patterns_or_argument_schema(self):
+        # RFC-029 workstream 1 regression lock: the classification card is keyword-free and
+        # schema-free for every route, so topical signal can't overpower argument shape and
+        # Call A can't invent argument values.
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_kb.company_common"),
+                _arguments({"query": "сертификаты"}),
+            ]
+        )
+
+        self._run("какие есть сертификаты?", fake)
+
+        call_a_messages, purpose = fake.calls[0]
+        self.assertEqual(purpose, "route_selector")
+        call_a_text = "\n".join(str(message.get("content") or "") for message in call_a_messages)
+        self.assertNotIn('"keywords"', call_a_text)
+        self.assertNotIn('"patterns"', call_a_text)
+        self.assertNotIn('"argument_schema"', call_a_text)
+        self.assertNotIn('"argument_hints"', call_a_text)
+        self.assertIn('"when_to_use"', call_a_text)
+
+        call_b_messages, purpose_b = fake.calls[1]
+        self.assertEqual(purpose_b, "route_argument_builder")
+        call_b_text = "\n".join(str(message.get("content") or "") for message in call_b_messages)
+        # Call B sees only the selected route's schema, not any other route's card.
+        self.assertIn('"argument_schema"', call_b_text)
+        self.assertIn("corp_kb.company_common", call_b_text)
+        self.assertNotIn("corp_db.catalog_lookup", call_b_text)
+        self.assertNotIn('"keywords"', call_b_text)
 
     def test_unknown_tool_arg_sanitized_without_repair_round_trip(self):
         fake = ScriptedRouteSelectorLLM(
             [
-                _llm_response(
-                    json.dumps(
-                        {
-                            "selected_route_id": "corp_kb.company_common",
-                            "tool_args": {"query": "сертификаты", "unexpected_field": "drop me"},
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+                _choice("corp_kb.company_common"),
+                _arguments({"query": "сертификаты", "unexpected_field": "drop me"}),
             ]
         )
 
         route_selection, route_hint, _secondary = self._run("какие есть сертификаты?", fake)
 
-        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual(len(fake.calls), 2)
         self.assertNotIn("unexpected_field", route_hint["tool_args"])
         self.assertIn("dropped_unknown_tool_arg", route_selection["selector"]["sanitization_actions"])
 
     def test_family_mismatch_sanitized_by_deriving_from_route(self):
         fake = ScriptedRouteSelectorLLM(
             [
-                _llm_response(
-                    json.dumps(
-                        {
-                            "selected_family_id": "portfolio",
-                            "selected_route_id": "corp_kb.company_common",
-                            "tool_args": {"query": "контакты"},
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+                _choice("corp_kb.company_common", family_id="portfolio"),
+                _arguments({"query": "контакты"}),
             ]
         )
 
         route_selection, route_hint, _secondary = self._run("контакты компании", fake)
 
-        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual(len(fake.calls), 2)
         self.assertEqual(route_selection["selected_family_id"], "company_info")
         self.assertIn("derived_family_from_route", route_selection["selector"]["sanitization_actions"])
 
@@ -200,20 +220,17 @@ class RouteSelectorFakeTests(unittest.TestCase):
         fake = ScriptedRouteSelectorLLM(
             [
                 _llm_response("not valid json"),
-                _llm_response(
-                    json.dumps(
-                        {"selected_route_id": "corp_kb.company_common", "tool_args": {"query": "сертификаты"}},
-                        ensure_ascii=False,
-                    )
-                ),
+                _choice("corp_kb.company_common"),
+                _arguments({"query": "сертификаты"}),
             ]
         )
 
         route_selection, route_hint, _secondary = self._run("какие есть сертификаты?", fake)
 
-        self.assertEqual(len(fake.calls), 2)
-        self.assertEqual(fake.calls[0][1], "route_selector")
-        self.assertEqual(fake.calls[1][1], "route_selector_repair")
+        self.assertEqual(
+            [purpose for _, purpose in fake.calls],
+            ["route_selector", "route_selector_repair", "route_argument_builder"],
+        )
         self.assertEqual(route_selection["selector"]["repair_status"], "succeeded")
         self.assertEqual(route_hint["route_id"], "corp_kb.company_common")
 
@@ -230,6 +247,80 @@ class RouteSelectorFakeTests(unittest.TestCase):
 
         self.assertEqual(len(fake.calls), 2)
         self.assertIn("invalid_json", str(ctx.exception))
+
+    def test_argument_builder_violation_repairs_locally_without_rerunning_call_a(self):
+        # RFC-029: a Call B schema violation is Call-B-local repair-or-fail-closed; the route
+        # choice from Call A is never re-selected because of it.
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_kb.company_common"),
+                _llm_response("not a json object"),
+                _arguments({"query": "сертификаты"}),
+            ]
+        )
+
+        route_selection, route_hint, _secondary = self._run("какие есть сертификаты?", fake)
+
+        self.assertEqual(
+            [purpose for _, purpose in fake.calls],
+            ["route_selector", "route_argument_builder", "route_argument_builder_repair"],
+        )
+        self.assertEqual(route_hint["route_id"], "corp_kb.company_common")
+        self.assertEqual(route_selection["selector"]["argument_builder_status"], "repaired")
+        self.assertEqual(route_selection["selector"]["argument_builder_repair_status"], "succeeded")
+        self.assertEqual(route_hint["tool_args"]["query"], "сертификаты")
+
+    def test_argument_builder_fails_closed_after_one_repair_attempt(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_kb.company_common"),
+                _llm_response("not a json object"),
+                _llm_response("still not a json object"),
+            ]
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self._run("какие есть сертификаты?", fake)
+
+        self.assertEqual(len(fake.calls), 3)
+        self.assertIn("route argument builder output rejected", str(ctx.exception))
+
+    def test_document_route_accepts_bounded_names_array(self):
+        # RFC-029 workstream 3: certificate lookups carry names: array<string> (1..5 items).
+        for names in (
+            ["NL Nova"],
+            ["NL Nova", "LAD LED R500", "LAD LED R320"],
+            ["NL Nova", "LAD LED R500", "LAD LED R320", "LAD LED R700", "NL VEGA"],
+        ):
+            with self.subTest(names=names):
+                fake = ScriptedRouteSelectorLLM(
+                    [
+                        _choice("corp_db.certificate_by_lamp_name"),
+                        _arguments({"names": names}),
+                    ]
+                )
+                _route_selection, route_hint, _secondary = self._run(
+                    "нужны сертификаты на " + ", ".join(names), fake
+                )
+                self.assertEqual(route_hint["route_id"], "corp_db.certificate_by_lamp_name")
+                self.assertEqual(route_hint["tool_args"]["names"], names)
+                self.assertEqual(route_hint["tool_args"]["document_type"], "certificate")
+
+    def test_document_route_rejects_more_than_five_names(self):
+        too_many = [f"MODEL-{index}" for index in range(6)]
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_db.certificate_by_lamp_name"),
+                _arguments({"names": too_many}),
+                _arguments({"names": too_many[:5]}),
+            ]
+        )
+
+        route_selection, route_hint, _secondary = self._run("сертификаты на шесть моделей", fake)
+
+        # maxItems violation is repairable Call-B-locally; the repaired output is accepted.
+        self.assertEqual(route_selection["selector"]["argument_builder_status"], "repaired")
+        self.assertEqual(route_hint["tool_args"]["names"], too_many[:5])
 
     def test_selector_llm_unavailable_raises_for_caller_to_fail_closed(self):
         fake = ScriptedRouteSelectorLLM([{"error": "upstream unavailable"}])

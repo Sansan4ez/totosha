@@ -3,8 +3,11 @@ route_family: corp_db.documents_by_lamp_name
 route_kind: corp_table
 authority: primary
 title: Manual by lamp name
-summary: Catalog-backed route for installation manuals and instructions scoped to one lamp, model, or
-  series name.
+summary: Catalog-backed route for installation manuals and instructions scoped to one or more named
+  lamp models or series (up to five names per request).
+when_to_use: Select when the user asks for installation manuals or instructions for one or more named lamp models
+  or series.
+schema_ref: manual_by_lamp_name.schema.json
 topics:
 - documents
 - catalog
@@ -26,7 +29,7 @@ executor_args_template:
   limit: 3
   document_type: manual
 argument_hints:
-  name: Extract the lamp, model, or series name whose instruction or manual the user wants.
+  names: List every lamp, model, or series name whose instruction or manual the user wants (up to five).
 fallback_route_ids:
 - corp_db.documents_by_lamp_name
 observability_labels:

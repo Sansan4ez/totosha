@@ -5,6 +5,8 @@ authority: primary
 title: Lamps by category
 summary: Structured route for category pages and lamp lists. Exact display-category names may resolve
   through the category tree to executable leaf category ids before lamp retrieval.
+when_to_use: Select when the user asks to list the lamps inside a named catalog category.
+schema_ref: category_lamps.schema.json
 topics:
 - catalog
 - category

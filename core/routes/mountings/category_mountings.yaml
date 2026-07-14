@@ -4,6 +4,8 @@ route_kind: corp_table
 authority: primary
 title: Category mounting options
 summary: Structured route for mounting types available for a product category.
+when_to_use: Select when the user asks which mounting types are available for a product category or series.
+schema_ref: category_mountings.schema.json
 topics:
 - catalog
 - category_mounting

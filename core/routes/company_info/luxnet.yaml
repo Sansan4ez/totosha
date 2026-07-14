@@ -4,6 +4,8 @@ route_kind: corp_table
 authority: primary
 title: Luxnet knowledge base
 summary: Source-scoped Luxnet KB route.
+when_to_use: Select for questions about the Luxnet product and system.
+schema_ref: luxnet.schema.json
 topics:
 - luxnet
 - product

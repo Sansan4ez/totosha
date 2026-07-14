@@ -1,0 +1,303 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "application_key": {
+      "enum": [
+        "sports_high_power",
+        "quarry_heavy_duty",
+        "airport_apron",
+        "street_road_lighting",
+        "warehouse",
+        "office",
+        "high_bay",
+        "aggressive_environment"
+      ],
+      "type": "string"
+    },
+    "beam_pattern": {
+      "maxLength": 160,
+      "type": "string"
+    },
+    "category": {
+      "maxLength": 240,
+      "type": "string"
+    },
+    "cct_k_max": {
+      "type": "integer"
+    },
+    "cct_k_min": {
+      "type": "integer"
+    },
+    "climate_execution": {
+      "maxLength": 160,
+      "type": "string"
+    },
+    "code_system": {
+      "enum": [
+        "etm",
+        "oracl",
+        "sku",
+        "article",
+        "catalog_identifier",
+        "mixed"
+      ],
+      "type": "string"
+    },
+    "context_profile": {
+      "enum": [
+        "residential_compact",
+        "standard",
+        "heavy_duty"
+      ],
+      "type": "string"
+    },
+    "cri_ra_max": {
+      "type": "integer"
+    },
+    "cri_ra_min": {
+      "type": "integer"
+    },
+    "dimensions_raw": {
+      "maxLength": 120,
+      "type": "string"
+    },
+    "document_type": {
+      "enum": [
+        "passport",
+        "certificate",
+        "manual",
+        "ies"
+      ],
+      "type": "string"
+    },
+    "electrical_protection_class": {
+      "maxLength": 80,
+      "type": "string"
+    },
+    "entity_types": {
+      "items": {
+        "maxLength": 80,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+    },
+    "etm": {
+      "maxLength": 80,
+      "type": "string"
+    },
+    "explosion_protected": {
+      "type": "boolean"
+    },
+    "explosion_protection_marking": {
+      "maxLength": 160,
+      "type": "string"
+    },
+    "flux_lm_max": {
+      "type": "integer"
+    },
+    "flux_lm_min": {
+      "type": "integer"
+    },
+    "height_mm_max": {
+      "type": "number"
+    },
+    "height_mm_min": {
+      "type": "number"
+    },
+    "include_debug": {
+      "type": "boolean"
+    },
+    "ip": {
+      "maxLength": 12,
+      "pattern": "^[A-Za-z0-9 .+-]+$",
+      "type": "string"
+    },
+    "knowledge_route_id": {
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "type": "string"
+    },
+    "length_mm_max": {
+      "type": "number"
+    },
+    "length_mm_min": {
+      "type": "number"
+    },
+    "limit": {
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "limit_categories": {
+      "maximum": 10,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "limit_lamps": {
+      "maximum": 10,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "limit_portfolio": {
+      "maximum": 10,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "lookup_direction": {
+      "enum": [
+        "by_name",
+        "by_code"
+      ],
+      "type": "string"
+    },
+    "mounting_type": {
+      "maxLength": 160,
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 240,
+      "type": "string"
+    },
+    "names": {
+      "items": {
+        "maxLength": 240,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "type": "array"
+    },
+    "offset": {
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "oracl": {
+      "maxLength": 80,
+      "type": "string"
+    },
+    "power_factor_min_max": {
+      "type": "number"
+    },
+    "power_factor_min_min": {
+      "type": "number"
+    },
+    "power_factor_operator": {
+      "maxLength": 8,
+      "type": "string"
+    },
+    "power_w_max": {
+      "type": "integer"
+    },
+    "power_w_min": {
+      "type": "integer"
+    },
+    "profile": {
+      "enum": [
+        "kb_search",
+        "kb_route_lookup",
+        "entity_resolver",
+        "candidate_generation",
+        "related_evidence"
+      ],
+      "type": "string"
+    },
+    "query": {
+      "maxLength": 500,
+      "type": "string"
+    },
+    "series": {
+      "maxLength": 200,
+      "type": "string"
+    },
+    "source_files": {
+      "items": {
+        "maxLength": 180,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array"
+    },
+    "sphere": {
+      "maxLength": 240,
+      "type": "string"
+    },
+    "supply_voltage_raw": {
+      "maxLength": 120,
+      "type": "string"
+    },
+    "temp_c_max": {
+      "type": "integer"
+    },
+    "temp_c_min": {
+      "type": "integer"
+    },
+    "topic_facets": {
+      "items": {
+        "maxLength": 80,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "type": "array"
+    },
+    "voltage_kind": {
+      "enum": [
+        "AC",
+        "DC",
+        "AC/DC"
+      ],
+      "type": "string"
+    },
+    "voltage_max_v_max": {
+      "type": "number"
+    },
+    "voltage_max_v_min": {
+      "type": "number"
+    },
+    "voltage_min_v_max": {
+      "type": "number"
+    },
+    "voltage_min_v_min": {
+      "type": "number"
+    },
+    "voltage_nominal_v_max": {
+      "type": "number"
+    },
+    "voltage_nominal_v_min": {
+      "type": "number"
+    },
+    "voltage_tol_minus_pct_max": {
+      "type": "number"
+    },
+    "voltage_tol_minus_pct_min": {
+      "type": "number"
+    },
+    "voltage_tol_plus_pct_max": {
+      "type": "number"
+    },
+    "voltage_tol_plus_pct_min": {
+      "type": "number"
+    },
+    "warranty_years_max": {
+      "type": "integer"
+    },
+    "warranty_years_min": {
+      "type": "integer"
+    },
+    "weight_kg_max": {
+      "type": "number"
+    },
+    "weight_kg_min": {
+      "type": "number"
+    },
+    "width_mm_max": {
+      "type": "number"
+    },
+    "width_mm_min": {
+      "type": "number"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

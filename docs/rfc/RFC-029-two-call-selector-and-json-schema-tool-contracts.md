@@ -4,7 +4,27 @@ RFC-029 Two-Call Selector and JSON-Schema Tool Contracts
 Status
 ------
 
-Proposed
+Implemented (2026-07-14), all five workstreams. The WS5 gate was verified against the live deploy
+the same day: five agent-path replays (street pole, street pole + dacha/compact, warehouse, quarry,
+office) all resolved with `resolution_strategy="selector_argument"` and the correct
+`application_key`/`context_profile` (this also surfaced and fixed a third argument allowlist,
+`core/tools/corp_db.py::KIND_SPECIFIC_ARG_ALLOWLISTS`, that was silently stripping the new keys
+before they reached tools-api). After that, `_application_recommendation`'s free-text fallback was
+removed: a request without a valid `application_key` now returns the clarification response
+(`resolution_strategy="missing_application_key"`) instead of alias/stem guessing, and the
+`direct_tool` golden bench cases pass `application_key` explicitly, mirroring the selector.
+
+Two scoping notes against the original text:
+- `_resolve_application`/`_synonym_application_score`/`_application_stem` still exist as functions:
+  `_portfolio_by_sphere`, `_sphere_curated_categories`, and `_resolve_portfolio_sphere_query` (the
+  portfolio family's sphere-string resolution, out of this RFC's scope) share them. They are no
+  longer reachable from `application_recommendation`. Acceptance criterion 7's net line-count
+  reduction is therefore not met; criterion 5's behavioral half is.
+- Acceptance criterion 3 additionally required a document-lookup fix this RFC's WS3 text assumed
+  already worked: catalog names are full SKUs, so a series name ("LAD LED R500") never matched
+  `_fetch_lamp_exact_rows`. `_lamp_documents_index` now falls back to a `-`/space-boundary series
+  prefix match (`_fetch_lamp_series_prefix_rows`), which is what lets `sales-001-certificates-links`
+  resolve in-family instead of via the cross-family KB fallback.
 
 Date
 ----

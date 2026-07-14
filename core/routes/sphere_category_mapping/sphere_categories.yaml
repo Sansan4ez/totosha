@@ -5,6 +5,9 @@ authority: secondary
 title: Imported Categories By Application Sphere
 summary: Compatibility route for full imported sphere-category linkage. Prefer the curated sphere route
   for user-facing application questions; keep this only for diagnostics or full linkage inspection.
+when_to_use: Diagnostics-only compatibility route for full imported sphere-category linkage; not selected for
+  user-facing questions.
+schema_ref: sphere_categories.schema.json
 topics:
 - catalog
 - sphere

@@ -368,6 +368,36 @@ class CorpDbToolFormattingTests(unittest.TestCase):
             },
         )
 
+    def test_tool_preserves_application_key_and_context_profile(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {"status": "success", "kind": "application_recommendation", "results": []}
+
+        aiohttp_stub = _aiohttp_stub_for_payload(payload)
+        with patch.object(_MODULE, "aiohttp", aiohttp_stub):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {
+                        "kind": "application_recommendation",
+                        "query": "светильник на столб 4 метра для дачи",
+                        "application_key": "street_road_lighting",
+                        "context_profile": "residential_compact",
+                    },
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        sent = aiohttp_stub._state.last_session.last_post_kwargs["json"]
+        self.assertEqual(
+            sent,
+            {
+                "kind": "application_recommendation",
+                "query": "светильник на столб 4 метра для дачи",
+                "application_key": "street_road_lighting",
+                "context_profile": "residential_compact",
+            },
+        )
+
     def test_tool_drops_route_card_ids_from_knowledge_route_id(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
         payload = {"status": "success", "kind": "hybrid_search", "results": []}

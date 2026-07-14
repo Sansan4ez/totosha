@@ -5,6 +5,9 @@ authority: primary
 title: Showcase lamps by category
 summary: Representative lamps for a display category when the user asks for examples rather than the full
   category list.
+when_to_use: Select when the user wants a few representative example lamps from a category rather than the full
+  category list.
+schema_ref: showcase_lamps_by_category.schema.json
 topics:
 - catalog
 - category

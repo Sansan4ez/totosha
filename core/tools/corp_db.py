@@ -50,6 +50,8 @@ KIND_SPECIFIC_ARG_ALLOWLISTS = {
     "application_recommendation": {
         "kind",
         "query",
+        "application_key",
+        "context_profile",
         "include_debug",
         "limit",
         "offset",

@@ -505,6 +505,9 @@ class CorpDbSearchRequest(BaseModel):
     include_debug: bool = False
 
     name: Optional[str] = None
+    # RFC-029 workstream 3: document lookups accept up to five lamp/model/series names per
+    # request; `name` stays supported for single-name callers.
+    names: Optional[list[str]] = Field(default=None, min_length=1, max_length=5)
     etm: Optional[str] = None
     oracl: Optional[str] = None
     document_type: Optional[Literal["passport", "certificate", "manual", "ies"]] = None
@@ -525,6 +528,22 @@ class CorpDbSearchRequest(BaseModel):
     voltage_kind: Optional[Literal["AC", "DC", "AC/DC"]] = None
     explosion_protected: Optional[bool] = None
     fuzzy: bool = False
+    # RFC-029 workstream 5: selector-fillable enums replacing free-text application resolution
+    # inside the executor. application_key mirrors APPLICATION_PROFILES; context_profile drives
+    # the street/road power-band scoring instead of stemmed query matching.
+    application_key: Optional[
+        Literal[
+            "sports_high_power",
+            "quarry_heavy_duty",
+            "airport_apron",
+            "street_road_lighting",
+            "warehouse",
+            "office",
+            "high_bay",
+            "aggressive_environment",
+        ]
+    ] = None
+    context_profile: Optional[Literal["residential_compact", "standard", "heavy_duty"]] = None
     limit_categories: int = Field(default=3, ge=1, le=10)
     limit_lamps: int = Field(default=3, ge=1, le=10)
     limit_portfolio: int = Field(default=2, ge=0, le=10)
@@ -1231,6 +1250,41 @@ async def _fetch_lamp_exact_rows(
     )
 
 
+def _like_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def _fetch_lamp_series_prefix_rows(
+    conn: asyncpg.Connection,
+    *,
+    name: str,
+    limit: int,
+) -> list[asyncpg.Record]:
+    # Document lookups routinely name a series ("LAD LED R500") while the catalog stores
+    # full SKU names ("LAD LED R500-2-O-12-70L"); a series never equals a SKU, so exact
+    # matching alone strands these requests on the cross-family KB fallback (RFC-029
+    # workstream 3). Prefix-match at a "-" or space boundary so "R500" cannot match "R5000".
+    name_variants, _ = _lamp_exact_name_variants(name)
+    patterns: list[str] = []
+    for variant in name_variants:
+        for sep in ("-", " "):
+            patterns.append(_like_escape(variant) + sep + "%")
+    if not patterns:
+        return []
+    return await conn.fetch(
+        r"""
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
+        WHERE regexp_replace(lower(coalesce(name, '')), '\s+', ' ', 'g') LIKE ANY($1::text[])
+           OR regexp_replace(regexp_replace(lower(coalesce(name, '')), '^lad\s+', '', 'i'), '\s+', ' ', 'g') LIKE ANY($1::text[])
+        ORDER BY name
+        LIMIT $2
+        """,
+        patterns,
+        limit,
+    )
+
+
 def _portfolio_examples_response(
     *,
     query: str,
@@ -1313,15 +1367,17 @@ def _log_application_recommendation_result(
     lamp_count: int = 0,
     portfolio_count: int = 0,
     ambiguity: bool = False,
+    context_profile: str | None = None,
 ) -> None:
     logger.info(
-        "corp-db application_recommendation status=%s request_id=%s query=%r application_key=%s sphere_name=%s resolution_strategy=%s category_count=%s lamp_count=%s portfolio_count=%s ambiguity=%s",
+        "corp-db application_recommendation status=%s request_id=%s query=%r application_key=%s sphere_name=%s resolution_strategy=%s context_profile=%s category_count=%s lamp_count=%s portfolio_count=%s ambiguity=%s",
         status,
         REQUEST_ID.get("-"),
         query[:160],
         application_key,
         sphere_name,
         resolution_strategy,
+        context_profile,
         category_count,
         lamp_count,
         portfolio_count,
@@ -2114,23 +2170,12 @@ def _application_score_lamp(
         if power < 60 or _application_text_contains_any(category_name, ("line", "nova", "vega")):
             score -= 7.0
     elif application_key == "street_road_lighting":
-        # Free-form user query -- match against stemmed terms (like _synonym_application_score
-        # does for aliases) rather than _application_text_contains_any's whole-word phrase
-        # check, which misses ordinary Russian inflections (e.g. "дачи", "компактный").
-        query_stem_terms = set(_application_terms(query))
-        wants_compact = bool(
-            query_stem_terms
-            & {
-                "дача", "дачи", "дачу", "даче", "дачей", "дачных", "дачн",
-                "приусадебн", "частн", "загородн", "двор", "дворов",
-                "участок", "участк", "компактн", "небольш", "маленьк", "садов",
-            }
-        )
-        wants_heavy_duty = bool(
-            query_stem_terms
-            & {"трасс", "шосс", "магистраль", "магистрал", "магистральн", "проспект", "автомагистраль", "хайвей"}
-        )
-        if wants_compact and not wants_heavy_duty:
+        # RFC-029 workstream 5: the site scale comes from the selector-fillable context_profile
+        # enum, not from re-deriving it out of the raw query with a stemmer inside the executor.
+        context_profile = str(req.context_profile or "standard")
+        wants_compact = context_profile == "residential_compact"
+        wants_heavy_duty = context_profile == "heavy_duty"
+        if wants_compact:
             if power <= 100:
                 score += 5.0
                 reasons.append("компактная мощность подходит для дачного/дворового освещения")
@@ -3424,10 +3469,38 @@ async def _showcase_category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRe
     )
 
 
+def _document_lookup_names(req: CorpDbSearchRequest) -> list[str]:
+    """RFC-029 workstream 3: one document lookup covers up to five names per request."""
+    names = [_normalize_ws(item) for item in (req.names or []) if _normalize_ws(item)]
+    single = _normalize_ws(req.name)
+    if not names and single:
+        names = [single]
+    if not names:
+        raise HTTPException(400, "Missing field: names")
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in names:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    return deduped[:5]
+
+
 async def _lamp_documents_index(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
-    name = _req_str(req.name, "name")
+    names = _document_lookup_names(req)
     document_type = _normalize_document_type(req.document_type)
-    rows = await _fetch_lamp_exact_rows(conn, name=name, limit=limit, offset=offset)
+    rows: list[asyncpg.Record] = []
+    seen_lamp_ids: set[int] = set()
+    for name in names:
+        name_rows = await _fetch_lamp_exact_rows(conn, name=name, limit=limit, offset=offset)
+        if not name_rows:
+            name_rows = await _fetch_lamp_series_prefix_rows(conn, name=name, limit=limit)
+        for row in name_rows:
+            lamp_id = int(row["lamp_id"])
+            if lamp_id not in seen_lamp_ids:
+                seen_lamp_ids.add(lamp_id)
+                rows.append(row)
     lamp_ids = [row["lamp_id"] for row in rows]
     docs_by_lamp: dict[int, dict[str, Any]] = {}
     if lamp_ids:
@@ -3459,9 +3532,10 @@ async def _lamp_documents_index(conn: asyncpg.Connection, req: CorpDbSearchReque
 
     return _success(
         "lamp_documents_index",
-        query=name,
+        query="; ".join(names),
         filters={
             "lookup_direction": "by_name",
+            "names": names,
             "document_type": document_type or "all_documents",
         },
         results=results,
@@ -3780,13 +3854,43 @@ async def _application_recommendation(
         span_name="corp_db.application.application_resolution",
     ):
         reference = await _fetch_application_reference_data(conn)
-        resolved_application = _resolve_application(query, reference)
+        requested_key = str(req.application_key or "")
+        if requested_key in APPLICATION_PROFILES:
+            # RFC-029 workstream 5: the route selector's argument builder already resolved the
+            # application profile from the full query; trust it instead of re-deriving it here
+            # from aliases and stems.
+            sphere_row = _application_profile_sphere_row(reference, requested_key) or {}
+            resolved_application = {
+                "status": "resolved",
+                "application_key": requested_key,
+                "sphere_id": sphere_row.get("sphere_id"),
+                "sphere_name": sphere_row.get("name") or APPLICATION_PROFILES[requested_key]["sphere_name"],
+                "sphere_url": sphere_row.get("url"),
+                "confidence": 0.99,
+                "resolution_strategy": "selector_argument",
+                "matched_terms": [],
+                "alias_version": APPLICATION_ALIAS_VERSION,
+            }
+        else:
+            # RFC-029 workstream 5 (final step): the application profile is the route
+            # selector's argument, never re-guessed here from aliases and stems. Without
+            # a valid application_key the executor asks for clarification instead of
+            # free-text matching. (_resolve_application itself stays: portfolio_by_sphere
+            # and sphere_curated_categories still resolve sphere strings with it.)
+            resolved_application = {
+                "status": "empty",
+                "confidence": 0.0,
+                "resolution_strategy": "missing_application_key",
+                "alias_version": APPLICATION_ALIAS_VERSION,
+                "matched_terms": [],
+            }
 
     filters.update(
         {
             "resolution_strategy": resolved_application.get("resolution_strategy"),
             "application_key": resolved_application.get("application_key"),
             "sphere_name": resolved_application.get("sphere_name"),
+            "context_profile": str(req.context_profile or "standard"),
         }
     )
 
@@ -3977,6 +4081,7 @@ async def _application_recommendation(
         category_count=len(display_categories),
         lamp_count=len(recommended_lamps),
         portfolio_count=len(portfolio_examples),
+        context_profile=str(req.context_profile or "standard"),
     )
     return response
 

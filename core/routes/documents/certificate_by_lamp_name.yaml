@@ -3,10 +3,13 @@ route_family: corp_db.documents_by_lamp_name
 route_kind: corp_table
 authority: primary
 title: Certificate by lamp name
-summary: Catalog-backed route for a certificate or declaration request scoped to exactly one lamp,
-  model, or series name. Do not use this when the request names two or more different lamp
-  models/series at once (e.g. certificates for several models in one message) -- use
-  corp_kb.company_common instead for broad or multi-model certificate list requests.
+summary: Catalog-backed route for certificate or declaration requests scoped to one or more named lamp
+  models or series (up to five names per request, e.g. certificates for several models in one
+  message). Use corp_kb.company_common only for broad certificate questions with no concrete
+  model names.
+when_to_use: Select when the user asks for certificates or declarations for one or more named lamp models or
+  series (up to five names in one request).
+schema_ref: certificate_by_lamp_name.schema.json
 topics:
 - documents
 - catalog
@@ -28,7 +31,8 @@ executor_args_template:
   limit: 3
   document_type: certificate
 argument_hints:
-  name: Extract the lamp, model, or series name whose certificate or declaration the user wants.
+  names: List every lamp, model, or series name whose certificate or declaration the user wants (one
+    array item per distinct name, up to five).
 fallback_route_ids:
 - corp_db.documents_by_lamp_name
 - corp_kb.company_common

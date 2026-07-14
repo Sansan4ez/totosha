@@ -6,6 +6,9 @@ title: Portfolio object lookup
 summary: Named portfolio object lookup for concrete customer, object, terminal, warehouse, bridge, plant,
   or project names. Use this when the user asks about a specific realized object such as Белый Раст rather
   than a broad project segment.
+when_to_use: Select when the user names a concrete realized object, customer, or project and wants its portfolio
+  details.
+schema_ref: portfolio_lookup.schema.json
 topics:
 - portfolio
 - projects

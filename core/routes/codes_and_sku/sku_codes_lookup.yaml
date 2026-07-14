@@ -4,6 +4,9 @@ route_kind: corp_table
 authority: primary
 title: SKU and codes by lamp name
 summary: Structured lookup from lamp/model name to ETM, ORACL, article, and related catalog identifiers.
+when_to_use: Select when the user asks for ETM, ORACL, article, SKU, or other catalog codes of a named lamp or
+  model.
+schema_ref: sku_codes_lookup.schema.json
 topics:
 - catalog
 - sku

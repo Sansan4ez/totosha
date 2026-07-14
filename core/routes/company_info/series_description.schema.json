@@ -1,0 +1,30 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "query": {
+      "maxLength": 500,
+      "type": "string"
+    },
+    "series": {
+      "enum": [
+        "LAD LED R500",
+        "LAD LED R700",
+        "LAD LED R500 2Ex",
+        "LAD LED R320 Ex",
+        "LAD LED LINE",
+        "NL Nova",
+        "NL VEGA"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+}

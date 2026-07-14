@@ -4,6 +4,9 @@ route_kind: corp_table
 authority: primary
 title: Lamp and mounting compatibility
 summary: Structured route for checking compatibility between lamp categories/models and mounting types.
+when_to_use: Select when the user asks whether a lamp, series, or category is compatible with a specific mounting
+  type.
+schema_ref: lamp_mounting_compatibility.schema.json
 topics:
 - catalog
 - compatibility

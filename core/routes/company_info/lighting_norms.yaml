@@ -4,6 +4,8 @@ route_kind: corp_table
 authority: primary
 title: Lighting norms knowledge base
 summary: Source-scoped lighting norms KB route.
+when_to_use: Select for questions about lighting norms, required illuminance levels, and normative tables.
+schema_ref: lighting_norms.schema.json
 topics:
 - lighting_norms
 - rules

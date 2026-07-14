@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "code_system": {
+      "enum": [
+        "etm",
+        "oracl",
+        "sku",
+        "article",
+        "catalog_identifier",
+        "mixed"
+      ],
+      "type": "string"
+    },
+    "etm": {
+      "maxLength": 80,
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 240,
+      "type": "string"
+    },
+    "offset": {
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "oracl": {
+      "maxLength": 80,
+      "type": "string"
+    },
+    "query": {
+      "maxLength": 500,
+      "type": "string"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

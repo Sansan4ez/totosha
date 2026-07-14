@@ -5,6 +5,10 @@ authority: secondary
 title: Application recommendation
 summary: Broad recommendation by application area such as stadiums, warehouses, airports, offices, or
   aggressive environments.
+when_to_use: Select when the user asks to recommend or pick luminaires for an application, object, or site type
+  (stadium, quarry, airport, warehouse, office, street pole, dacha, aggressive environment). Not for
+  exact model/series card questions.
+schema_ref: application_recommendation.schema.json
 topics:
 - recommendation
 - application
@@ -43,3 +47,11 @@ patterns:
 executor: corp_db_search
 executor_args_template:
   kind: application_recommendation
+argument_hints:
+  query: Use the original user wording describing the object and conditions.
+  application_key: Pick the closest application profile for the described object (e.g. стадион ->
+    sports_high_power, карьер -> quarry_heavy_duty, аэропорт/перрон -> airport_apron, столб/улица/двор ->
+    street_road_lighting, склад -> warehouse, офис/АБК -> office, высокие пролеты -> high_bay,
+    химия/мойка/АЗС -> aggressive_environment). Leave unset only when no profile fits.
+  context_profile: Use residential_compact for small/private sites (дача, двор, участок, компактный),
+    heavy_duty for highways and trunk roads (трасса, магистраль, шоссе), otherwise standard.

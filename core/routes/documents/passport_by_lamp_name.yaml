@@ -3,7 +3,10 @@ route_family: corp_db.documents_by_lamp_name
 route_kind: corp_table
 authority: primary
 title: Passport by lamp name
-summary: Catalog-backed route for passport requests scoped to one lamp, model, or series name.
+summary: Catalog-backed route for passport requests scoped to one or more named lamp models or
+  series (up to five names per request).
+when_to_use: Select when the user asks for passports for one or more named lamp models or series.
+schema_ref: passport_by_lamp_name.schema.json
 topics:
 - documents
 - catalog
@@ -24,7 +27,7 @@ executor_args_template:
   limit: 3
   document_type: passport
 argument_hints:
-  name: Extract the lamp, model, or series name whose passport the user wants.
+  names: List every lamp, model, or series name whose passport the user wants (up to five).
 fallback_route_ids:
 - corp_db.documents_by_lamp_name
 observability_labels:

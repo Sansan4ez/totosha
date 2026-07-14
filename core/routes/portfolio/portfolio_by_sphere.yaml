@@ -5,6 +5,8 @@ authority: primary
 title: Portfolio by sphere
 summary: Preferred broad portfolio route for completed projects, object examples, and implementation references
   by sphere, customer segment, or environment.
+when_to_use: Select for broad completed-project questions by sphere, customer segment, or environment.
+schema_ref: portfolio_by_sphere.schema.json
 topics:
 - portfolio
 - projects

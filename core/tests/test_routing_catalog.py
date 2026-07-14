@@ -1030,7 +1030,7 @@ class RoutingCatalogTests(unittest.TestCase):
         self.assertEqual(routes["corp_kb.series_description"]["leaf_route_id"], "series_description")
         self.assertEqual(routes["corp_db.documents_by_lamp_name"]["family_id"], "documents")
         self.assertEqual(routes["corp_db.documents_by_lamp_name"]["route_stage"], "stage3_optimized")
-        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["argument_schema"]["required"], ["name"])
+        self.assertEqual(routes["corp_db.documents_by_lamp_name"]["argument_schema"]["required"], ["names"])
         self.assertEqual(
             routes["corp_db.documents_by_lamp_name"]["argument_schema"]["properties"]["document_type"]["enum"],
             ["passport", "certificate", "manual", "ies"],

@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "application_key": {
+      "enum": [
+        "sports_high_power",
+        "quarry_heavy_duty",
+        "airport_apron",
+        "street_road_lighting",
+        "warehouse",
+        "office",
+        "high_bay",
+        "aggressive_environment"
+      ],
+      "type": "string"
+    },
+    "context_profile": {
+      "enum": [
+        "residential_compact",
+        "standard",
+        "heavy_duty"
+      ],
+      "type": "string"
+    },
+    "limit_categories": {
+      "maximum": 10,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "limit_lamps": {
+      "maximum": 10,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "limit_portfolio": {
+      "maximum": 10,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "query": {
+      "maxLength": 500,
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+}

@@ -13,7 +13,12 @@ from pathlib import Path
 
 from config import CONFIG, get_model, get_temperature, get_max_iterations
 from documents.argument_catalogs import canonical_sphere_names, curated_category_names_for_sphere
-from documents.route_schema import merge_route_tool_args, validate_selector_output
+from documents.route_schema import (
+    merge_route_tool_args,
+    route_has_selector_fillable_arguments,
+    validate_route_arguments_output,
+    validate_route_choice_output,
+)
 from documents.routing import build_route_selector_payload, load_routing_index, select_route, selector_payload_leaf_routes
 from documents.routing_policy import (
     APPLICATION_RECOMMENDATION_KEYWORDS,
@@ -1314,6 +1319,9 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["route_selector_status"] = str(state.get("route_selector_status") or "")
         meta["route_selector_model"] = str(state.get("route_selector_model") or "")
         meta["route_selector_latency_ms"] = float(state.get("route_selector_latency_ms") or 0.0)
+        meta["route_selector_a_latency_ms"] = float(state.get("route_selector_a_latency_ms") or 0.0)
+        meta["route_selector_b_latency_ms"] = float(state.get("route_selector_b_latency_ms") or 0.0)
+        meta["route_argument_builder_status"] = str(state.get("route_argument_builder_status") or "")
         meta["route_selector_confidence"] = str(state.get("route_selector_confidence") or "")
         meta["route_selector_reason"] = str(state.get("route_selector_reason") or "")
         meta["route_selector_repair_attempted"] = bool(state.get("route_selector_repair_attempted"))
@@ -1429,6 +1437,9 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         span.set_attribute("route_selector.status", str(state.get("route_selector_status") or ""))
         span.set_attribute("route_selector.model", str(state.get("route_selector_model") or ""))
         span.set_attribute("route_selector.latency_ms", float(state.get("route_selector_latency_ms") or 0.0))
+        span.set_attribute("route_selector.a_latency_ms", float(state.get("route_selector_a_latency_ms") or 0.0))
+        span.set_attribute("route_selector.b_latency_ms", float(state.get("route_selector_b_latency_ms") or 0.0))
+        span.set_attribute("route_argument_builder.status", str(state.get("route_argument_builder_status") or ""))
         span.set_attribute("route_selector.confidence", str(state.get("route_selector_confidence") or ""))
         span.set_attribute("route_selector.reason", str(state.get("route_selector_reason") or "")[:500])
         span.set_attribute("route_selector.repair_attempted", bool(state.get("route_selector_repair_attempted")))
@@ -2820,10 +2831,13 @@ def _compact_selector_argument_schema(argument_schema: dict[str, Any], locked_ar
 def _route_when_to_use(route: dict[str, Any]) -> str:
     """One compact line telling the selector when this route applies.
 
-    Derived from the route card's own human-authored summary (truncated) rather than a new
-    per-route catalog field: the summary already says what the route is for, and reusing it
-    avoids maintaining the same fact twice across routes/<family>/<leaf>.yaml files.
+    RFC-029 workstream 1: prefers the route card's human-authored when_to_use field;
+    falls back to the first summary sentence for cards that have not declared one yet
+    (e.g. runtime-built document routes).
     """
+    when_to_use = str(route.get("when_to_use") or "").strip()
+    if when_to_use:
+        return when_to_use[:400]
     summary = str(route.get("summary") or "").strip()
     if not summary:
         return str(route.get("title") or "")[:160]
@@ -2833,14 +2847,13 @@ def _route_when_to_use(route: dict[str, Any]) -> str:
 
 
 def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[str, Any]:
-    # RFC-028 workstream 5: route_id, family_id, title, one-line when_to_use, and a trimmed
-    # argument schema of selector-fillable fields -- topics/keywords/patterns/tool_name/
-    # table_scopes/document_selectors/fallback_policy stay in routes/*.yaml for humans, tests, and
-    # the (currently unused) candidate-ranking hook, but are not spent on prompt tokens.
-    # fallback_policy is safe to drop here specifically because RFC-028 workstream 1 sanitizes any
+    # RFC-029 workstream 2, Call A: the classification card is route_id, family_id, title, and
+    # when_to_use only. No keywords, patterns, argument_schema, or argument_hints reach route
+    # selection -- topical signal stays in routes/*.yaml for humans/tests, and argument contracts
+    # are only visible to Call B (argument construction) for the one selected route.
+    # fallback_policy is safe to drop here because RFC-028 workstream 1 sanitizes any
     # fallback_route_ids the selector proposes that the runtime doesn't recognize, instead of
-    # failing the request -- the selector no longer needs perfect fallback_policy knowledge to
-    # behave safely.
+    # failing the request.
     compact_families: list[dict[str, Any]] = []
     for family in selector_payload.get("families") or []:
         if not isinstance(family, dict):
@@ -2853,18 +2866,14 @@ def _compact_route_selector_payload(selector_payload: dict[str, Any]) -> dict[st
         for route in family.get("leaf_routes") or []:
             if not isinstance(route, dict):
                 continue
-            locked_args = route.get("locked_args") if isinstance(route.get("locked_args"), dict) else {}
-            compact_route = {
-                "route_id": str(route.get("route_id") or ""),
-                "family_id": str(route.get("family_id") or ""),
-                "title": str(route.get("title") or "")[:160],
-                "when_to_use": _route_when_to_use(route),
-                "argument_schema": _compact_selector_argument_schema(route.get("argument_schema") or {}, locked_args),
-            }
-            argument_hints = route.get("argument_hints")
-            if isinstance(argument_hints, dict) and argument_hints:
-                compact_route["argument_hints"] = argument_hints
-            compact_family["leaf_routes"].append(compact_route)
+            compact_family["leaf_routes"].append(
+                {
+                    "route_id": str(route.get("route_id") or ""),
+                    "family_id": str(route.get("family_id") or ""),
+                    "title": str(route.get("title") or "")[:160],
+                    "when_to_use": _route_when_to_use(route),
+                }
+            )
         compact_families.append(compact_family)
 
     compact_payload = {
@@ -2890,14 +2899,13 @@ def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dic
     payload = json.dumps(compact_payload, ensure_ascii=False, separators=(",", ":"))
     system = (
         "You are a strict retrieval route selector. First choose the best business family, then choose exactly one leaf route from that family, using each route's when_to_use to judge fit. "
-        "Return only valid JSON with selected_family_id, selected_route_id, confidence, reason, tool_args, and optional fallback_route_ids. "
-        "tool_args must contain only fields declared by the selected route argument_schema; never set a key listed in locked_arg_keys. "
+        "Return only valid JSON with selected_family_id, selected_route_id, confidence, reason, and optional fallback_route_ids. Do not return tool arguments; argument construction happens in a separate step. "
         "selected_family_id must match the chosen route family_id. Prefer fallback_route_ids that stay inside the selected family; the runtime will drop any it doesn't recognize. "
-        "recent_dialog (if present) holds the latest user/assistant turns, oldest first. Use it only to resolve follow-up queries — pronouns and elliptical asks like 'а ещё варианты?' — to the right family and to fill tool_args the current query implies but does not restate. The query field is the current user message and stays authoritative. "
+        "recent_dialog (if present) holds the latest user/assistant turns, oldest first. Use it only to resolve follow-up queries — pronouns and elliptical asks like 'а ещё варианты?' — to the right family. The query field is the current user message and stays authoritative. "
         "Do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
     )
     user = (
-        "Select the best route and arguments for this user query using only this compact route catalog payload:\n"
+        "Select the best route for this user query using only this compact route catalog payload:\n"
         f"{payload}"
     )
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -2906,6 +2914,49 @@ def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dic
     except Exception:
         pass
     return messages
+
+
+def _build_route_argument_builder_messages(
+    route: dict[str, Any],
+    selector_payload: dict[str, Any],
+) -> list[dict[str, str]]:
+    """RFC-029 workstream 2, Call B: the argument builder sees only the selected route's own
+    JSON Schema (plus its hints), so it cannot emit fields another route would accept and has
+    no keyword/classification signal to overpower the schema's shape."""
+    locked_args = route.get("locked_args") if isinstance(route.get("locked_args"), dict) else {}
+    builder_payload: dict[str, Any] = {
+        "query": str(selector_payload.get("query") or ""),
+        "route_id": str(route.get("route_id") or ""),
+        "title": str(route.get("title") or "")[:160],
+        "when_to_use": _route_when_to_use(route),
+        "argument_schema": _compact_selector_argument_schema(route.get("argument_schema") or {}, locked_args),
+    }
+    argument_hints = route.get("argument_hints")
+    if isinstance(argument_hints, dict) and argument_hints:
+        builder_payload["argument_hints"] = argument_hints
+    resolved_sphere_context = selector_payload.get("resolved_sphere_context")
+    if isinstance(resolved_sphere_context, dict) and resolved_sphere_context:
+        builder_payload["resolved_sphere_context"] = {
+            "sphere_name": str(resolved_sphere_context.get("sphere_name") or ""),
+            "category_names": list(resolved_sphere_context.get("category_names") or []),
+            "confirmed": bool(resolved_sphere_context.get("confirmed")),
+        }
+    recent_dialog = selector_payload.get("recent_dialog")
+    if isinstance(recent_dialog, list) and recent_dialog:
+        builder_payload["recent_dialog"] = recent_dialog
+    payload = json.dumps(builder_payload, ensure_ascii=False, separators=(",", ":"))
+    system = (
+        "You are a strict tool-argument builder for one already-selected retrieval route. "
+        "Return only one valid JSON object whose keys are argument fields declared in argument_schema (allowed_args). "
+        "Fill a field only when the user's message (or recent_dialog for follow-ups) actually states its value; never guess, infer defaults, or invent values — leave unknown fields out entirely. "
+        "Enum fields (enum_args) must use one of the listed values exactly. Never set a key listed in locked_arg_keys. "
+        "Do not return selected_route_id, confidence, reason, SQL, shell commands, file paths, or evidence policy overrides."
+    )
+    user = (
+        "Build the tool arguments for this route and user query:\n"
+        f"{payload}"
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
 def _selector_args_shape(tool_args: dict[str, Any]) -> list[str]:
@@ -3233,6 +3284,8 @@ async def _select_route_with_llm(
     if not candidate_routes:
         raise RuntimeError("route selector has no candidate routes")
 
+    # RFC-029 workstream 2, Call A: route selection over keyword-free classification cards.
+    call_a_started = perf_counter()
     result = await call_selector_llm(_build_route_selector_messages(selector_payload), "route_selector")
     selector_model = str(result.get("model") or get_model())
     if "error" in result:
@@ -3242,7 +3295,7 @@ async def _select_route_with_llm(
         raise RuntimeError("route selector returned no choices")
     message = choices[0].get("message") or {}
     content = str(message.get("content") or "").strip()
-    validation = validate_selector_output(content, candidate_routes)
+    validation = validate_route_choice_output(content, candidate_routes)
     first_validation_error_code = ""
     first_validation_error = ""
     repair_attempted = False
@@ -3263,20 +3316,74 @@ async def _select_route_with_llm(
         repair_content = ""
         if repair_choices:
             repair_content = str((repair_choices[0].get("message") or {}).get("content") or "").strip()
-        validation = validate_selector_output(repair_content, candidate_routes, repair_attempted=True)
+        validation = validate_route_choice_output(repair_content, candidate_routes, repair_attempted=True)
         repair_status = "succeeded" if validation.valid else "failed"
     if not validation.valid:
         raise RuntimeError(f"route selector output rejected: {validation.error_code}: {validation.error}")
+    selector_a_latency_ms = (perf_counter() - call_a_started) * 1000
 
-    for action in validation.sanitization_actions:
+    choice_route = dict(validation.route or {})
+
+    # RFC-029 workstream 2, Call B: argument construction against only the selected route's
+    # own JSON Schema. Skipped entirely for fully locked/templated routes. A schema violation
+    # here is Call-B-local repair-or-fail-closed; the Call A route choice is never re-run.
+    selector_b_latency_ms = 0.0
+    argument_builder_status = "skipped"
+    argument_builder_repair_attempted = False
+    argument_builder_repair_status = "not_needed"
+    argument_builder_sanitization_actions: list[str] = []
+    if route_has_selector_fillable_arguments(choice_route):
+        call_b_started = perf_counter()
+        builder_messages = _build_route_argument_builder_messages(choice_route, selector_payload)
+        builder_result = await call_selector_llm(builder_messages, "route_argument_builder")
+        selector_model = str(builder_result.get("model") or selector_model)
+        if "error" in builder_result:
+            raise RuntimeError(str(builder_result.get("error") or "route argument builder LLM error"))
+        builder_choices = builder_result.get("choices") or []
+        if not builder_choices:
+            raise RuntimeError("route argument builder returned no choices")
+        builder_content = str((builder_choices[0].get("message") or {}).get("content") or "").strip()
+        arg_validation = validate_route_arguments_output(builder_content, choice_route)
+        if not arg_validation.valid and arg_validation.repairable:
+            if not first_validation_error_code:
+                first_validation_error_code = arg_validation.error_code
+                first_validation_error = arg_validation.error
+            argument_builder_repair_attempted = True
+            argument_builder_repair_status = "attempted"
+            builder_repair_messages = list(builder_messages)
+            builder_repair_messages.append({"role": "assistant", "content": builder_content})
+            builder_repair_messages.append({"role": "user", "content": arg_validation.repair_prompt})
+            builder_repair_result = await call_selector_llm(builder_repair_messages, "route_argument_builder_repair")
+            selector_model = str(builder_repair_result.get("model") or selector_model)
+            if "error" in builder_repair_result:
+                raise RuntimeError(str(builder_repair_result.get("error") or "route argument builder repair LLM error"))
+            builder_repair_choices = builder_repair_result.get("choices") or []
+            builder_repair_content = ""
+            if builder_repair_choices:
+                builder_repair_content = str((builder_repair_choices[0].get("message") or {}).get("content") or "").strip()
+            arg_validation = validate_route_arguments_output(builder_repair_content, choice_route, repair_attempted=True)
+            argument_builder_repair_status = "succeeded" if arg_validation.valid else "failed"
+        selector_b_latency_ms = (perf_counter() - call_b_started) * 1000
+        if not arg_validation.valid:
+            raise RuntimeError(
+                f"route argument builder output rejected: {arg_validation.error_code}: {arg_validation.error}"
+            )
+        argument_builder_status = "repaired" if argument_builder_repair_attempted else "valid"
+        argument_builder_sanitization_actions = list(arg_validation.sanitization_actions)
+        final_tool_args = dict(arg_validation.tool_args)
+    else:
+        final_tool_args = merge_route_tool_args(choice_route, {}, validate_required=True)
+
+    all_sanitization_actions = list(validation.sanitization_actions) + argument_builder_sanitization_actions
+    for action in all_sanitization_actions:
         observe_route_selector_sanitization(
             action,
             selected_route_id=str(validation.selected_route_id or ""),
             selected_business_family_id=str(validation.selected_family_id or ""),
         )
 
-    selected_route = dict(validation.route or {})
-    selected_route["tool_args"] = dict(validation.tool_args)
+    selected_route = dict(choice_route)
+    selected_route["tool_args"] = dict(final_tool_args)
     selected_route["selected_family_id"] = str(validation.selected_family_id or selected_route.get("family_id") or "")
     selected_route["selection_reason"] = str(validation.route.get("selection_reason") if validation.route else "") or "llm_selector"
     selected_route["selector_confidence"] = ""
@@ -3291,15 +3398,20 @@ async def _select_route_with_llm(
         pass
     selected_route["candidate_route_ids"] = list(selector_payload.get("candidate_route_ids") or [])
     selected_route["selector_fallback_route_ids"] = list(validation.fallback_route_ids)
-    selected_route["selector_sanitization_actions"] = list(validation.sanitization_actions)
+    selected_route["selector_sanitization_actions"] = all_sanitization_actions
     selected_route["selector_status"] = "valid"
     selected_route["selector_model"] = selector_model
     selected_route["selector_latency_ms"] = (perf_counter() - selector_started) * 1000
+    selected_route["selector_a_latency_ms"] = selector_a_latency_ms
+    selected_route["selector_b_latency_ms"] = selector_b_latency_ms
+    selected_route["argument_builder_status"] = argument_builder_status
+    selected_route["argument_builder_repair_attempted"] = argument_builder_repair_attempted
+    selected_route["argument_builder_repair_status"] = argument_builder_repair_status
     selected_route["selector_repair_attempted"] = repair_attempted
     selected_route["selector_repair_status"] = repair_status
     selected_route["selector_validation_error_code"] = first_validation_error_code
     selected_route["selector_validation_error"] = first_validation_error
-    selected_route["validated_arg_keys"] = _selector_args_shape(validation.tool_args)
+    selected_route["validated_arg_keys"] = _selector_args_shape(final_tool_args)
     selected_route["routing_catalog_version"] = str(selector_payload.get("catalog_version") or "")
     selected_route["routing_catalog_origin"] = str(selector_payload.get("catalog_origin") or "")
     selected_route["routing_schema_version"] = int(selector_payload.get("schema_version") or 0)
@@ -3329,6 +3441,11 @@ async def _select_route_with_llm(
             "status": "valid",
             "model": selector_model,
             "latency_ms": selected_route.get("selector_latency_ms"),
+            "a_latency_ms": selector_a_latency_ms,
+            "b_latency_ms": selector_b_latency_ms,
+            "argument_builder_status": argument_builder_status,
+            "argument_builder_repair_attempted": argument_builder_repair_attempted,
+            "argument_builder_repair_status": argument_builder_repair_status,
             "confidence": selected_route.get("selector_confidence"),
             "reason": selected_route.get("selector_reason"),
             "repair_attempted": repair_attempted,
@@ -3650,6 +3767,9 @@ async def _run_agent_impl(
         "route_selector_status": str(selector_meta.get("status") or route_hint.get("selector_status") or "") if route_hint else "",
         "route_selector_model": str(selector_meta.get("model") or route_hint.get("selector_model") or "") if route_hint else "",
         "route_selector_latency_ms": selector_latency_ms,
+        "route_selector_a_latency_ms": float(selector_meta.get("a_latency_ms") or route_hint.get("selector_a_latency_ms") or 0.0) if route_hint else 0.0,
+        "route_selector_b_latency_ms": float(selector_meta.get("b_latency_ms") or route_hint.get("selector_b_latency_ms") or 0.0) if route_hint else 0.0,
+        "route_argument_builder_status": str(selector_meta.get("argument_builder_status") or route_hint.get("argument_builder_status") or "") if route_hint else "",
         "route_selector_confidence": str(selector_meta.get("confidence") or route_hint.get("selector_confidence") or "") if route_hint else "",
         "route_selector_reason": str(selector_meta.get("reason") or route_hint.get("selector_reason") or "") if route_hint else "",
         "route_selector_repair_attempted": bool(selector_meta.get("repair_attempted") or route_hint.get("selector_repair_attempted")) if route_hint else False,

@@ -4,6 +4,9 @@ route_kind: corp_script
 authority: secondary
 title: Portfolio examples by lamp
 summary: Portfolio examples and completed projects connected to a specific lamp, category, or model family.
+when_to_use: Select when the user asks where a specific lamp, model, or category was applied in realized
+  projects.
+schema_ref: portfolio_examples_by_lamp.schema.json
 topics:
 - portfolio
 - projects

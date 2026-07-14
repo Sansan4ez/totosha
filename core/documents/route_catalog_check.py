@@ -19,10 +19,14 @@ Fails (exit 1) when the bootstrap route catalog violates any of:
 """
 from __future__ import annotations
 
+import json
 import sys
 from typing import Any
 
-from documents.routing import _bootstrap_catalog_payload
+import yaml
+
+from documents.route_schema import RouteCardContractError, normalize_argument_schema
+from documents.routing import _bootstrap_catalog_payload, _route_schema_file_path, static_route_catalog_dir
 
 try:
     # Deferred/best-effort: some test runs replace sys.modules["tools"] with a partial stub
@@ -113,6 +117,43 @@ def check_sibling_fallback_coverage(routes: list[dict[str, Any]]) -> list[str]:
     return errors
 
 
+def check_schema_files() -> list[str]:
+    """RFC-029 workstream 4: every route card has a standalone, valid .schema.json and no
+    argument_schema key inline in YAML."""
+    errors: list[str] = []
+    for card_path in sorted(static_route_catalog_dir().glob("*/*.yaml")):
+        try:
+            payload = yaml.safe_load(card_path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            errors.append(f"{card_path.name}: invalid YAML: {exc}")
+            continue
+        if not isinstance(payload, dict) or not payload.get("route_id"):
+            continue
+        route_id = str(payload.get("route_id"))
+        if "argument_schema" in payload:
+            errors.append(f"{route_id}: argument_schema must live in a .schema.json file, not in the YAML card")
+        schema_path = _route_schema_file_path(card_path, payload)
+        if not schema_path.is_file():
+            errors.append(f"{route_id}: missing argument schema file {schema_path.name}")
+            continue
+        try:
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"{route_id}: {schema_path.name} is not valid JSON: {exc}")
+            continue
+        try:
+            normalized = normalize_argument_schema(schema)
+        except RouteCardContractError as exc:
+            errors.append(f"{route_id}: {schema_path.name}: {exc}")
+            continue
+        if schema.get("additionalProperties") is not False:
+            errors.append(f"{route_id}: {schema_path.name}: additionalProperties must be false")
+        if not str(payload.get("when_to_use") or "").strip():
+            errors.append(f"{route_id}: route card must declare when_to_use (RFC-029 workstream 1)")
+        del normalized
+    return errors
+
+
 def run_checks() -> list[str]:
     payload = _bootstrap_catalog_payload()
     routes = payload.get("routes") or []
@@ -120,6 +161,7 @@ def run_checks() -> list[str]:
     errors.extend(check_executor_resolution(routes))
     errors.extend(check_schema_closed(routes))
     errors.extend(check_sibling_fallback_coverage(routes))
+    errors.extend(check_schema_files())
     return errors
 
 

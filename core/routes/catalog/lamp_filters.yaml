@@ -5,6 +5,10 @@ authority: primary
 title: Lamp structured filters
 summary: Structured catalog filtering by power, flux, CCT, IP, voltage, dimensions, protection class,
   category, and mounting type.
+when_to_use: >-
+  Select when the user filters the catalog by explicit structured parameters: power, flux, CCT, IP,
+  voltage, dimensions, protection class, category, or mounting type they actually stated.
+schema_ref: lamp_filters.schema.json
 topics:
 - catalog
 - filters

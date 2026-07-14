@@ -1,0 +1,16 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "query": {
+      "maxLength": 500,
+      "type": "string"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

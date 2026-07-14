@@ -393,31 +393,31 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
     },
     "corp_db.documents_by_lamp_name": {
         "document_type",
-        "name",
+        "names",
         "query",
         "limit",
         "offset",
     },
     "corp_db.passport_by_lamp_name": {
-        "name",
+        "names",
         "query",
         "limit",
         "offset",
     },
     "corp_db.certificate_by_lamp_name": {
-        "name",
+        "names",
         "query",
         "limit",
         "offset",
     },
     "corp_db.manual_by_lamp_name": {
-        "name",
+        "names",
         "query",
         "limit",
         "offset",
     },
     "corp_db.ies_by_lamp_name": {
-        "name",
+        "names",
         "query",
         "limit",
         "offset",
@@ -435,6 +435,8 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
     },
     "corp_db.application_recommendation": {
         "query",
+        "application_key",
+        "context_profile",
         "limit_categories",
         "limit_lamps",
         "limit_portfolio",
@@ -511,7 +513,7 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
 }
 ROUTE_REQUIRED_ARGUMENTS = {
     "corp_db.application_recommendation": {"query"},
-    "corp_db.documents_by_lamp_name": {"name"},
+    "corp_db.documents_by_lamp_name": {"names"},
     "corp_db.portfolio_lookup": {"query"},
     "corp_db.portfolio_by_sphere": {"sphere"},
     "corp_db.showcase_lamps_by_category": {"category"},
@@ -639,6 +641,13 @@ def _repo_route_dir() -> Path:
     return _repo_root() / "doc-corpus" / "manifests" / "routes"
 
 
+def _route_schema_file_path(card_path: Path, payload: dict[str, Any]) -> Path:
+    schema_ref = str(payload.get("schema_ref") or "").strip()
+    if schema_ref:
+        return card_path.parent / schema_ref
+    return card_path.with_suffix(".schema.json")
+
+
 @functools.lru_cache(maxsize=1)
 def _load_static_route_cards_from_disk() -> tuple[dict[str, Any], ...]:
     routes_dir = static_route_catalog_dir()
@@ -646,6 +655,15 @@ def _load_static_route_cards_from_disk() -> tuple[dict[str, Any], ...]:
     for path in sorted(routes_dir.glob("*/*.yaml")):
         payload = yaml.safe_load(path.read_text(encoding="utf-8"))
         if isinstance(payload, dict) and payload.get("route_id"):
+            # RFC-029 workstream 4: the argument schema is a machine-executed contract and
+            # lives in a sibling .schema.json file, never inline YAML.
+            if "argument_schema" in payload:
+                _logger.error(f"route card must not embed argument_schema (use .schema.json), skipped: {path}")
+                continue
+            schema_path = _route_schema_file_path(path, payload)
+            if schema_path.is_file():
+                payload["argument_schema"] = json.loads(schema_path.read_text(encoding="utf-8"))
+                payload["argument_schema_origin"] = "schema_file"
             routes.append(payload)
         elif isinstance(payload, dict):
             _logger.error(f"route catalog card missing route_id, skipped: {path}")
@@ -726,21 +744,27 @@ def _apply_runtime_argument_overrides(route: dict[str, Any], *, sphere_context: 
     executor = str(route.get("executor") or route.get("tool_name") or "").strip()
     executor_args_template = dict(route.get("executor_args_template") or {})
     locked_args = dict(route.get("locked_args") or executor_args_template)
-    route["argument_schema"] = default_argument_schema(
-        executor=executor,
-        executor_args_template=executor_args_template,
-        locked_args=locked_args,
-        selector_visible_only=True,
-    )
+    declared_schema = route.get("argument_schema") if isinstance(route.get("argument_schema"), dict) else None
+    if declared_schema and str(route.get("argument_schema_origin") or "") == "schema_file":
+        # RFC-029 workstream 4: the .schema.json file is the source of truth for the
+        # selector-visible argument contract; only live enum values are refreshed below.
+        route["argument_schema"] = json.loads(json.dumps(declared_schema))
+    else:
+        route["argument_schema"] = default_argument_schema(
+            executor=executor,
+            executor_args_template=executor_args_template,
+            locked_args=locked_args,
+            selector_visible_only=True,
+        )
+        route["argument_schema"]["properties"] = _retain_argument_properties(
+            route_id,
+            dict(route["argument_schema"].get("properties") or {}),
+        )
     route["execution_argument_schema"] = default_argument_schema(
         executor=executor,
         executor_args_template=executor_args_template,
         locked_args=locked_args,
         selector_visible_only=False,
-    )
-    route["argument_schema"]["properties"] = _retain_argument_properties(
-        route_id,
-        dict(route["argument_schema"].get("properties") or {}),
     )
     if route_id in SPHERE_AWARE_ROUTE_IDS and "sphere" in route["argument_schema"]["properties"]:
         route["argument_schema"]["properties"]["sphere"] = _canonical_sphere_property_schema()
@@ -824,6 +848,7 @@ def _normalize_route_card(
         "authority": authority,
         "title": str(route.get("title") or route_id).strip(),
         "summary": str(route.get("summary") or "").strip(),
+        "when_to_use": str(route.get("when_to_use") or "").strip(),
         "topics": [str(item).strip() for item in route.get("topics", []) if str(item).strip()],
         "keywords": _dedupe([str(item) for item in route.get("keywords", []) if str(item).strip()]),
         "patterns": _dedupe([str(item) for item in route.get("patterns", []) if str(item).strip()]),
@@ -850,7 +875,7 @@ def _normalize_route_card(
     for field_name in ROUTE_CONTRACT_FIELDS:
         if field_name in route:
             normalized[field_name] = route[field_name]
-    for field_name in ("hidden", "selector_visible"):
+    for field_name in ("hidden", "selector_visible", "argument_schema_origin"):
         if field_name in route:
             normalized[field_name] = route[field_name]
     for override_key in (
@@ -2101,6 +2126,9 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
             or key in {
                 "query",
                 "name",
+                "names",
+                "application_key",
+                "context_profile",
                 "document_type",
                 "lookup_direction",
                 "code_system",
@@ -2134,9 +2162,11 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
         "authority": str(route.get("authority") or ""),
         "title": str(route.get("title") or ""),
         "summary": str(route.get("summary") or "")[:500],
+        # RFC-029 workstream 1 (finishing RFC-028 workstream 4): keywords/patterns stay in the
+        # route YAML for humans, tests, and the degraded (LLM-unavailable) ordering only; they
+        # never serialize into any selector-visible payload.
+        "when_to_use": str(route.get("when_to_use") or "")[:400],
         "topics": list(route.get("topics") or [])[:12],
-        "keywords": list(route.get("keywords") or [])[:16],
-        "patterns": list(route.get("patterns") or [])[:8],
         "executor": str(route.get("executor") or route.get("tool_name") or ""),
         "source": str(route.get("source") or ""),
         "tool_name": str(route.get("tool_name") or route.get("executor") or ""),
