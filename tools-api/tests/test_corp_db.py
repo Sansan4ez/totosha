@@ -1510,9 +1510,57 @@ class CorpDbRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(conn.queries), 1)
+        # First query keeps the sanitized exact filters; the empty result then triggers
+        # one power-widening retry (35 -> 30..40) with the other filters intact.
+        self.assertEqual(len(conn.queries), 2)
         _, args = conn.queries[0]
         self.assertEqual(args[:-2], (35, 35, 5000, 5000, 230, 230))
+        _, retry_args = conn.queries[1]
+        self.assertEqual(retry_args[:-2], (30, 40, 5000, 5000, 230, 230))
+
+    def test_lamp_filters_drops_unmatched_category_and_widens_exact_power(self):
+        class RelaxingConn:
+            def __init__(self):
+                self.queries: list[tuple[str, tuple]] = []
+
+            async def fetch(self, query, *args):
+                self.queries.append((str(query), args))
+                # Rows exist only once the category filter is gone AND the
+                # exact 120..120 range is widened: catalog has no "прожектор"
+                # category and the nearest stocked wattage is 110W.
+                if len(args) == 4 and args[0] != args[1]:
+                    return [{"lamp_id": 1, "name": "LAD LED R320-2-10G-230AC-50K Ex", "power_w": 110}]
+                return []
+
+        conn = RelaxingConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "lamp_filters",
+                    "category": "прожектор",
+                    "power_w_min": 120,
+                    "power_w_max": 120,
+                    "query": "прожектор на 120 вт",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["results"][0]["name"], "LAD LED R320-2-10G-230AC-50K Ex")
+        filters = payload["filters"]
+        self.assertEqual(filters["category_filter_dropped"], True)
+        self.assertEqual(filters["category_unmatched"], "прожектор")
+        self.assertEqual(filters["power_range_widened"], True)
+        self.assertEqual(filters["power_w_requested"], 120)
+        self.assertEqual(filters["power_w_min"], 102)
+        self.assertEqual(filters["power_w_max"], 138)
+        # exact -> widened-with-category -> category-dropped -> both relaxed
+        self.assertEqual(len(conn.queries), 4)
 
     def test_hybrid_search_uses_token_fallback_after_empty(self):
         with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(RoutingConn()))), patch(

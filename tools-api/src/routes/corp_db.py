@@ -4232,21 +4232,49 @@ async def _fetch_lamp_filter_rows(
     return rows, filters, conditions
 
 
+def _widened_power_request(req: CorpDbSearchRequest) -> tuple[CorpDbSearchRequest, int] | None:
+    minimum = req.power_w_min
+    maximum = req.power_w_max
+    if minimum is None or maximum is None or minimum != maximum:
+        return None
+    value = int(minimum)
+    tolerance = max(5, min(20, int(round(value * 0.15))))
+    widened_req = _request_like(req, power_w_min=max(0, value - tolerance), power_w_max=value + tolerance)
+    return widened_req, value
+
+
 async def _lamp_filters(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     rows, filters, _ = await _fetch_lamp_filter_rows(conn, req, limit, offset)
 
+    # Colloquial category words ("прожектор", "лампа", ...) often don't exist in the
+    # catalog taxonomy, and exact-wattage requests ("ровно 120 Вт") often fall between
+    # stocked wattages. Relax one filter at a time — precise combinations first — and
+    # report every dropped or widened filter to the caller.
+    retries: list[tuple[CorpDbSearchRequest, dict[str, Any]]] = []
+    power_flags: dict[str, Any] = {}
+    widened = _widened_power_request(req)
+    if widened is not None:
+        widened_req, requested_power = widened
+        power_flags = {"power_range_widened": True, "power_w_requested": requested_power}
+        retries.append((widened_req, dict(power_flags)))
     category = str(req.category or "").strip()
-    if not rows and category:
-        # Colloquial category words ("прожектор", "лампа", ...) often don't exist in
-        # the catalog taxonomy. Retry without the category filter when other filters
-        # still constrain the result, and report the dropped filter to the caller.
+    if category:
         relaxed_req = _request_like(req, category=None)
         relaxed_conditions, _, _ = _build_lamp_conditions(relaxed_req, alias="l")
         if len(relaxed_conditions) > 1:
-            rows, filters, _ = await _fetch_lamp_filter_rows(conn, relaxed_req, limit, offset)
-            if rows:
-                filters["category_unmatched"] = category
-                filters["category_filter_dropped"] = True
+            category_flags = {"category_unmatched": category, "category_filter_dropped": True}
+            retries.append((relaxed_req, dict(category_flags)))
+            if widened is not None:
+                retries.append((_request_like(widened[0], category=None), {**category_flags, **power_flags}))
+
+    for retry_req, retry_flags in retries:
+        if rows:
+            break
+        retry_rows, retry_filters, _ = await _fetch_lamp_filter_rows(conn, retry_req, limit, offset)
+        if retry_rows:
+            rows = retry_rows
+            filters = retry_filters
+            filters.update(retry_flags)
 
     return _success("lamp_filters", filters=filters, results=[_serialize_lamp_row(row) for row in rows])
 
