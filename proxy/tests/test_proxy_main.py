@@ -138,6 +138,8 @@ class _FakeSession:
         self.timeout = timeout
         self.outcome = outcome
         self.last_request_kwargs = None
+        self.post_url = None
+        self.post_headers = None
 
     async def __aenter__(self):
         return self
@@ -147,6 +149,13 @@ class _FakeSession:
 
     def request(self, *args, **kwargs):
         self.last_request_kwargs = kwargs
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+    def post(self, url, *, headers=None, data=None, timeout=None):
+        self.post_url = url
+        self.post_headers = headers or {}
         if isinstance(self.outcome, Exception):
             raise self.outcome
         return self.outcome
@@ -207,6 +216,62 @@ class ProxyHelpersTests(unittest.TestCase):
         self.assertEqual(response["embedding_backend"], "local_hash_fallback")
         self.assertEqual(len(response["data"]), 2)
         self.assertEqual(len(response["data"][0]["embedding"]), 8)
+
+    def test_proxy_embeddings_local_mode_skips_upstream_probe(self):
+        factory = _SessionFactory([])
+        aiohttp_stub = types.SimpleNamespace(
+            ClientTimeout=_FakeTimeout,
+            ClientSession=factory,
+            ClientError=RuntimeError,
+            web=_MODULE.web,
+        )
+        request = _FakeRequest(body=b'{"model":"text-embedding-3-large","input":"ip65","dimensions":8}', path="embeddings")
+        config = _MODULE.ProxyRuntimeConfig(
+            llm_base_url="http://upstream.example/v1",
+            llm_api_key="llm-key",
+            zai_api_key="",
+            model_name="gpt-5.4",
+            embeddings_base_url="local",
+        )
+
+        with patch.object(_MODULE, "aiohttp", aiohttp_stub):
+            result = asyncio.run(_MODULE.proxy_embeddings(request, config))
+
+        self.assertEqual(factory.calls, 0)
+        self.assertEqual(result.status, 200)
+
+    def test_proxy_embeddings_uses_dedicated_upstream_and_key(self):
+        upstream = _FakeUpstreamResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"object":"list","data":[]}',
+        )
+        factory = _SessionFactory([upstream])
+        aiohttp_stub = types.SimpleNamespace(
+            ClientTimeout=_FakeTimeout,
+            ClientSession=factory,
+            ClientError=RuntimeError,
+            web=_MODULE.web,
+        )
+        request = _FakeRequest(body=b'{"model":"openai/text-embedding-3-large","input":"ip65"}', path="embeddings")
+        config = _MODULE.ProxyRuntimeConfig(
+            llm_base_url="http://upstream.example/v1",
+            llm_api_key="llm-key",
+            zai_api_key="",
+            model_name="gpt-5.4",
+            embeddings_base_url="https://openrouter.example/api/v1",
+            embeddings_api_key="or-key",
+        )
+
+        with patch.object(_MODULE, "aiohttp", aiohttp_stub):
+            result = asyncio.run(_MODULE.proxy_embeddings(request, config))
+
+        self.assertEqual(factory.calls, 1)
+        session = factory.last_session
+        self.assertEqual(session.post_url, "https://openrouter.example/api/v1/embeddings")
+        self.assertEqual(session.post_headers.get("Authorization"), "Bearer or-key")
+        self.assertEqual(result.status, 200)
+        self.assertEqual(result.body, b'{"object":"list","data":[]}')
 
     def test_proxy_llm_retries_buffered_disconnect_before_first_byte(self):
         factory = _SessionFactory(

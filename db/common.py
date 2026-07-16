@@ -10,7 +10,7 @@ from urllib.parse import quote
 from urllib.parse import unquote, urlparse
 
 
-EMBEDDING_MODEL = "text-embedding-3-large"
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
 EMBEDDING_DIMENSIONS = 1536
 
 DEFAULT_SOURCES_DIR = Path(os.getenv("CORP_DB_SOURCES_DIR", "/data/corp_pg_db/sources"))

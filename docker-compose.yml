@@ -35,6 +35,8 @@ services:
       - api_key
       - zai_api_key
       - model_name
+      - embeddings_base_url
+      - embeddings_api_key
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3200/ready')"]
       interval: 10s
@@ -99,6 +101,7 @@ services:
       - TZ=${TZ:-Europe/Moscow}
       - WORKSPACE_ROOT=/workspace
       - PROXY_URL=http://proxy:3200/v1
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-large}
       - CORP_DB_STATEMENT_TIMEOUT_MS=${CORP_DB_STATEMENT_TIMEOUT_MS:-10000}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
       - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
@@ -201,6 +204,7 @@ services:
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - PROXY_URL=http://proxy:3200/v1
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-large}
       - CORP_DB_RW_STATEMENT_TIMEOUT_MS=${CORP_DB_RW_STATEMENT_TIMEOUT_MS:-120000}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
       - OTEL_EXPORTER_OTLP_PROTOCOL=${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
@@ -645,6 +649,10 @@ secrets:
     file: ./secrets/telegram_phone.txt
   model_name:
     file: ./secrets/model_name.txt
+  embeddings_base_url:
+    file: ./secrets/embeddings_base_url.txt
+  embeddings_api_key:
+    file: ./secrets/embeddings_api_key.txt
   admin_password:
     file: ./secrets/admin_password.txt
   postgres_password:

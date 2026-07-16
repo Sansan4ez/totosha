@@ -68,6 +68,11 @@ class ProxyRuntimeConfig:
     llm_api_key: str
     zai_api_key: str
     model_name: str
+    # Dedicated embeddings upstream. Empty -> fall back to llm_base_url/llm_api_key;
+    # the special value "local" skips the upstream probe entirely and serves the
+    # local hash fallback (the LLM upstream may not expose /v1/embeddings at all).
+    embeddings_base_url: str = ""
+    embeddings_api_key: str = ""
 
 
 def _float_env(name: str, default: float, *, minimum: float) -> float:
@@ -132,6 +137,8 @@ def load_runtime_config() -> ProxyRuntimeConfig:
         llm_api_key=(read_secret("api_key") or "").strip(),
         zai_api_key=(read_secret("zai_api_key") or "").strip(),
         model_name=(read_secret("model_name") or "gpt-4").strip(),
+        embeddings_base_url=(read_secret("embeddings_base_url") or "").strip().rstrip("/"),
+        embeddings_api_key=(read_secret("embeddings_api_key") or "").strip(),
     )
 
 
@@ -669,13 +676,15 @@ async def proxy_embeddings(request: web.Request, config: ProxyRuntimeConfig) -> 
     except json.JSONDecodeError:
         return web.json_response({"error": "Invalid JSON"}, status=400)
 
-    if config.llm_base_url:
-        target_url = _resolve_target_url(config.llm_base_url, "embeddings", request.query_string)
+    upstream_base_url = config.embeddings_base_url or config.llm_base_url
+    upstream_api_key = config.embeddings_api_key or config.llm_api_key
+    if upstream_base_url and upstream_base_url.lower() != "local":
+        target_url = _resolve_target_url(upstream_base_url, "embeddings", request.query_string)
         headers = dict(request.headers)
         headers.pop("Host", None)
         headers.pop("Connection", None)
-        if config.llm_api_key:
-            headers["Authorization"] = f"Bearer {config.llm_api_key}"
+        if upstream_api_key:
+            headers["Authorization"] = f"Bearer {upstream_api_key}"
 
         try:
             async with aiohttp.ClientSession() as session:

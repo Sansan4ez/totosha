@@ -1085,7 +1085,7 @@ def _get_client() -> AsyncOpenAI:
 async def _get_query_embedding(query: str) -> list[float] | None:
     try:
         response = await _get_client().embeddings.create(
-            model="text-embedding-3-large",
+            model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-large"),
             input=query,
             dimensions=1536,
         )
