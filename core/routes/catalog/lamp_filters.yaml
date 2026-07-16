@@ -34,7 +34,10 @@ executor_args_template:
   kind: lamp_filters
   fuzzy: true
 argument_hints:
-  category: Extract category name when the user narrows the filter by category.
+  category: >-
+    Extract category name only when the user names a real catalog category or series
+    (e.g. LAD LED R500). Colloquial luminaire words — «прожектор», «светильник»,
+    «лампа», «фонарь», «свет» — are not catalog categories: leave category empty for them.
   mounting_type: Extract mounting type as a free string.
   ip: Extract IP rating like IP65 or 65.
 observability_labels:

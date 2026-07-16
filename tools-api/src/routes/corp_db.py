@@ -2342,6 +2342,21 @@ def _is_decimal_equality_range(minimum: Any, maximum: Any, *, column: str) -> bo
     return Decimal(str(minimum)) == Decimal(str(maximum))
 
 
+# Everyday speech says "прожектор" where the catalog vocabulary (names, categories,
+# agent summaries) says "светильник". websearch_to_tsquery ANDs the terms, so the
+# synonym must replace the colloquial word rather than be appended alongside it.
+COLLOQUIAL_TERM_SUBSTITUTIONS = (
+    (re.compile(r"\bпрожектор\w*\b", re.IGNORECASE), "светильник"),
+)
+
+
+def _substitute_colloquial_terms(query: str) -> str:
+    text = query
+    for pattern, replacement in COLLOQUIAL_TERM_SUBSTITUTIONS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _normalize_query_text(query: str) -> str:
     text = _normalize_ws(query).lower().replace("\u00a0", " ")
     text = re.sub(r"\bip[\s-]?(\d{2,3})\b", lambda m: f"ip{m.group(1)}", text, flags=re.IGNORECASE)
@@ -2685,7 +2700,7 @@ async def _run_hybrid_query(
         SELECT doc_id, entity_type, entity_id, title, content, metadata, score, debug_info
         FROM corp.corp_hybrid_search($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         """,
-        query,
+        _substitute_colloquial_terms(query),
         embedding,
         limit,
         full_text_weight,

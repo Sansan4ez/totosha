@@ -1357,6 +1357,33 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertIn("5000k", normalized)
         self.assertIn("25w", normalized)
 
+    def test_substitute_colloquial_terms_maps_projector_to_luminaire(self):
+        from src.routes.corp_db import _substitute_colloquial_terms
+
+        self.assertEqual(_substitute_colloquial_terms("прожектор на 120 вт"), "светильник на 120 вт")
+        self.assertEqual(_substitute_colloquial_terms("Прожекторы для карьера"), "светильник для карьера")
+        self.assertEqual(_substitute_colloquial_terms("светильник ip65"), "светильник ip65")
+
+    def test_hybrid_search_substitutes_colloquial_terms_in_lexical_query(self):
+        conn = QueryCaptureConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))), patch(
+            "src.routes.corp_db._get_query_embedding", new=AsyncMock(return_value=None)
+        ):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={"kind": "hybrid_search", "query": "прожекторы для карьера", "profile": "related_evidence"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        hybrid_queries = [args[0] for sql, args in conn.queries if "corp_hybrid_search" in sql]
+        self.assertTrue(hybrid_queries)
+        for lexical_query in hybrid_queries:
+            self.assertNotIn("прожектор", lexical_query)
+        self.assertIn("светильник", hybrid_queries[0])
+
     def test_extract_filter_retry_parses_power_and_ip(self):
         from src.routes.corp_db import _extract_filter_retry
 
