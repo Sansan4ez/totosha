@@ -9,6 +9,7 @@ import re
 import glob as globlib
 import subprocess
 import shutil
+from pathlib import Path
 from security import is_sensitive_file
 from logger import tool_logger
 from models import ToolResult, ToolContext
@@ -61,7 +62,7 @@ def is_path_safe(path: str, cwd: str) -> tuple[bool, str]:
     if resolved.startswith("/data/skills") and (resolved == "/data/skills" or resolved.startswith("/data/skills/")):
         return True, ""
 
-    if not resolved.startswith(resolved_cwd):
+    if not _is_within_root(resolved, resolved_cwd):
         return False, "Path outside workspace"
 
     # Block workspace root listing
@@ -69,7 +70,7 @@ def is_path_safe(path: str, cwd: str) -> tuple[bool, str]:
         return False, "Cannot access workspace root"
 
     # Block _shared folder
-    if "/_shared" in resolved:
+    if "_shared" in Path(resolved).parts:
         return False, "Cannot access shared folder"
 
     return True, ""
