@@ -9,7 +9,7 @@ services:
       - "--storageDataPath=/storage"
       - "--opentelemetry.usePrometheusNaming=true"
     ports:
-      - "${VICTORIAMETRICS_PORT:-8428}:8428"
+      - "127.0.0.1:${VICTORIAMETRICS_PORT:-8428}:8428"
     volumes:
       - vmdata:/storage
     networks:
@@ -21,8 +21,9 @@ services:
     container_name: victorialogs
     command:
       - "--storageDataPath=/vlogs"
+      - "--retentionPeriod=7d"
     ports:
-      - "${VICTORIALOGS_PORT:-9428}:9428"
+      - "127.0.0.1:${VICTORIALOGS_PORT:-9428}:9428"
     volumes:
       - vldata:/vlogs
     networks:
@@ -35,7 +36,7 @@ services:
     command:
       - "--storageDataPath=/vtraces"
     ports:
-      - "${VICTORIATRACES_PORT:-10428}:10428"
+      - "127.0.0.1:${VICTORIATRACES_PORT:-10428}:10428"
     volumes:
       - vtdata:/vtraces
     networks:
@@ -47,9 +48,9 @@ services:
     container_name: otel-collector
     command: ["--config=/etc/otel-collector-config.yml"]
     ports:
-      - "${OTEL_COLLECTOR_PORT_GRPC:-4317}:4317"
-      - "${OTEL_COLLECTOR_PORT_HTTP:-4318}:4318"
-      - "${OTEL_COLLECTOR_HEALTH_PORT:-13133}:13133"
+      - "127.0.0.1:${OTEL_COLLECTOR_PORT_GRPC:-4317}:4317"
+      - "127.0.0.1:${OTEL_COLLECTOR_PORT_HTTP:-4318}:4318"
+      - "127.0.0.1:${OTEL_COLLECTOR_HEALTH_PORT:-13133}:13133"
     volumes:
       - ./otel-collector-config.yml:/etc/otel-collector-config.yml:ro
     depends_on:
@@ -67,7 +68,7 @@ services:
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
     ports:
-      - "${ALERTMANAGER_PORT:-9093}:9093"
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
     volumes:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     networks:
@@ -85,7 +86,7 @@ services:
       - "-notifier.url=http://alertmanager:9093"
       - "-httpListenAddr=:8880"
     ports:
-      - "${VMALERT_PORT:-8880}:8880"
+      - "127.0.0.1:${VMALERT_PORT:-8880}:8880"
     volumes:
       - ./alerts:/etc/vmalert/rules:ro
     depends_on:
@@ -99,11 +100,13 @@ services:
     restart: unless-stopped
     container_name: grafana
     ports:
-      - "${GRAFANA_PORT:-3003}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3003}:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password
       - GF_INSTALL_PLUGINS=victoriametrics-metrics-datasource,victoriametrics-logs-datasource
+    secrets:
+      - grafana_admin_password
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
@@ -113,6 +116,10 @@ services:
       - vmalert
     networks:
       - observability-net
+
+secrets:
+  grafana_admin_password:
+    file: ../secrets/admin_password.txt
 
 volumes:
   vmdata: {}

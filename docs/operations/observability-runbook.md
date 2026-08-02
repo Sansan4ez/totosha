@@ -9,11 +9,13 @@ This is the operational entrypoint for observability triage and smoke execution.
 Startup
 -------
 
-1. Start the observability stack:
+1. Start the observability stack. Ensure `secrets/admin_password.txt` contains a strong Grafana password; Grafana reads this existing Docker secret instead of using a default credential.
 
 ```bash
 docker compose -f victoriametrics/docker-compose.yml up -d
 ```
+
+All observability host ports are loopback-only. Use an SSH tunnel for remote operator access. VictoriaLogs is configured with a 7-day retention window.
 
 2. Start the application stack on the default supported path:
 
