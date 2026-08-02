@@ -64,6 +64,17 @@ _config_cache = {
 CONFIG_CACHE_TTL = 30  # seconds
 
 
+def _admin_headers() -> dict[str, str]:
+    """Authenticate internal reads of the protected admin API."""
+    path = os.getenv("ADMIN_PASSWORD_FILE", "/run/secrets/admin_password")
+    try:
+        with open(path) as secret_file:
+            token = secret_file.read().strip()
+    except OSError:
+        token = ""
+    return {"X-Admin-Token": token} if token else {}
+
+
 async def fetch_config():
     """Fetch userbot config from admin panel, with caching"""
     global RESPONSE_CHANCE_DM, RESPONSE_CHANCE_GROUP, RESPONSE_CHANCE_MENTION
@@ -80,6 +91,7 @@ async def fetch_config():
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{CORE_URL}/api/admin/userbot/config",
+                headers=_admin_headers(),
                 timeout=aiohttp.ClientTimeout(total=5)
             ) as resp:
                 if resp.status == 200:

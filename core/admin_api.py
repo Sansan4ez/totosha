@@ -5,8 +5,10 @@ import json
 import subprocess
 import asyncio
 import time
+import hmac
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from functools import lru_cache
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import docker
@@ -30,7 +32,31 @@ def _read_model_name() -> str:
     return os.getenv("MODEL_NAME", "gpt-4")
 
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+@lru_cache(maxsize=1)
+def _admin_token() -> str:
+    """Read the service-level admin token from its Docker secret."""
+    path = os.getenv("ADMIN_PASSWORD_FILE", "/run/secrets/admin_password")
+    try:
+        with open(path) as secret_file:
+            return secret_file.read().strip()
+    except OSError:
+        return ""
+
+
+def require_admin(x_admin_token: str = Header(default="")) -> None:
+    """Fail closed unless the caller presents the configured admin token."""
+    expected = _admin_token()
+    if not expected:
+        raise HTTPException(503, "admin auth not configured")
+    if not hmac.compare_digest(x_admin_token, expected):
+        raise HTTPException(401, "unauthorized")
+
+
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin)],
+)
 
 # Docker client
 docker_client = None

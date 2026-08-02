@@ -3,6 +3,7 @@
 import asyncio
 import random
 import logging
+import os
 import aiohttp
 from datetime import datetime
 from typing import Optional
@@ -11,6 +12,17 @@ from config import CONFIG, PROXY_URL, MODEL, CORE_URL
 from state import bot
 
 logger = logging.getLogger("bot.thoughts")
+
+
+def _admin_headers() -> dict[str, str]:
+    """Authenticate internal reads of the protected admin API."""
+    path = os.getenv("ADMIN_PASSWORD_FILE", "/run/secrets/admin_password")
+    try:
+        with open(path) as secret_file:
+            token = secret_file.read().strip()
+    except OSError:
+        token = ""
+    return {"X-Admin-Token": token} if token else {}
 
 
 # Track active chats (chat_id -> last activity timestamp)
@@ -32,6 +44,7 @@ async def is_thoughts_enabled() -> bool:
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 f"{CORE_URL}/api/admin/config",
+                headers=_admin_headers(),
                 timeout=aiohttp.ClientTimeout(total=5)
             ) as resp:
                 if resp.status == 200:
