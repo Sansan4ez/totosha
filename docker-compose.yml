@@ -314,12 +314,9 @@ services:
     build: ./google-workspace-mcp
     container_name: google-workspace-mcp
     restart: unless-stopped
-    ports:
-      - "${GOOGLE_MCP_PORT:-8500}:8500"  # For OAuth callback (not used, auth via Admin UI)
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - GOOGLE_MCP_CREDENTIALS_DIR=/app/store_creds
-      - OAUTHLIB_INSECURE_TRANSPORT=1
       - PORT=8500
       - TOOL_TIER=core
       # OAuth handled via Admin UI with user-configured credentials
