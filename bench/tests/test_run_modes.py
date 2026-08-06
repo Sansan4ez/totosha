@@ -6,9 +6,57 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bench import bench_run
+from admin_auth import AdminTokenNotFound
 
 
 class BenchRunModesTests(unittest.TestCase):
+    def test_auto_detect_authenticates_admin_access(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_path = Path(tmpdir) / "dataset.jsonl"
+            out_path = Path(tmpdir) / "results.jsonl"
+            dataset_path.write_text("", encoding="utf-8")
+            args = argparse.Namespace(
+                dataset=str(dataset_path),
+                out=str(out_path),
+                pricing="bench/pricing.json",
+                core_url="http://127.0.0.1:4000",
+                tools_api_url="http://127.0.0.1:8100",
+                user_id=None,
+                chat_id=None,
+                limit=0,
+                sleep_ms=0,
+                timeout_s=30.0,
+                docker_exec=False,
+            )
+
+            with patch.object(bench_run, "parse_args", return_value=args), patch.object(
+                bench_run, "admin_headers", return_value={"X-Admin-Token": "secret"}
+            ), patch.object(bench_run, "http_get_json", return_value=(200, {"admin_id": 7})) as http_get:
+                bench_run.main()
+
+            self.assertEqual(http_get.call_args.kwargs["headers"]["X-Admin-Token"], "secret")
+
+    def test_auto_detect_reports_missing_admin_token(self):
+        args = argparse.Namespace(
+            dataset="bench/golden/v1.jsonl",
+            out="",
+            pricing="bench/pricing.json",
+            core_url="http://127.0.0.1:4000",
+            tools_api_url="http://127.0.0.1:8100",
+            user_id=None,
+            chat_id=None,
+            limit=0,
+            sleep_ms=0,
+            timeout_s=30.0,
+            docker_exec=False,
+        )
+
+        with patch.object(bench_run, "parse_args", return_value=args), patch.object(
+            bench_run, "admin_headers", side_effect=AdminTokenNotFound("admin token not found")
+        ):
+            with self.assertRaisesRegex(SystemExit, "admin token not found"):
+                bench_run.main()
+
     def test_direct_tool_mode_writes_artifact_aware_result_row(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             dataset_path = Path(tmpdir) / "dataset.jsonl"

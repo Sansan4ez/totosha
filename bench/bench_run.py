@@ -15,12 +15,21 @@ import datetime as dt
 import json
 import os
 import secrets
+import shlex
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Optional
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from admin_auth import AdminTokenNotFound, admin_headers
 
 try:
     from .bench_lib import BENCH_DIR, estimate_cost_usd, get_execution, get_validation, load_pricing, repo_rel, resolve_repo_path
@@ -185,12 +194,16 @@ def docker_exec_doc_search(payload: dict[str, Any], timeout_s: float) -> tuple[i
         return result.returncode, {"error": text[:500]}
 
 
-def docker_exec_json_get(path: str, request_id: str, timeout_s: float) -> tuple[int, dict[str, Any]]:
-    cmd = (
-        "curl -sS "
-        f"http://localhost:4000{path} "
-        f"-H 'X-Request-Id: {request_id}'"
-    )
+def docker_exec_json_get(
+    path: str,
+    request_id: str,
+    timeout_s: float,
+    headers: Optional[dict[str, str]] = None,
+) -> tuple[int, dict[str, Any]]:
+    header_args = ["-H " + shlex.quote(f"X-Request-Id: {request_id}")]
+    for key, value in (headers or {}).items():
+        header_args.append("-H " + shlex.quote(f"{key}: {value}"))
+    cmd = " ".join(["curl -sS", shlex.quote(f"http://localhost:4000{path}"), *header_args])
     result = subprocess.run(
         ["docker", "exec", "core", "sh", "-lc", cmd],
         capture_output=True,
@@ -237,11 +250,17 @@ def main() -> None:
     user_id = args.user_id
     chat_id = args.chat_id
     if user_id is None or chat_id is None:
+        try:
+            access_headers = admin_headers(repo_root=REPO_ROOT)
+        except AdminTokenNotFound as exc:
+            raise SystemExit(str(exc)) from None
+
         if args.docker_exec:
             _code, access = docker_exec_json_get(
                 "/api/admin/access",
                 request_id=f"bench/{run_id}/access",
                 timeout_s=float(args.timeout_s),
+                headers=access_headers,
             )
             if not (isinstance(access, dict) and "admin_id" in access):
                 # Backward-compatible fallback if someone adds a public access endpoint later.
@@ -262,7 +281,7 @@ def main() -> None:
             try:
                 _status, access = http_get_json(
                     f"{args.core_url.rstrip('/')}/api/admin/access",
-                    headers={"X-Request-Id": f"bench/{run_id}/access"},
+                    headers={**access_headers, "X-Request-Id": f"bench/{run_id}/access"},
                     timeout_s=float(args.timeout_s),
                 )
                 admin_id_raw = access.get("admin_id") if isinstance(access, dict) else None

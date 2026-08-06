@@ -5,9 +5,11 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from admin_auth import AdminTokenNotFound
 from incident_replay_smoke import (
     ChatReplayExpectation,
     _should_use_docker_exec,
+    resolve_chat_identity,
     validate_chat_replay_response,
     validate_doctor_results,
 )
@@ -42,6 +44,22 @@ class IncidentReplaySmokeTests(unittest.TestCase):
 
         with patch("incident_replay_smoke._http_endpoint_available", return_value=False):
             self.assertTrue(_should_use_docker_exec(Args()))
+
+    def test_resolve_chat_identity_authenticates_admin_access(self):
+        with patch("incident_replay_smoke.admin_headers", return_value={"X-Admin-Token": "secret"}), patch(
+            "incident_replay_smoke.http_json", return_value=(200, {"admin_id": 42})
+        ) as http_json:
+            self.assertEqual(resolve_chat_identity("http://core:4000", 5.0, 0, 0), (42, 42))
+
+        self.assertEqual(http_json.call_args.kwargs["headers"]["X-Admin-Token"], "secret")
+
+    def test_resolve_chat_identity_reports_missing_admin_token(self):
+        with patch(
+            "incident_replay_smoke.admin_headers",
+            side_effect=AdminTokenNotFound("admin token not found"),
+        ):
+            with self.assertRaisesRegex(AdminTokenNotFound, "admin token not found"):
+                resolve_chat_identity("http://core:4000", 5.0, 0, 0)
 
     def test_validate_chat_replay_response_accepts_expected_meta(self):
         expected = ChatReplayExpectation(

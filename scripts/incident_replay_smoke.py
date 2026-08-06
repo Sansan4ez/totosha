@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from admin_auth import AdminTokenNotFound, admin_headers
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = REPO_ROOT / "bench" / "golden" / "incident-pfit7.jsonl"
@@ -132,10 +134,15 @@ def resolve_chat_identity(core_url: str, timeout_s: float, requested_user_id: in
     try:
         status, payload = http_json(
             f"{core_url.rstrip('/')}/api/admin/access",
-            headers={"X-Request-Id": f"incident-smoke/{uuid.uuid4().hex}/access"},
+            headers={
+                **admin_headers(repo_root=REPO_ROOT),
+                "X-Request-Id": f"incident-smoke/{uuid.uuid4().hex}/access",
+            },
             timeout_s=timeout_s,
         )
         admin_id = int(payload.get("admin_id") or 0) if status == 200 else 0
+    except AdminTokenNotFound:
+        raise
     except Exception:
         admin_id = 0
 
@@ -369,4 +376,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except AdminTokenNotFound as exc:
+        raise SystemExit(str(exc)) from None
