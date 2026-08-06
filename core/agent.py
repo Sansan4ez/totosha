@@ -3387,17 +3387,11 @@ async def _select_route_with_llm(
     selected_route = dict(choice_route)
     selected_route["tool_args"] = dict(final_tool_args)
     selected_route["selected_family_id"] = str(validation.selected_family_id or selected_route.get("family_id") or "")
-    selected_route["selection_reason"] = str(validation.route.get("selection_reason") if validation.route else "") or "llm_selector"
-    selected_route["selector_confidence"] = ""
-    selected_route["selector_reason"] = ""
-    try:
-        parsed = json.loads(content)
-        selected_route["selector_confidence"] = str(parsed.get("confidence") or "")
-        selected_route["selector_reason"] = str(parsed.get("reason") or "")
-        if parsed.get("reason"):
-            selected_route["selection_reason"] = "llm_selector: " + str(parsed.get("reason"))
-    except Exception:
-        pass
+    selected_route["selection_reason"] = str((validation.route or {}).get("selection_reason") or "") or "llm_selector"
+    selected_route["selector_confidence"] = validation.confidence
+    selected_route["selector_reason"] = validation.reason
+    if validation.reason:
+        selected_route["selection_reason"] = "llm_selector: " + validation.reason
     selected_route["candidate_route_ids"] = list(selector_payload.get("candidate_route_ids") or [])
     selected_route["selector_fallback_route_ids"] = list(validation.fallback_route_ids)
     selected_route["selector_sanitization_actions"] = all_sanitization_actions

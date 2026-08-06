@@ -125,6 +125,8 @@ class SelectorValidationResult:
     route: dict[str, Any] | None = None
     tool_args: dict[str, Any] = field(default_factory=dict)
     fallback_route_ids: list[str] = field(default_factory=list)
+    confidence: str = ""
+    reason: str = ""
     error_code: str = ""
     error: str = ""
     repairable: bool = False
@@ -868,6 +870,8 @@ def validate_route_choice_output(
             route=dict(route),
             tool_args={},
             fallback_route_ids=fallback_route_ids,
+            confidence=str(parsed.get("confidence") or ""),
+            reason=str(parsed.get("reason") or ""),
             sanitization_actions=sanitization_actions,
         )
     except RouteSelectorOutputError as exc:

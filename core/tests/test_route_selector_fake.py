@@ -117,12 +117,23 @@ class ScriptedRouteSelectorLLM:
         return self._responses.pop(0)
 
 
-def _choice(route_id: str, *, family_id: str = "", fallback_route_ids: list[str] | None = None) -> dict:
+def _choice(
+    route_id: str,
+    *,
+    family_id: str = "",
+    fallback_route_ids: list[str] | None = None,
+    confidence: str = "",
+    reason: str | None = None,
+) -> dict:
     payload: dict = {"selected_route_id": route_id}
     if family_id:
         payload["selected_family_id"] = family_id
     if fallback_route_ids:
         payload["fallback_route_ids"] = fallback_route_ids
+    if confidence:
+        payload["confidence"] = confidence
+    if reason is not None:
+        payload["reason"] = reason
     return _llm_response(json.dumps(payload, ensure_ascii=False))
 
 
@@ -220,7 +231,11 @@ class RouteSelectorFakeTests(unittest.TestCase):
         fake = ScriptedRouteSelectorLLM(
             [
                 _llm_response("not valid json"),
-                _choice("corp_kb.company_common"),
+                _choice(
+                    "corp_kb.company_common",
+                    confidence="high",
+                    reason="repaired certification route",
+                ),
                 _arguments({"query": "сертификаты"}),
             ]
         )
@@ -232,7 +247,54 @@ class RouteSelectorFakeTests(unittest.TestCase):
             ["route_selector", "route_selector_repair", "route_argument_builder"],
         )
         self.assertEqual(route_selection["selector"]["repair_status"], "succeeded")
+        self.assertEqual(route_selection["selector"]["confidence"], "high")
+        self.assertEqual(route_selection["selector"]["reason"], "repaired certification route")
         self.assertEqual(route_hint["route_id"], "corp_kb.company_common")
+
+    def test_repair_metadata_replaces_rejected_choice_metadata(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _llm_response(json.dumps({"confidence": "low", "reason": "rejected route"})),
+                _choice("corp_kb.company_common", confidence="high", reason="repaired route"),
+                _arguments({"query": "сертификаты"}),
+            ]
+        )
+
+        route_selection, route_hint, _secondary = self._run("какие есть сертификаты?", fake)
+
+        self.assertEqual(route_selection["selector"]["validation_error_code"], "missing_required")
+        self.assertEqual(route_selection["selector"]["confidence"], "high")
+        self.assertEqual(route_selection["selector"]["reason"], "repaired route")
+        self.assertEqual(route_hint["selection_reason"], "llm_selector: repaired route")
+        self.assertNotIn("rejected route", route_hint["selection_reason"])
+
+    def test_valid_choice_metadata_is_preserved_without_repair(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_kb.company_common", confidence="medium", reason="direct route"),
+                _arguments({"query": "сертификаты"}),
+            ]
+        )
+
+        route_selection, route_hint, _secondary = self._run("какие есть сертификаты?", fake)
+
+        self.assertEqual(route_selection["selector"]["repair_status"], "not_needed")
+        self.assertEqual(route_selection["selector"]["confidence"], "medium")
+        self.assertEqual(route_selection["selector"]["reason"], "direct route")
+        self.assertEqual(route_hint["selection_reason"], "llm_selector: direct route")
+
+    def test_missing_reason_uses_plain_llm_selector_reason(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_kb.company_common", confidence="medium"),
+                _arguments({"query": "сертификаты"}),
+            ]
+        )
+
+        route_selection, route_hint, _secondary = self._run("какие есть сертификаты?", fake)
+
+        self.assertEqual(route_selection["selector"]["reason"], "")
+        self.assertEqual(route_hint["selection_reason"], "llm_selector")
 
     def test_material_violation_fails_closed_after_one_repair_attempt(self):
         fake = ScriptedRouteSelectorLLM(
