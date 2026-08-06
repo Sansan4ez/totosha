@@ -27,9 +27,11 @@ class _DummySpan:
 
 class _DummyMetric:
     def __init__(self, *args, **kwargs):
-        pass
+        self.labelnames = tuple(kwargs.get("labelnames", ()))
+        self.label_calls = []
 
     def labels(self, *args, **kwargs):
+        self.label_calls.append(args)
         return self
 
     def inc(self, *args, **kwargs):
@@ -129,6 +131,36 @@ class Rfc027ObservabilityTests(unittest.TestCase):
             "finalizer_mode",
         ):
             self.assertIn(key, context)
+
+    def test_bounded_label_preserves_known_value(self):
+        self.assertEqual(
+            observability._bounded_label(
+                "corp_kb.company_common",
+                observability.KNOWN_KNOWLEDGE_ROUTE_IDS,
+            ),
+            "corp_kb.company_common",
+        )
+
+    def test_bounded_label_collapses_unknown_value(self):
+        self.assertEqual(
+            observability._bounded_label(
+                "corp_kb.user_supplied_route",
+                observability.KNOWN_KNOWLEDGE_ROUTE_IDS,
+            ),
+            "other",
+        )
+
+    def test_high_cardinality_document_id_is_not_a_metric_label(self):
+        metrics = (
+            observability.RETRIEVAL_ROUTE_REQUESTS_TOTAL,
+            observability.RETRIEVAL_ROUTE_DURATION_MS,
+            observability.RETRIEVAL_GUARDRAIL_BLOCKS_TOTAL,
+            observability.TOOL_EXECUTIONS_TOTAL,
+            observability.TOOL_EXECUTION_DURATION_MS,
+        )
+        for metric in metrics:
+            self.assertNotIn("document_id", metric.labelnames)
+            self.assertIn("knowledge_route_id", metric.labelnames)
 
 
 if __name__ == "__main__":

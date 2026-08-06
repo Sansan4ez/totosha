@@ -61,6 +61,14 @@ LATENCY_BUCKETS_MS = (
     45000,
     60000,
 )
+# Closed set of knowledge source IDs declared by the corp_kb route catalog.
+KNOWN_KNOWLEDGE_ROUTE_IDS = frozenset(
+    {
+        "corp_kb.company_common",
+        "corp_kb.lighting_norms",
+        "corp_kb.luxnet",
+    }
+)
 CORRELATION_FIELDS = (
     "request_source",
     "selected_route_id",
@@ -189,6 +197,8 @@ CHAT_CHANNEL_DURATION_MS = Histogram(
     registry=REGISTRY,
     buckets=LATENCY_BUCKETS_MS,
 )
+# Metric labels must have bounded domains. Entity identifiers such as document_id,
+# sku, and user_id belong in logs and spans, never in labelnames.
 RETRIEVAL_ROUTE_REQUESTS_TOTAL = Counter(
     "retrieval_route_requests_total",
     "Requests grouped by selected route and retrieval identifiers.",
@@ -203,7 +213,6 @@ RETRIEVAL_ROUTE_REQUESTS_TOTAL = Counter(
         "selected_route_kind",
         "selected_source",
         "knowledge_route_id",
-        "document_id",
         "retrieval_phase",
         "retrieval_evidence_status",
         "route_arg_validation_status",
@@ -226,7 +235,6 @@ RETRIEVAL_ROUTE_DURATION_MS = Histogram(
         "selected_route_kind",
         "selected_source",
         "knowledge_route_id",
-        "document_id",
         "retrieval_phase",
         "retrieval_evidence_status",
         "route_arg_validation_status",
@@ -249,7 +257,6 @@ RETRIEVAL_GUARDRAIL_BLOCKS_TOTAL = Counter(
         "selected_route_kind",
         "selected_source",
         "knowledge_route_id",
-        "document_id",
         "blocked_tool",
     ),
     registry=REGISTRY,
@@ -269,7 +276,6 @@ TOOL_EXECUTIONS_TOTAL = Counter(
         "selected_route_kind",
         "selected_source",
         "knowledge_route_id",
-        "document_id",
         "retrieval_phase",
         "route_arg_validation_status",
         "used_fallback_scope",
@@ -291,7 +297,6 @@ TOOL_EXECUTION_DURATION_MS = Histogram(
         "selected_route_kind",
         "selected_source",
         "knowledge_route_id",
-        "document_id",
         "retrieval_phase",
         "route_arg_validation_status",
         "used_fallback_scope",
@@ -550,6 +555,10 @@ def _metric_label(context: dict[str, str], key: str, *, default: str = "none") -
     return value
 
 
+def _bounded_label(value: str, allowed: frozenset[str], default: str = "other") -> str:
+    return value if value in allowed else default
+
+
 def observe_request_correlation(duration_ms: float, status: str) -> None:
     context = get_correlation_context()
     if (
@@ -569,8 +578,7 @@ def observe_request_correlation(duration_ms: float, status: str) -> None:
         _metric_label(context, "route_stage"),
         _metric_label(context, "selected_route_kind"),
         _metric_label(context, "selected_source", default="unknown"),
-        _metric_label(context, "knowledge_route_id"),
-        _metric_label(context, "document_id"),
+        _bounded_label(_metric_label(context, "knowledge_route_id"), KNOWN_KNOWLEDGE_ROUTE_IDS),
         _metric_label(context, "retrieval_phase"),
         _metric_label(context, "retrieval_evidence_status"),
         _metric_label(context, "route_arg_validation_status", default="none"),
@@ -686,8 +694,7 @@ def observe_request_correlation(duration_ms: float, status: str) -> None:
             _metric_label(context, "route_stage"),
             _metric_label(context, "selected_route_kind"),
             _metric_label(context, "selected_source", default="unknown"),
-            _metric_label(context, "knowledge_route_id"),
-            _metric_label(context, "document_id"),
+            _bounded_label(_metric_label(context, "knowledge_route_id"), KNOWN_KNOWLEDGE_ROUTE_IDS),
             _metric_label(context, "guardrail_blocked_tool"),
         ).inc(guardrail_hits)
 
@@ -722,8 +729,7 @@ def observe_tool_execution(tool_name: str, tool_status: str, duration_ms: float)
         _metric_label(context, "route_stage"),
         _metric_label(context, "selected_route_kind"),
         _metric_label(context, "selected_source", default="unknown"),
-        _metric_label(context, "knowledge_route_id"),
-        _metric_label(context, "document_id"),
+        _bounded_label(_metric_label(context, "knowledge_route_id"), KNOWN_KNOWLEDGE_ROUTE_IDS),
         _metric_label(context, "retrieval_phase"),
         _metric_label(context, "route_arg_validation_status", default="none"),
         _metric_label(context, "used_fallback_scope"),
