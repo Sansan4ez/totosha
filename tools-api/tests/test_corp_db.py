@@ -1,7 +1,9 @@
 """corp_db_search route tests."""
 
+import asyncio
 import unittest
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -828,6 +830,49 @@ class PortfolioSphereResolutionConn:
 
 
 class CorpDbRouteTests(unittest.TestCase):
+    def test_query_embedding_rejects_local_hash_backend_marker(self):
+        from src.routes.corp_db import _get_query_embedding
+
+        response = SimpleNamespace(
+            model="text-embedding-3-large",
+            embedding_backend="local_hash_fallback",
+            data=[SimpleNamespace(embedding=[0.25, 0.75])],
+        )
+        client = SimpleNamespace(embeddings=SimpleNamespace(create=AsyncMock(return_value=response)))
+
+        with patch("src.routes.corp_db._get_client", return_value=client):
+            embedding = asyncio.run(_get_query_embedding("test query"))
+
+        self.assertIsNone(embedding)
+
+    def test_query_embedding_rejects_local_hash_model_marker(self):
+        from src.routes.corp_db import _get_query_embedding
+
+        response = SimpleNamespace(
+            model="local-hash-embedding-1536",
+            data=[SimpleNamespace(embedding=[0.25, 0.75])],
+        )
+        client = SimpleNamespace(embeddings=SimpleNamespace(create=AsyncMock(return_value=response)))
+
+        with patch("src.routes.corp_db._get_client", return_value=client):
+            embedding = asyncio.run(_get_query_embedding("test query"))
+
+        self.assertIsNone(embedding)
+
+    def test_query_embedding_accepts_upstream_embedding(self):
+        from src.routes.corp_db import _get_query_embedding
+
+        response = SimpleNamespace(
+            model="text-embedding-3-large",
+            data=[SimpleNamespace(embedding=[0.25, 0.75])],
+        )
+        client = SimpleNamespace(embeddings=SimpleNamespace(create=AsyncMock(return_value=response)))
+
+        with patch("src.routes.corp_db._get_client", return_value=client):
+            embedding = asyncio.run(_get_query_embedding("test query"))
+
+        self.assertEqual(embedding, [0.25, 0.75])
+
     def test_hybrid_search_route_returns_allowlisted_result(self):
         rows = [
             {

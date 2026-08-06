@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 CORP_DB_RO_SECRET_PATH = "/run/secrets/corp_db_ro_dsn"
 DEFAULT_PROXY_URL = "http://proxy:3200/v1"
+LOCAL_HASH_EMBEDDING_MODEL = "local-hash-embedding-1536"
+LOCAL_HASH_EMBEDDING_BACKEND = "local_hash_fallback"
 LATENCY_BUCKETS_MS = (
     5,
     10,
@@ -1089,6 +1091,16 @@ async def _get_query_embedding(query: str) -> list[float] | None:
             input=query,
             dimensions=1536,
         )
+        response_model = str(response.model or "").strip().lower()
+        embedding_backend = str(getattr(response, "embedding_backend", "") or "").strip().lower()
+        if response_model == LOCAL_HASH_EMBEDDING_MODEL or embedding_backend == LOCAL_HASH_EMBEDDING_BACKEND:
+            logger.warning(
+                "corp-db rejected fallback embedding for query=%r: model=%r backend=%r",
+                query[:120],
+                response.model,
+                embedding_backend,
+            )
+            return None
         return response.data[0].embedding
     except Exception as exc:
         logger.warning("corp-db embeddings unavailable for query=%r: %s", query[:120], exc)
