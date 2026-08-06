@@ -11,6 +11,7 @@ from urllib.parse import unquote, urlparse
 
 
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+# Must match the vector(1536) pgvector columns and embedding API dimensions.
 EMBEDDING_DIMENSIONS = 1536
 
 DEFAULT_SOURCES_DIR = Path(os.getenv("CORP_DB_SOURCES_DIR", "/data/corp_pg_db/sources"))
