@@ -45,15 +45,15 @@
 Кроме того, наши приборы соответствуют основным требованиям директив ЕС и гармонизированным стандартам Европейского Союза, что подтверждено успешным прохождением процедуры оценки соответствия директивам.
 
 Ссылки на добровольные сертификаты М1, МС5, CE, тропические, пожарные:
-1. Сертификат CE LAD LED R500, https://studio.llm-studio.pro/storage/v1/object/public/declarations//sertif-CE-LAD-LED-R500-2027.pdf
-2. Сертификат РОСС LAD LED LINE пожарный, https://studio.llm-studio.pro/storage/v1/object/public/declarations//sertif-ROSS-LAD-LED-LINE-fire-2026.pdf
-3. Сертификат РОСС LAD LED R700 пожарный, https://studio.llm-studio.pro/storage/v1/object/public/declarations//sertif-ROSS-LAD-LED-R700-fire-2026.pdf
-4. Сертификат РОСС NL VEGA пожарный,https://studio.llm-studio.pro/storage/v1/object/public/declarations//sertif-ROSS-NL-VEGA-fire-2026.pdf
+1. Сертификат CE LAD LED R500.
+2. Сертификат РОСС LAD LED LINE пожарный.
+3. Сертификат РОСС LAD LED R700 пожарный.
+4. Сертификат РОСС NL VEGA пожарный.
 
 ### Декларации соответствия
-Декларации соответствия требованиям Техничекского регламента Евразийского экономического союза ТР ЕАЭС 037/2016 и. ссылки на них:
-- Декларация EAC LAD LED R700 037: https://studio.llm-studio.pro/storage/v1/object/public/declarations//declaration-EAC-LAD-LED-R700-037-2028.pdf
-- Декларация EAC NL VEGA 037: https://studio.llm-studio.pro/storage/v1/object/public/declarations//declaration-EAC-NL-VEGA-037-2027.pdf
+Декларации соответствия требованиям Техничекского регламента Евразийского экономического союза ТР ЕАЭС 037/2016:
+- Декларация EAC LAD LED R700 037.
+- Декларация EAC NL VEGA 037.
 
 ### Почему выбирают нас
 Мы не только производим высококачественную продукцию, но и делаем все для того, чтобы с нами было удобно работать:
