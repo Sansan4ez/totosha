@@ -46,6 +46,7 @@ for _name, _stub in (
             REQUEST_ID=ContextVar("request_id", default="-"),
             get_correlation_context=lambda: {},
             inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
+            observe_route_selector_sanitization=lambda *args, **kwargs: None,
             update_correlation_context=lambda *args, **kwargs: {},
         ),
     ),
@@ -366,6 +367,41 @@ class CorpDbToolFormattingTests(unittest.TestCase):
                 "query": "что порекомендуешь для ржд",
                 "limit_lamps": 2,
             },
+        )
+
+    def test_tool_logs_and_observes_unknown_application_arg_drop(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {"status": "success", "kind": "application_recommendation", "results": []}
+        aiohttp_stub = _aiohttp_stub_for_payload(payload)
+
+        with (
+            patch.object(_MODULE, "aiohttp", aiohttp_stub),
+            patch.object(_MODULE, "get_correlation_context", return_value={
+                "selected_route_id": "corp_db.application_recommendation",
+                "selected_business_family_id": "catalog",
+            }),
+            patch.object(_MODULE, "observe_route_selector_sanitization") as observe_mock,
+            self.assertLogs(_MODULE.logger, level="WARNING") as logs,
+        ):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {
+                        "kind": "application_recommendation",
+                        "query": "стадион",
+                        "unknown_selector_arg": "drop me",
+                    },
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        sent = aiohttp_stub._state.last_session.last_post_kwargs["json"]
+        self.assertNotIn("unknown_selector_arg", sent)
+        self.assertIn("unknown_selector_arg", "\n".join(logs.output))
+        observe_mock.assert_called_once_with(
+            "dropped_unknown_tool_arg",
+            selected_route_id="corp_db.application_recommendation",
+            selected_business_family_id="catalog",
         )
 
     def test_tool_preserves_application_key_and_context_profile(self):

@@ -31,7 +31,11 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 
 MAX_COMPACT_ENUM_VALUES = 60
@@ -102,6 +106,36 @@ SANITIZE_DROPPED_ROOT_KEY = "dropped_unknown_root_key"
 SANITIZE_DERIVED_FAMILY = "derived_family_from_route"
 SANITIZE_DROPPED_TOOL_ARG = "dropped_unknown_tool_arg"
 SANITIZE_DROPPED_FALLBACK = "dropped_undeclared_fallback"
+
+
+@lru_cache(maxsize=None)
+def selector_arg_keys_for_kind(kind: str) -> frozenset[str]:
+    """Return selector-visible schema properties for routes using an executor kind.
+
+    Standalone ``core/routes/**/*.schema.json`` files are the machine-executed
+    source of truth. Multiple route cards may share a tools-api kind, so their
+    declared selector properties are combined.
+    """
+    normalized_kind = str(kind or "").strip()
+    if not normalized_kind:
+        return frozenset()
+
+    routes_dir = Path(__file__).resolve().parents[1] / "routes"
+    keys: set[str] = set()
+    for card_path in sorted(routes_dir.glob("*/*.yaml")):
+        payload = yaml.safe_load(card_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            continue
+        executor_args = payload.get("executor_args_template")
+        if not isinstance(executor_args, dict) or str(executor_args.get("kind") or "").strip() != normalized_kind:
+            continue
+        schema_ref = str(payload.get("schema_ref") or "").strip()
+        schema_path = card_path.parent / schema_ref if schema_ref else card_path.with_suffix(".schema.json")
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        if isinstance(properties, dict):
+            keys.update(str(key) for key in properties)
+    return frozenset(keys)
 
 
 class RouteCardContractError(ValueError):

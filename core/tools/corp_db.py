@@ -11,13 +11,16 @@ import aiohttp
 import json
 import logging
 import os
+from functools import lru_cache
 from time import perf_counter
 
+from documents.route_schema import SANITIZE_DROPPED_TOOL_ARG, selector_arg_keys_for_kind
 from models import ToolResult, ToolContext
 from observability import (
     REQUEST_ID as OBS_REQUEST_ID,
     get_correlation_context,
     inject_trace_context,
+    observe_route_selector_sanitization,
     update_correlation_context,
 )
 from opentelemetry import trace
@@ -46,18 +49,13 @@ APPLICATION_LIMIT_KEYS = (
     "limit_lamps",
     "limit_portfolio",
 )
-KIND_SPECIFIC_ARG_ALLOWLISTS = {
-    "application_recommendation": {
-        "kind",
-        "query",
-        "application_key",
-        "context_profile",
-        "include_debug",
-        "limit",
-        "offset",
-        *APPLICATION_LIMIT_KEYS,
-    },
-}
+TRANSPORT_ARG_KEYS = frozenset({"kind", "include_debug", "limit", "offset"})
+KIND_SPECIFIC_ARG_KINDS = frozenset({"application_recommendation"})
+
+
+@lru_cache(maxsize=None)
+def _allowed_args_for_kind(kind: str) -> frozenset[str]:
+    return frozenset(TRANSPORT_ARG_KEYS | selector_arg_keys_for_kind(kind))
 
 
 def _timeout_budget_seconds() -> dict[str, float]:
@@ -111,7 +109,16 @@ def _sanitize_corp_db_args(args: dict | None) -> dict:
         for key in APPLICATION_LIMIT_KEYS:
             sanitized.pop(key, None)
     else:
-        allowed = KIND_SPECIFIC_ARG_ALLOWLISTS["application_recommendation"]
+        allowed = _allowed_args_for_kind(kind)
+        dropped = sorted(set(sanitized) - allowed)
+        if dropped:
+            logger.warning("corp_db_search dropped unknown args kind=%s keys=%s", kind, dropped)
+            correlation_context = get_correlation_context()
+            observe_route_selector_sanitization(
+                SANITIZE_DROPPED_TOOL_ARG,
+                selected_route_id=str(correlation_context.get("selected_route_id") or ""),
+                selected_business_family_id=str(correlation_context.get("selected_business_family_id") or ""),
+            )
         sanitized = {key: value for key, value in sanitized.items() if key in allowed}
         for key in ("limit_categories", "limit_lamps"):
             value = sanitized.get(key)
