@@ -8,6 +8,7 @@ import os
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
+from functools import lru_cache
 from time import perf_counter
 from typing import Any, Iterator, MutableMapping
 
@@ -60,14 +61,6 @@ LATENCY_BUCKETS_MS = (
     30000,
     45000,
     60000,
-)
-# Closed set of knowledge source IDs declared by the corp_kb route catalog.
-KNOWN_KNOWLEDGE_ROUTE_IDS = frozenset(
-    {
-        "corp_kb.company_common",
-        "corp_kb.lighting_norms",
-        "corp_kb.luxnet",
-    }
 )
 CORRELATION_FIELDS = (
     "request_source",
@@ -559,6 +552,21 @@ def _bounded_label(value: str, allowed: frozenset[str], default: str = "other") 
     return value if value in allowed else default
 
 
+@lru_cache(maxsize=1)
+def _known_knowledge_route_ids() -> frozenset[str]:
+    """Return the catalog-bounded domain for knowledge-route metric labels."""
+    # Keep this import lazy: documents.routing imports modules that may initialize
+    # observability while the service dependency graph is being loaded.
+    from documents.routing import load_routing_index
+
+    return frozenset(
+        route_id
+        for route in load_routing_index().get("routes", ())
+        if isinstance(route, dict)
+        if (route_id := str(route.get("route_id") or "").strip()).startswith("corp_kb.")
+    )
+
+
 def observe_request_correlation(duration_ms: float, status: str) -> None:
     context = get_correlation_context()
     if (
@@ -578,7 +586,7 @@ def observe_request_correlation(duration_ms: float, status: str) -> None:
         _metric_label(context, "route_stage"),
         _metric_label(context, "selected_route_kind"),
         _metric_label(context, "selected_source", default="unknown"),
-        _bounded_label(_metric_label(context, "knowledge_route_id"), KNOWN_KNOWLEDGE_ROUTE_IDS),
+        _bounded_label(_metric_label(context, "knowledge_route_id"), _known_knowledge_route_ids()),
         _metric_label(context, "retrieval_phase"),
         _metric_label(context, "retrieval_evidence_status"),
         _metric_label(context, "route_arg_validation_status", default="none"),
@@ -694,7 +702,7 @@ def observe_request_correlation(duration_ms: float, status: str) -> None:
             _metric_label(context, "route_stage"),
             _metric_label(context, "selected_route_kind"),
             _metric_label(context, "selected_source", default="unknown"),
-            _bounded_label(_metric_label(context, "knowledge_route_id"), KNOWN_KNOWLEDGE_ROUTE_IDS),
+            _bounded_label(_metric_label(context, "knowledge_route_id"), _known_knowledge_route_ids()),
             _metric_label(context, "guardrail_blocked_tool"),
         ).inc(guardrail_hits)
 
@@ -729,7 +737,7 @@ def observe_tool_execution(tool_name: str, tool_status: str, duration_ms: float)
         _metric_label(context, "route_stage"),
         _metric_label(context, "selected_route_kind"),
         _metric_label(context, "selected_source", default="unknown"),
-        _bounded_label(_metric_label(context, "knowledge_route_id"), KNOWN_KNOWLEDGE_ROUTE_IDS),
+        _bounded_label(_metric_label(context, "knowledge_route_id"), _known_knowledge_route_ids()),
         _metric_label(context, "retrieval_phase"),
         _metric_label(context, "route_arg_validation_status", default="none"),
         _metric_label(context, "used_fallback_scope"),

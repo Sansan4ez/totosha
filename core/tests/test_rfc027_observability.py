@@ -1,9 +1,12 @@
 import importlib.util
 import logging
+import os
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 _MODULE_PATH = Path(__file__).resolve().parents[1] / "observability.py"
 _SPEC = importlib.util.spec_from_file_location("core_observability_test_module", _MODULE_PATH)
@@ -132,23 +135,82 @@ class Rfc027ObservabilityTests(unittest.TestCase):
         ):
             self.assertIn(key, context)
 
-    def test_bounded_label_preserves_known_value(self):
+    def _catalog_knowledge_route_ids(self):
+        core_dir = Path(__file__).resolve().parents[1]
+        if str(core_dir) not in sys.path:
+            sys.path.insert(0, str(core_dir))
+        from documents.routing import load_routing_index
+
+        with tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(core_dir.parent), "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                return frozenset(
+                    str(route.get("route_id") or "")
+                    for route in load_routing_index().get("routes", ())
+                    if str(route.get("route_id") or "").startswith("corp_kb.")
+                )
+
+    def test_known_knowledge_route_ids_match_catalog(self):
+        observability._known_knowledge_route_ids.cache_clear()
+        with tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": str(Path(__file__).resolve().parents[2]), "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                self.assertEqual(observability._known_knowledge_route_ids(), self._catalog_knowledge_route_ids())
+
+    def test_bounded_label_preserves_series_description_from_catalog(self):
+        allowed = self._catalog_knowledge_route_ids()
+        self.assertIn("corp_kb.series_description", allowed)
         self.assertEqual(
-            observability._bounded_label(
-                "corp_kb.company_common",
-                observability.KNOWN_KNOWLEDGE_ROUTE_IDS,
-            ),
-            "corp_kb.company_common",
+            observability._bounded_label("corp_kb.series_description", allowed),
+            "corp_kb.series_description",
         )
 
     def test_bounded_label_collapses_unknown_value(self):
         self.assertEqual(
             observability._bounded_label(
                 "corp_kb.user_supplied_route",
-                observability.KNOWN_KNOWLEDGE_ROUTE_IDS,
+                self._catalog_knowledge_route_ids(),
             ),
             "other",
         )
+
+    def test_series_description_is_preserved_in_retrieval_metrics(self):
+        metrics = (
+            observability.RETRIEVAL_ROUTE_REQUESTS_TOTAL,
+            observability.RETRIEVAL_ROUTE_DURATION_MS,
+            observability.RETRIEVAL_GUARDRAIL_BLOCKS_TOTAL,
+            observability.TOOL_EXECUTIONS_TOTAL,
+            observability.TOOL_EXECUTION_DURATION_MS,
+        )
+        for metric in metrics:
+            metric.label_calls.clear()
+        observability.update_correlation_context(
+            selected_route_id="corp_kb.series_description",
+            selected_source="corp_db",
+            knowledge_route_id="corp_kb.series_description",
+            routing_guardrail_hits="1",
+            guardrail_blocked_tool="doc_search",
+        )
+        with patch.object(
+            observability,
+            "_known_knowledge_route_ids",
+            return_value=self._catalog_knowledge_route_ids(),
+        ):
+            observability.observe_request_correlation(12.5, "ok")
+            observability.observe_tool_execution("corp_db_search", "ok", 8.0)
+
+        for metric in metrics:
+            labels = metric.label_calls[-1]
+            self.assertEqual(
+                labels[metric.labelnames.index("knowledge_route_id")],
+                "corp_kb.series_description",
+            )
 
     def test_high_cardinality_document_id_is_not_a_metric_label(self):
         metrics = (
