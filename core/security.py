@@ -1,7 +1,8 @@
 """Security: blocked patterns and output sanitization"""
 
-import re
 import json
+import os
+import re
 from pathlib import Path
 from logger import security_logger
 
@@ -88,15 +89,37 @@ def sanitize_output(output: str) -> str:
 
 
 # Sensitive files that should never be read
-SENSITIVE_FILES = {
-    ".env", ".env.local", ".env.production", ".env.development",
-    "credentials.json", "secrets.json", ".secrets",
-    "id_rsa", "id_ed25519", ".pem", ".key",
+SENSITIVE_BASENAMES = {
+    "credentials.json",
+    "secrets.json",
+    ".secrets",
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    ".npmrc",
+    ".netrc",
+    ".pgpass",
 }
+SENSITIVE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".jks", ".keystore")
+SENSITIVE_PARTS = {".ssh", ".gnupg"}
+SENSITIVE_PART_SEQUENCES = {("run", "secrets")}
 
 
 def is_sensitive_file(path: str) -> bool:
-    """Check if file is sensitive"""
-    import os
-    basename = os.path.basename(path).lower()
-    return basename in SENSITIVE_FILES or ".ssh" in path or "/run/secrets" in path
+    """Check the resolved path for sensitive names, suffixes, or directories."""
+    resolved = Path(os.path.realpath(path))
+    basename = resolved.name.lower()
+
+    if basename in SENSITIVE_BASENAMES or basename.endswith(SENSITIVE_SUFFIXES):
+        return True
+    if basename == ".env" or basename.startswith(".env."):
+        return True
+
+    parts = tuple(part.lower() for part in resolved.parts)
+    if SENSITIVE_PARTS.intersection(parts):
+        return True
+    return any(
+        parts[index:index + len(sequence)] == sequence
+        for sequence in SENSITIVE_PART_SEQUENCES
+        for index in range(len(parts) - len(sequence) + 1)
+    )
