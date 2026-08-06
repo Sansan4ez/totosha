@@ -414,6 +414,7 @@ services:
       - google-workspace-creds:/data/google_creds  # Share Google credentials with MCP
     networks:
       - agent-net
+      - admin-net
     cap_drop:
       - ALL
     cap_add:
@@ -552,7 +553,7 @@ services:
       core:
         condition: service_healthy
     networks:
-      - agent-net
+      - admin-net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
       interval: 30s
@@ -674,6 +675,10 @@ networks:
   agent-net:
     driver: bridge
     internal: false
+
+  # Isolates the admin panel from user sandboxes on agent-net.
+  admin-net:
+    driver: bridge
 
   # Dedicated network for CLIProxyAPI (only proxy + cli-proxy-api should join)
   cliproxy-net:
