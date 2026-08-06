@@ -13,9 +13,9 @@ def _repo_root() -> Path:
 class RetrievalRoutingPromptTests(unittest.TestCase):
     def test_system_prompt_documents_retry_policy(self):
         prompt = (_repo_root() / "core" / "src" / "agent" / "system.txt").read_text(encoding="utf-8")
-        self.assertIn("Используй route cards / route selector как первый выбор retrieval path", prompt)
-        self.assertIn("Если выбранный route вернул sufficient evidence", prompt)
-        self.assertIn("bounded route-aware fallback", prompt)
+        self.assertIn("route selector автоматически до твоего хода", prompt)
+        self.assertIn("блока «Routing shortlist» (primary/secondary)", prompt)
+        self.assertIn("Bounded fallback'и при `empty`/`error`/weak payload выполняет runtime", prompt)
         self.assertIn("`corp_db_search` — основной structured source", prompt)
         self.assertIn("портфолио", prompt)
         self.assertIn("`doc_search` - используется для поиска по тематике", prompt)
