@@ -304,6 +304,8 @@ Skills are mentioned in system prompt, full instructions loaded by agent via `re
 | `model_name` | `secrets/model_name.txt` | core, bot |
 | `zai_api_key` | `secrets/zai_api_key.txt` | proxy |
 | `admin_password` | `secrets/admin_password.txt` | admin |
+| `admin_api_token` | `secrets/admin_api_token.txt` | core, bot, userbot, admin |
+| `grafana_admin_password` | `secrets/grafana_admin_password.txt` | grafana |
 
 ### Environment Variables
 

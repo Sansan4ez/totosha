@@ -391,6 +391,8 @@ Runtime contract for `totosha`:
 - `api_key.txt`
 - `model_name.txt`
 - `admin_password.txt`
+- `admin_api_token.txt`
+- `grafana_admin_password.txt`
 - `postgres_password.txt`
 - `corp_db_rw_dsn.txt`
 - `corp_db_ro_dsn.txt`
@@ -511,6 +513,7 @@ NixOS отвечает за:
 
 - `ACCESS_MODE=admin` или эквивалентный `admin_only` baseline.
 - `admin_password` не может оставаться дефолтным.
+- `admin_password`, `admin_api_token` и `grafana_admin_password` — три разные доверительные границы; переиспользование значения между ними запрещено.
 - `userbot`, `docker-mcp`, `mcp-test`, `google-workspace-mcp` не стартуют в baseline profile.
 - `docker.sock` остаётся доступен только тем контейнерам, которым он действительно нужен (`core`; в v1 можно оставить и `docker-mcp` выключенным).
 

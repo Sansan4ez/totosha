@@ -22,8 +22,8 @@ class AdminAuthTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "ADMIN_TOKEN_FILE": str(token_path),
-                    "ADMIN_PASSWORD_FILE": str(password_path),
+                    "ADMIN_API_TOKEN_FILE": str(token_path),
+                    "ADMIN_TOKEN_FILE": str(password_path),
                 },
                 clear=False,
             ):
@@ -33,12 +33,24 @@ class AdminAuthTests(unittest.TestCase):
     def test_falls_back_to_repo_secret(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            secret_path = root / "secrets" / "admin_password.txt"
+            secret_path = root / "secrets" / "admin_api_token.txt"
             secret_path.parent.mkdir()
             secret_path.write_text("repo-token\n", encoding="utf-8")
 
             with patch.dict(os.environ, {}, clear=True):
                 self.assertEqual(load_admin_token(repo_root=root), "repo-token")
+
+    def test_ignores_panel_basic_auth_password(self):
+        """The panel password guards a different boundary and must not be reused."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            panel_password = root / "secrets" / "admin_password.txt"
+            panel_password.parent.mkdir()
+            panel_password.write_text("panel-basic-auth-password\n", encoding="utf-8")
+
+            with patch.dict(os.environ, {}, clear=True):
+                with self.assertRaises(AdminTokenNotFound):
+                    load_admin_token(repo_root=root)
 
     def test_missing_token_has_actionable_error(self):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {}, clear=True), patch(

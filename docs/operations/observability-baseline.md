@@ -61,7 +61,7 @@ Notes
 -----
 
 - The observability overlay and Victoria stack bind all host ports to `127.0.0.1` only, so smoke and local triage work without widening public exposure. Remote operators must use an SSH tunnel.
-- Grafana reads its admin password from `secrets/admin_password.txt`; no default Grafana password is embedded in compose.
+- Grafana reads its admin password from `secrets/grafana_admin_password.txt`; no default Grafana password is embedded in compose, and the value is not shared with the admin panel or the core admin API.
 - VictoriaLogs is configured with a 7-day retention window.
 - Start the Victoria stack before the app stack so `otel-collector` is present on `agent-net`.
 - The default supported app startup path is `docker compose up -d --build`, because the base compose now carries the required `OTEL_*` wiring for the main request path.

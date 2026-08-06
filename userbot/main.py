@@ -66,7 +66,7 @@ CONFIG_CACHE_TTL = 30  # seconds
 
 def _admin_headers() -> dict[str, str]:
     """Authenticate internal reads of the protected admin API."""
-    path = os.getenv("ADMIN_PASSWORD_FILE", "/run/secrets/admin_password")
+    path = os.getenv("ADMIN_API_TOKEN_FILE", "/run/secrets/admin_api_token")
     try:
         with open(path) as secret_file:
             token = secret_file.read().strip()

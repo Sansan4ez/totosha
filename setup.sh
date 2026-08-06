@@ -6,6 +6,13 @@ set -e
 
 echo "🔧 Setting up LocalTopSH..."
 
+# Machine-generated secrets below need a CSPRNG. Fail early with a clear message
+# rather than letting `set -e` abort on a missing binary.
+if ! command -v openssl >/dev/null 2>&1; then
+  echo "❌ openssl is required to generate service secrets. Install it and re-run." >&2
+  exit 1
+fi
+
 # Create directories
 mkdir -p secrets workspace workspace/_shared
 
@@ -60,10 +67,24 @@ if [ ! -f secrets/telegram_phone.txt ]; then
   echo "📝 Created empty secrets/telegram_phone.txt (Userbot optional)"
 fi
 
-# Admin panel password
+# Admin panel basic-auth password (a human types this one)
 if [ ! -f secrets/admin_password.txt ]; then
   echo "changeme123" > secrets/admin_password.txt
   echo "⚠️  Created secrets/admin_password.txt with default password - CHANGE IT!"
+fi
+
+# Service token for the core admin API. Separate from the panel password so that
+# compromising one boundary does not hand over the others; machine-generated, so
+# there is no weak-password question.
+if [ ! -f secrets/admin_api_token.txt ]; then
+  openssl rand -hex 32 > secrets/admin_api_token.txt
+  echo "🔑 Generated secrets/admin_api_token.txt (core admin API service token)"
+fi
+
+# Grafana admin password - its own boundary, rotated without touching the services
+if [ ! -f secrets/grafana_admin_password.txt ]; then
+  openssl rand -base64 24 > secrets/grafana_admin_password.txt
+  echo "🔑 Generated secrets/grafana_admin_password.txt (Grafana admin login)"
 fi
 
 # Model name (optional - defaults to gpt-4.1-mini in core)
@@ -84,6 +105,6 @@ echo ""
 echo "Next steps:"
 echo "1. Edit secrets/telegram_token.txt with your bot token"
 echo "2. Edit secrets/api_key.txt with your LLM API key"
-echo "3. Change secrets/admin_password.txt from default 'changeme123'"
+echo "3. Change secrets/admin_password.txt from default 'changeme123' (admin panel login)"
 echo "4. (Optional) Add Google Drive credentials for Drive integration"
 echo "5. Run: docker compose up -d"

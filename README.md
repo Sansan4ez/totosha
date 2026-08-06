@@ -96,7 +96,13 @@ echo "your-telegram-token" > secrets/telegram_token.txt
 echo "http://your-llm-server:8000/v1" > secrets/base_url.txt
 echo "dummy" > secrets/api_key.txt
 echo "changeme123" > secrets/admin_password.txt
-chmod 600 secrets/*.txt
+openssl rand -hex 32 > secrets/admin_api_token.txt
+openssl rand -base64 24 > secrets/grafana_admin_password.txt
+
+# The secrets/ directory itself is the boundary (700). Files stay 644 because
+# Docker bind-mounts them preserving owner and mode, and containers running as
+# a non-root user (e.g. Grafana, uid 472) cannot read a 600 file you own.
+chmod 700 secrets && chmod 644 secrets/*.txt
 ```
 
 ### 3. Deploy
@@ -118,6 +124,10 @@ docker compose logs -f
 - **API**: http://localhost:4000/api
 
 ### 5. Configure Admin Panel Auth (Important!)
+
+These three secrets guard three separate trust boundaries and must never hold the
+same value: `admin_password.txt` (panel basic auth), `admin_api_token.txt` (core
+admin API), `grafana_admin_password.txt` (Grafana). Each rotates on its own.
 
 ```bash
 # Change default admin password (REQUIRED for production!)
@@ -259,7 +269,9 @@ System prompt source of truth is `core/src/agent/system.txt` in the repo. Change
 | `api_key.txt` | ✅ | LLM API key (use `dummy` if not required) |
 | `model_name.txt` | ✅ | Model name (e.g. `gpt-oss-120b`) |
 | `zai_api_key.txt` | ✅ | Z.AI search key |
-| `admin_password.txt` | ✅ | Admin panel password (default: `changeme123`) |
+| `admin_password.txt` | ✅ | Admin panel basic-auth password (default: `changeme123`) |
+| `admin_api_token.txt` | ✅ | Service token for the core admin API (`openssl rand -hex 32`) |
+| `grafana_admin_password.txt` | ✅ | Grafana admin login (`openssl rand -base64 24`) |
 
 ### Environment Examples
 
@@ -303,6 +315,11 @@ Password: (from secrets/admin_password.txt, default: changeme123)
 # Change password
 echo "your-secure-password" > secrets/admin_password.txt
 docker compose up -d --build admin
+
+# Rotate the core admin API token (independent of the panel password).
+# core reads it too, so restart both.
+openssl rand -hex 32 > secrets/admin_api_token.txt
+docker compose up -d --force-recreate core bot admin
 
 # Change username (optional)
 # In docker-compose.yml, set environment variable:

@@ -404,7 +404,7 @@ services:
       - AGENT_WEB_SESSION_TTL_S=${AGENT_WEB_SESSION_TTL_S:-900}
     secrets:
       - model_name
-      - admin_password
+      - admin_api_token
     volumes:
       - ./workspace:/workspace
       - ./workspace/_shared:/data  # Skills, shared data, and admin config
@@ -458,7 +458,7 @@ services:
       - CORE_URL=http://core:4000
       - PROXY_URL=http://proxy:3200
       - BOT_PORT=4001
-      - ADMIN_PASSWORD_FILE=/run/secrets/admin_password
+      - ADMIN_API_TOKEN_FILE=/run/secrets/admin_api_token
       - MAX_CONCURRENT_USERS=10
       - ADMIN_USER_ID=${ADMIN_USER_ID:-809532582}
       # Access Control (admin, allowlist, public, pairing)
@@ -479,7 +479,7 @@ services:
     secrets:
       - telegram_token
       - model_name
-      - admin_password
+      - admin_api_token
     volumes:
       - ./workspace/_shared:/data  # For pairing.json storage
     networks:
@@ -512,7 +512,7 @@ services:
     environment:
       - TZ=${TZ:-Europe/Moscow}
       - CORE_URL=http://core:4000
-      - ADMIN_PASSWORD_FILE=/run/secrets/admin_password
+      - ADMIN_API_TOKEN_FILE=/run/secrets/admin_api_token
       - RESPONSE_CHANCE_DM=1.0
       - RESPONSE_CHANCE_GROUP=0.1
       - RESPONSE_CHANCE_MENTION=1.0
@@ -524,7 +524,7 @@ services:
       - telegram_api_id
       - telegram_api_hash
       - telegram_phone
-      - admin_password
+      - admin_api_token
     volumes:
       - ./userbot/session:/app/session
     networks:
@@ -547,8 +547,11 @@ services:
       - TZ=${TZ:-Europe/Moscow}
       - ADMIN_USER=${ADMIN_USER:-admin}
       - ADMIN_PASSWORD_FILE=/run/secrets/admin_password
+      - ADMIN_API_TOKEN_FILE=/run/secrets/admin_api_token
     secrets:
+      # Two distinct boundaries: basic auth for the human, service token for core.
       - admin_password
+      - admin_api_token
     depends_on:
       core:
         condition: service_healthy
@@ -658,6 +661,8 @@ secrets:
     file: ./secrets/embeddings_api_key.txt
   admin_password:
     file: ./secrets/admin_password.txt
+  admin_api_token:
+    file: ./secrets/admin_api_token.txt
   postgres_password:
     file: ./secrets/postgres_password.txt
   corp_db_rw_dsn:

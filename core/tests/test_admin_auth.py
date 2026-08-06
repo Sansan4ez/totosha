@@ -10,11 +10,11 @@ TEST_TOKEN = "test-admin-token"
 
 
 def _client(monkeypatch, tmp_path, token=TEST_TOKEN) -> TestClient:
-    secret_path = tmp_path / "admin_password"
+    secret_path = tmp_path / "admin_api_token"
     if token is not None:
         secret_path.write_text(token)
 
-    monkeypatch.setenv("ADMIN_PASSWORD_FILE", str(secret_path))
+    monkeypatch.setenv("ADMIN_API_TOKEN_FILE", str(secret_path))
     admin_api._admin_token.cache_clear()
 
     app = FastAPI()
@@ -58,6 +58,21 @@ def test_admin_auth_fails_closed_without_secret(monkeypatch, tmp_path):
 
     assert response.status_code == 503
     assert response.json() == {"detail": "admin auth not configured"}
+
+
+def test_panel_password_is_not_accepted_as_api_token(monkeypatch, tmp_path):
+    """The panel's basic-auth secret must not authenticate the service API."""
+    panel_password = tmp_path / "admin_password"
+    panel_password.write_text("panel-basic-auth-password")
+    monkeypatch.setenv("ADMIN_PASSWORD_FILE", str(panel_password))
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.get(
+            "/api/admin/config",
+            headers={"X-Admin-Token": "panel-basic-auth-password"},
+        )
+
+    assert response.status_code == 401
 
 
 def test_all_admin_routes_have_router_level_auth():

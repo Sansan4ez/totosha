@@ -53,7 +53,12 @@ cd topsha
 - `secrets/base_url.txt`
 - `secrets/api_key.txt`
 - `secrets/model_name.txt`
-- `secrets/admin_password.txt` (сменить дефолт)
+- `secrets/admin_password.txt` (сменить дефолт) — basic auth админ-панели
+- `secrets/admin_api_token.txt` — сервисный токен core admin API, `openssl rand -hex 32`
+- `secrets/grafana_admin_password.txt` — пароль администратора Grafana, `openssl rand -base64 24`
+
+Три разные доверительные границы: значения не должны совпадать. `setup.sh`
+генерирует два последних автоматически.
 
 Рекомендуемо/опционально:
 

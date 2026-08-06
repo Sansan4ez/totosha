@@ -34,8 +34,12 @@ def _read_model_name() -> str:
 
 @lru_cache(maxsize=1)
 def _admin_token() -> str:
-    """Read the service-level admin token from its Docker secret."""
-    path = os.getenv("ADMIN_PASSWORD_FILE", "/run/secrets/admin_password")
+    """Read the service-level admin token from its Docker secret.
+
+    Deliberately separate from the panel's basic-auth password: this value
+    authenticates machine callers and is rotated independently.
+    """
+    path = os.getenv("ADMIN_API_TOKEN_FILE", "/run/secrets/admin_api_token")
     try:
         with open(path) as secret_file:
             return secret_file.read().strip()

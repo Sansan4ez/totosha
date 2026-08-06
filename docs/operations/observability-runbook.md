@@ -9,7 +9,7 @@ This is the operational entrypoint for observability triage and smoke execution.
 Startup
 -------
 
-1. Start the observability stack. Ensure `secrets/admin_password.txt` contains a strong Grafana password; Grafana reads this existing Docker secret instead of using a default credential.
+1. Start the observability stack. Grafana reads its admin password from `secrets/grafana_admin_password.txt` (created by `setup.sh`) instead of using a default credential. This secret is Grafana's alone — it is deliberately not shared with the admin panel or the core admin API, so it rotates without restarting any application service.
 
 ```bash
 docker compose -f victoriametrics/docker-compose.yml up -d

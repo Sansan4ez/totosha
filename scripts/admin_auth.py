@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ADMIN_TOKEN_SECRET = "admin_password"
+DEFAULT_ADMIN_TOKEN_SECRET = "admin_api_token"
 
 
 class AdminTokenNotFound(RuntimeError):
@@ -17,8 +17,8 @@ class AdminTokenNotFound(RuntimeError):
 def load_admin_token(*, repo_root: Path = REPO_ROOT) -> str:
     """Read the admin API token from configured, container, or repo secret paths."""
     configured_paths = (
+        os.getenv("ADMIN_API_TOKEN_FILE"),
         os.getenv("ADMIN_TOKEN_FILE"),
-        os.getenv("ADMIN_PASSWORD_FILE"),
     )
     fallback_paths = (
         f"/run/secrets/{DEFAULT_ADMIN_TOKEN_SECRET}",
@@ -41,8 +41,9 @@ def load_admin_token(*, repo_root: Path = REPO_ROOT) -> str:
             return token
 
     raise AdminTokenNotFound(
-        "admin token not found; set ADMIN_TOKEN_FILE or ADMIN_PASSWORD_FILE, "
-        f"or create secrets/{DEFAULT_ADMIN_TOKEN_SECRET}.txt"
+        "admin token not found; set ADMIN_API_TOKEN_FILE or ADMIN_TOKEN_FILE, "
+        f"or create secrets/{DEFAULT_ADMIN_TOKEN_SECRET}.txt "
+        "(openssl rand -hex 32)"
     )
 
 

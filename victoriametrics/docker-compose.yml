@@ -119,7 +119,7 @@ services:
 
 secrets:
   grafana_admin_password:
-    file: ../secrets/admin_password.txt
+    file: ../secrets/grafana_admin_password.txt
 
 volumes:
   vmdata: {}
