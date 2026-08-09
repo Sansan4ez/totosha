@@ -163,6 +163,15 @@ class Rfc027ObservabilityTests(unittest.TestCase):
             ):
                 self.assertEqual(observability._known_knowledge_route_ids(), self._catalog_knowledge_route_ids())
 
+    def test_bounded_label_preserves_empty_sentinel(self):
+        self.assertEqual(
+            observability._bounded_label(
+                observability._metric_label({}, "knowledge_route_id"),
+                self._catalog_knowledge_route_ids(),
+            ),
+            "none",
+        )
+
     def test_bounded_label_preserves_series_description_from_catalog(self):
         allowed = self._catalog_knowledge_route_ids()
         self.assertIn("corp_kb.series_description", allowed)

@@ -44,6 +44,7 @@ SERVICE_NAMESPACE = os.getenv("OTEL_SERVICE_NAMESPACE", "totosha")
 DEPLOYMENT_ENVIRONMENT = os.getenv("OTEL_DEPLOYMENT_ENVIRONMENT", "local")
 OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").rstrip("/")
 INITIALIZED = False
+NO_LABEL_VALUE = "none"
 LATENCY_BUCKETS_MS = (
     5,
     10,
@@ -541,7 +542,7 @@ def record_span_event(name: str, **fields: Any) -> None:
         return None
 
 
-def _metric_label(context: dict[str, str], key: str, *, default: str = "none") -> str:
+def _metric_label(context: dict[str, str], key: str, *, default: str = NO_LABEL_VALUE) -> str:
     value = context.get(key, "").strip()
     if value in {"", "-"}:
         return default
@@ -549,7 +550,14 @@ def _metric_label(context: dict[str, str], key: str, *, default: str = "none") -
 
 
 def _bounded_label(value: str, allowed: frozenset[str], default: str = "other") -> str:
-    return value if value in allowed else default
+    """Collapse unknown values into ``default``, keeping the empty sentinel distinct.
+
+    ``none`` means the label did not apply to this request, while ``other`` means
+    the catalog does not know the supplied value.
+    """
+    if value == NO_LABEL_VALUE or value in allowed:
+        return value
+    return default
 
 
 @lru_cache(maxsize=1)
