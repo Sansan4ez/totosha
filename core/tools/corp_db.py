@@ -105,7 +105,7 @@ def _sanitize_corp_db_args(args: dict | None) -> dict:
     if knowledge_route_id and not knowledge_route_id.startswith(KB_KNOWLEDGE_ROUTE_PREFIX):
         sanitized.pop("knowledge_route_id", None)
     kind = str(sanitized.get("kind") or "").strip()
-    if kind != "application_recommendation":
+    if kind not in KIND_SPECIFIC_ARG_KINDS:
         for key in APPLICATION_LIMIT_KEYS:
             sanitized.pop(key, None)
     else:
