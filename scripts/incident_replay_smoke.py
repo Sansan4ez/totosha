@@ -16,10 +16,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
 from admin_auth import AdminTokenNotFound, admin_headers
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = REPO_ROOT / "bench" / "golden" / "incident-pfit7.jsonl"
 DEFAULT_CORE_URL = "http://127.0.0.1:4000"
 DEFAULT_TOOLS_API_URL = "http://127.0.0.1:8100"

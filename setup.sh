@@ -6,13 +6,6 @@ set -e
 
 echo "🔧 Setting up LocalTopSH..."
 
-# Machine-generated secrets below need a CSPRNG. Fail early with a clear message
-# rather than letting `set -e` abort on a missing binary.
-if ! command -v openssl >/dev/null 2>&1; then
-  echo "❌ openssl is required to generate service secrets. Install it and re-run." >&2
-  exit 1
-fi
-
 # Create directories
 mkdir -p secrets workspace workspace/_shared
 
@@ -71,6 +64,14 @@ fi
 if [ ! -f secrets/admin_password.txt ]; then
   echo "changeme123" > secrets/admin_password.txt
   echo "⚠️  Created secrets/admin_password.txt with default password - CHANGE IT!"
+fi
+
+# Machine-generated secrets below need a CSPRNG. Check only when generation is
+# required so idempotent setup runs can still repair directories and permissions.
+if { [ ! -f secrets/admin_api_token.txt ] || [ ! -f secrets/grafana_admin_password.txt ]; } && \
+   ! command -v openssl >/dev/null 2>&1; then
+  echo "❌ openssl is required to generate service secrets. Install it and re-run." >&2
+  exit 1
 fi
 
 # Service token for the core admin API. Separate from the panel password so that
