@@ -18,7 +18,9 @@ import shutil
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Iterator, Optional
+
+import yaml
 
 # Colors
 RED = "\033[91m"
@@ -27,6 +29,59 @@ YELLOW = "\033[93m"
 BLUE = "\033[94m"
 RESET = "\033[0m"
 BOLD = "\033[1m"
+
+COMPOSE_FILES = ("docker-compose.yml", "victoriametrics/docker-compose.yml")
+# Caddy is the public entrypoint by design; everything else must stay on loopback.
+PUBLIC_BY_DESIGN = {("caddy", 80), ("caddy", 443)}
+
+
+def _compose_services(compose_path: Path) -> dict:
+    payload = yaml.safe_load(compose_path.read_text(encoding="utf-8")) or {}
+    services = payload.get("services", {})
+    return services if isinstance(services, dict) else {}
+
+
+def iter_published_ports(compose_path: Path) -> Iterator[tuple[str, str]]:
+    """Yield (service, raw port spec) for every published port."""
+    for service, config in _compose_services(compose_path).items():
+        if not isinstance(config, dict):
+            continue
+        ports = config.get("ports", [])
+        if not isinstance(ports, list):
+            continue
+        for port in ports:
+            if isinstance(port, dict):
+                published = port.get("published")
+                target = port.get("target")
+                if published is None or target is None:
+                    continue
+                host_ip = port.get("host_ip")
+                raw_spec = f"{host_ip}:{published}:{target}" if host_ip else f"{published}:{target}"
+            else:
+                raw_spec = str(port)
+            yield str(service), raw_spec
+
+
+def service_networks(compose_path: Path) -> dict[str, list[str]]:
+    """Return declared networks per service."""
+    result: dict[str, list[str]] = {}
+    for service, config in _compose_services(compose_path).items():
+        networks = config.get("networks", []) if isinstance(config, dict) else []
+        if isinstance(networks, dict):
+            result[str(service)] = [str(network) for network in networks]
+        elif isinstance(networks, list):
+            result[str(service)] = [str(network) for network in networks]
+        else:
+            result[str(service)] = []
+    return result
+
+
+def _target_port(raw_spec: str) -> Optional[int]:
+    target = raw_spec.rsplit(":", 1)[-1].split("/", 1)[0]
+    try:
+        return int(target)
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -140,12 +195,20 @@ Checking 5 layers of protection:
         """Check docker-compose.yml security"""
         print(f"\n{BLUE}[2/8] Checking docker-compose.yml...{RESET}")
         
-        compose_file = self.root / "docker-compose.yml"
-        if not compose_file.exists():
-            self.check("docker_compose", False, "docker-compose.yml not found", "critical")
+        compose_paths = [self.root / relative_path for relative_path in COMPOSE_FILES]
+        missing_paths = [path.relative_to(self.root) for path in compose_paths if not path.exists()]
+        if missing_paths:
+            self.check(
+                "docker_compose",
+                False,
+                f"Compose files not found: {', '.join(map(str, missing_paths))}",
+                "critical",
+            )
+        existing_paths = [path for path in compose_paths if path.exists()]
+        if not existing_paths:
             return
-        
-        content = compose_file.read_text()
+
+        content = "\n".join(path.read_text(encoding="utf-8") for path in existing_paths)
         
         # Check no-new-privileges
         has_no_new_priv = "no-new-privileges" in content
@@ -259,36 +322,84 @@ Checking 5 layers of protection:
         """Check network exposure"""
         print(f"\n{BLUE}[5/8] Checking network exposure...{RESET}")
         
-        compose_file = self.root / "docker-compose.yml"
-        if not compose_file.exists():
+        compose_paths = [self.root / relative_path for relative_path in COMPOSE_FILES]
+        existing_paths = [path for path in compose_paths if path.exists()]
+        if not existing_paths:
             return
-        
-        content = compose_file.read_text()
-        
-        # Check admin panel binding
-        # Should be "3000:3000" (localhost only) not "0.0.0.0:3000:3000"
-        import re
-        port_bindings = re.findall(r'"?(\d+\.\d+\.\d+\.\d+)?:?(\d+):(\d+)"?', content)
-        
-        for bind_ip, host_port, container_port in port_bindings:
-            if bind_ip == "0.0.0.0":
-                self.check(f"port_{container_port}", False,
-                          f"Port {container_port} exposed to 0.0.0.0!",
-                          "high",
-                          f"Change to '127.0.0.1:{host_port}:{container_port}'")
-        
-        # Check internal network
-        has_internal = "internal:" in content
-        self.check("internal_network", True,  # We use agent-net which is fine
-                  "Using bridge network (OK for this setup)")
-        
-        # Check common dangerous ports
-        dangerous_ports = ["3200", "4000", "4001"]  # proxy, core, bot
-        for port in dangerous_ports:
-            exposed = f'"{port}:' in content or f"'{port}:" in content
-            self.check(f"internal_port_{port}", not exposed,
-                      f"Internal port {port} not exposed" if not exposed else f"Port {port} exposed!",
-                      "critical" if exposed else "low")
+
+        networks_by_service: dict[str, list[str]] = {}
+        has_internal = False
+        for compose_path in existing_paths:
+            relative_path = compose_path.relative_to(self.root)
+            for service, raw_spec in iter_published_ports(compose_path):
+                target_port = _target_port(raw_spec)
+                public_by_design = target_port is not None and (service, target_port) in PUBLIC_BY_DESIGN
+                loopback_only = raw_spec.startswith("127.0.0.1:")
+                safe = public_by_design or loopback_only
+                self.check(
+                    f"port_{service}_{target_port or raw_spec}",
+                    safe,
+                    f"{service} port {raw_spec} is restricted appropriately"
+                    if safe
+                    else f"{service} port {raw_spec} in {relative_path} is published beyond loopback!",
+                    "high" if not safe else "low",
+                    None if safe else f"Change to '127.0.0.1:{raw_spec}'",
+                )
+
+            networks_by_service.update(service_networks(compose_path))
+            payload = yaml.safe_load(compose_path.read_text(encoding="utf-8")) or {}
+            declared_networks = payload.get("networks", {})
+            if isinstance(declared_networks, dict):
+                has_internal = has_internal or any(
+                    isinstance(config, dict) and "internal" in config
+                    for config in declared_networks.values()
+                )
+
+        admin_networks = networks_by_service.get("admin", [])
+        self.check(
+            "admin_networks",
+            set(admin_networks) == {"admin-net"},
+            "admin is isolated on admin-net"
+            if set(admin_networks) == {"admin-net"}
+            else f"admin networks must be exactly admin-net, found: {admin_networks}",
+            "critical" if set(admin_networks) != {"admin-net"} else "low",
+            "Remove agent-net and any other networks from the admin service",
+        )
+
+        core_networks = set(networks_by_service.get("core", []))
+        core_is_bridged = {"agent-net", "admin-net"}.issubset(core_networks)
+        self.check(
+            "core_networks",
+            core_is_bridged,
+            "core bridges agent-net and admin-net"
+            if core_is_bridged
+            else f"core must join agent-net and admin-net, found: {sorted(core_networks)}",
+            "critical" if not core_is_bridged else "low",
+        )
+
+        unexpected_admin_members = sorted(
+            service
+            for service, networks in networks_by_service.items()
+            if service not in {"admin", "core"} and "admin-net" in networks
+        )
+        self.check(
+            "admin_net_isolation",
+            not unexpected_admin_members,
+            "Only admin and core join admin-net"
+            if not unexpected_admin_members
+            else f"Unexpected services on admin-net: {', '.join(unexpected_admin_members)}",
+            "critical" if unexpected_admin_members else "low",
+            "Remove admin-net from every service except admin and core",
+        )
+
+        self.check(
+            "internal_network",
+            has_internal,
+            "Internal network setting declared"
+            if has_internal
+            else "No explicit internal network setting found",
+            "medium" if not has_internal else "low",
+        )
     
     def check_file_permissions(self):
         """Check file permissions"""

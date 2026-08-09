@@ -7,7 +7,84 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from doctor import SecurityDoctor
+from doctor import (
+    COMPOSE_FILES,
+    PUBLIC_BY_DESIGN,
+    SecurityDoctor,
+    iter_published_ports,
+    service_networks,
+)
+
+
+class SecurityDoctorComposeTests(unittest.TestCase):
+    def test_repository_compose_ports_and_admin_networks_are_isolated(self):
+        root = Path(__file__).resolve().parents[2]
+        published_ports = []
+        networks_by_service = {}
+
+        for relative_path in COMPOSE_FILES:
+            compose_path = root / relative_path
+            self.assertTrue(compose_path.exists(), relative_path)
+            published_ports.extend(iter_published_ports(compose_path))
+            networks_by_service.update(service_networks(compose_path))
+
+        for service, raw_spec in published_ports:
+            target_port = int(raw_spec.rsplit(":", 1)[-1].split("/", 1)[0])
+            self.assertTrue(
+                raw_spec.startswith("127.0.0.1:") or (service, target_port) in PUBLIC_BY_DESIGN,
+                f"{service} publishes {raw_spec} beyond loopback",
+            )
+
+        self.assertEqual(networks_by_service["admin"], ["admin-net"])
+        self.assertNotIn("agent-net", networks_by_service["admin"])
+        self.assertTrue({"agent-net", "admin-net"}.issubset(networks_by_service["core"]))
+        self.assertEqual(
+            sorted(
+                service
+                for service, networks in networks_by_service.items()
+                if "admin-net" in networks
+            ),
+            ["admin", "core"],
+        )
+
+    def test_network_check_rejects_unbound_port_and_admin_on_agent_network(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "docker-compose.yml").write_text(
+                """
+services:
+  admin:
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - admin-net
+      - agent-net
+  core:
+    networks:
+      - agent-net
+      - admin-net
+  victoriametrics:
+    ports:
+      - "8428:8428"
+    networks:
+      - agent-net
+networks:
+  agent-net:
+    internal: false
+  admin-net: {}
+""".lstrip(),
+                encoding="utf-8",
+            )
+
+            doctor = SecurityDoctor(root)
+            doctor.check_network_exposure()
+
+        results = {result.name: result for result in doctor.results}
+        self.assertFalse(results["port_victoriametrics_8428"].passed)
+        self.assertFalse(results["admin_networks"].passed)
+        self.assertTrue(results["internal_network"].passed)
+
+
 
 
 class SecurityDoctorRfc026Tests(unittest.TestCase):
