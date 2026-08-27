@@ -19,6 +19,11 @@ from documents.route_schema import (
     validate_route_arguments_output,
     validate_route_choice_output,
 )
+from documents.series_catalog import (
+    contains_bare_ex_token,
+    explicit_series_alias_candidates,
+    resolve_explicit_series_alias,
+)
 from documents.routing import build_route_selector_payload, load_routing_index, select_route, selector_payload_leaf_routes
 from documents.routing_policy import (
     APPLICATION_RECOMMENDATION_KEYWORDS,
@@ -2965,6 +2970,107 @@ def _selector_args_shape(tool_args: dict[str, Any]) -> list[str]:
     return sorted(str(key) for key in tool_args if str(key).strip())
 
 
+def _record_series_normalization(canonical_series: str, outcome: str) -> None:
+    fields = {
+        "source": "explicit_alias",
+        "canonical_series": str(canonical_series or ""),
+        "outcome": str(outcome or ""),
+    }
+    record_span_event("route_argument_builder.series_normalization", **fields)
+    agent_logger.info(
+        "Route argument series normalization source=%s canonical_series=%s outcome=%s",
+        fields["source"],
+        fields["canonical_series"] or "-",
+        fields["outcome"],
+    )
+
+
+def _normalize_lamp_filter_series_arguments(
+    query: str,
+    tool_args: dict[str, Any],
+) -> tuple[dict[str, Any], str, str]:
+    """Normalize explicit catalog aliases before typed route-argument validation."""
+    normalized_args = dict(tool_args)
+    candidates = explicit_series_alias_candidates(query)
+    canonical_series = resolve_explicit_series_alias(query)
+    if len(candidates) > 1:
+        _record_series_normalization("", "ambiguous")
+        return normalized_args, ("conflict" if normalized_args.get("series") else "ambiguous"), ""
+    if canonical_series:
+        supplied_series = str(normalized_args.get("series") or "").strip()
+        if not supplied_series:
+            normalized_args["series"] = canonical_series
+            _record_series_normalization(canonical_series, "filled")
+            return normalized_args, "filled", canonical_series
+        if supplied_series == canonical_series:
+            _record_series_normalization(canonical_series, "confirmed")
+            return normalized_args, "confirmed", canonical_series
+        _record_series_normalization(canonical_series, "conflict")
+        return normalized_args, "conflict", canonical_series
+    if contains_bare_ex_token(query):
+        supplied_series = str(normalized_args.get("series") or "").strip()
+        if supplied_series:
+            _record_series_normalization("", "ambiguous")
+            return normalized_args, "conflict", ""
+        _record_series_normalization("", "ambiguous")
+        return normalized_args, "ambiguous", ""
+    return normalized_args, "not_applicable", ""
+
+
+def _normalize_route_argument_builder_content(
+    content: str,
+    route: dict[str, Any],
+    query: str,
+) -> tuple[str, str, str]:
+    if str(route.get("route_id") or "") != "corp_db.lamp_filters":
+        return content, "not_applicable", ""
+    try:
+        parsed = json.loads(content)
+    except (TypeError, json.JSONDecodeError):
+        return content, "not_applicable", ""
+    if not isinstance(parsed, dict):
+        return content, "not_applicable", ""
+    wrapped = isinstance(parsed.get("tool_args"), dict) and set(parsed) <= {
+        "selected_family_id",
+        "selected_route_id",
+        "confidence",
+        "reason",
+        "tool_args",
+        "fallback_route_ids",
+    }
+    target = parsed["tool_args"] if wrapped else parsed
+    normalized_args, outcome, canonical_series = _normalize_lamp_filter_series_arguments(query, target)
+    if wrapped:
+        parsed = dict(parsed)
+        parsed["tool_args"] = normalized_args
+    else:
+        parsed = normalized_args
+    return json.dumps(parsed, ensure_ascii=False), outcome, canonical_series
+
+
+def _series_conflict_repair_prompt(canonical_series: str) -> str:
+    if canonical_series:
+        requirement = f'set series exactly to "{canonical_series}"'
+    else:
+        requirement = "omit series; do not guess a canonical series from bare Ex"
+    return (
+        "The previous arguments conflict with an explicit safety-significant series expression in the user's "
+        f"message. Return one corrected strict JSON object: {requirement}. Keep only argument fields declared "
+        "by the route schema and preserve other values actually stated by the user."
+    )
+
+
+def _route_arguments_repair_messages(
+    builder_messages: list[dict[str, Any]],
+    rejected_content: str,
+    repair_prompt: str,
+) -> list[dict[str, Any]]:
+    messages = list(builder_messages)
+    messages.append({"role": "assistant", "content": rejected_content})
+    messages.append({"role": "user", "content": repair_prompt})
+    return messages
+
+
 def _record_route_selector_unavailable(error: str, *, status: str = "unavailable") -> None:
     close_reason = "route_selector_disabled" if status == "disabled" else "route_selector_unavailable"
     meta = run_meta_get()
@@ -3345,16 +3451,30 @@ async def _select_route_with_llm(
         if not builder_choices:
             raise RuntimeError("route argument builder returned no choices")
         builder_content = str((builder_choices[0].get("message") or {}).get("content") or "").strip()
-        arg_validation = validate_route_arguments_output(builder_content, choice_route)
-        if not arg_validation.valid and arg_validation.repairable:
+        normalized_builder_content, series_outcome, canonical_series = _normalize_route_argument_builder_content(
+            builder_content,
+            choice_route,
+            routing_message,
+        )
+        series_conflict = series_outcome == "conflict"
+        arg_validation = validate_route_arguments_output(normalized_builder_content, choice_route)
+        repair_prompt = _series_conflict_repair_prompt(canonical_series) if series_conflict else arg_validation.repair_prompt
+        should_repair = series_conflict or (not arg_validation.valid and arg_validation.repairable)
+        if should_repair:
             if not first_validation_error_code:
-                first_validation_error_code = arg_validation.error_code
-                first_validation_error = arg_validation.error
+                first_validation_error_code = "series_alias_conflict" if series_conflict else arg_validation.error_code
+                first_validation_error = (
+                    f"tool_args.series conflicts with explicit alias for {canonical_series or 'explosion protection'}"
+                    if series_conflict
+                    else arg_validation.error
+                )
             argument_builder_repair_attempted = True
             argument_builder_repair_status = "attempted"
-            builder_repair_messages = list(builder_messages)
-            builder_repair_messages.append({"role": "assistant", "content": builder_content})
-            builder_repair_messages.append({"role": "user", "content": arg_validation.repair_prompt})
+            builder_repair_messages = _route_arguments_repair_messages(
+                builder_messages,
+                builder_content,
+                repair_prompt,
+            )
             builder_repair_result = await call_selector_llm(builder_repair_messages, "route_argument_builder_repair")
             selector_model = str(builder_repair_result.get("model") or selector_model)
             if "error" in builder_repair_result:
@@ -3363,7 +3483,16 @@ async def _select_route_with_llm(
             builder_repair_content = ""
             if builder_repair_choices:
                 builder_repair_content = str((builder_repair_choices[0].get("message") or {}).get("content") or "").strip()
-            arg_validation = validate_route_arguments_output(builder_repair_content, choice_route, repair_attempted=True)
+            normalized_repair_content, repair_series_outcome, _repair_canonical_series = (
+                _normalize_route_argument_builder_content(builder_repair_content, choice_route, routing_message)
+            )
+            arg_validation = validate_route_arguments_output(normalized_repair_content, choice_route, repair_attempted=True)
+            if repair_series_outcome == "conflict":
+                arg_validation = type(arg_validation)(
+                    valid=False,
+                    error_code="series_alias_conflict",
+                    error="route argument builder repair still conflicts with explicit series alias",
+                )
             argument_builder_repair_status = "succeeded" if arg_validation.valid else "failed"
         selector_b_latency_ms = (perf_counter() - call_b_started) * 1000
         if not arg_validation.valid:

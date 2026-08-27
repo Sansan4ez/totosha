@@ -25,6 +25,14 @@
     {
       "name": "LAD LED R500 2Ex",
       "knowledge_base_label": "LAD LED R500 2Ex",
+      "aliases": [
+        "2ex",
+        "2 ex",
+        "r500 2ex",
+        "r500 2 ex",
+        "lad led r500 2ex",
+        "lad led r500 2 ex"
+      ],
       "category_families": [
         "LAD LED R500 2Ex",
         "LAD LED R500 12/24/36V 2Ex"
@@ -33,6 +41,13 @@
     {
       "name": "LAD LED R320 Ex",
       "knowledge_base_label": "LAD LED R320 Ex",
+      "aliases": [
+        "r320",
+        "r320 ex",
+        "r320 36v ex",
+        "lad led r320 ex",
+        "lad led r320 36v ex"
+      ],
       "category_families": [
         "LAD LED R320 Ex",
         "LAD LED R320 36V Ex"

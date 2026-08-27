@@ -23,7 +23,15 @@ from documents.routing import (
     selector_payload_leaf_routes,
     select_route,
 )
-from documents.series_catalog import SERIES_KB_PATH, canonical_series_names, extract_kb_series_labels, load_canonical_series_catalog
+from documents.series_catalog import (
+    SERIES_KB_PATH,
+    _validate_series_catalog,
+    canonical_series_names,
+    explicit_series_alias_candidates,
+    extract_kb_series_labels,
+    load_canonical_series_catalog,
+    resolve_explicit_series_alias,
+)
 
 
 class RoutingCatalogTests(unittest.TestCase):
@@ -47,6 +55,45 @@ class RoutingCatalogTests(unittest.TestCase):
             {entry["knowledge_base_label"] for entry in catalog["series"]},
             set(kb_labels),
         )
+
+    def test_explicit_series_alias_resolver_is_boundary_aware_and_ambiguity_safe(self):
+        for query in (
+            "2Ex",
+            "2ex",
+            "2   ex",
+            "R500 2Ex",
+            "подберите, пожалуйста, 2Ex с потоком от 11540 лм",
+            "НУЖЕН LAD LED R500 2 EX!",
+        ):
+            with self.subTest(query=query):
+                self.assertEqual(resolve_explicit_series_alias(query), "LAD LED R500 2Ex")
+
+        for query in (
+            "LAD LED R320 Ex",
+            "нужен r320 ex, IP65",
+            "LAD LED R320-2-10G-230AC-50K Ex",
+        ):
+            with self.subTest(query=query):
+                self.assertEqual(resolve_explicit_series_alias(query), "LAD LED R320 Ex")
+
+        for query in ("Ex", "нужен взрывозащищенный светильник Ex"):
+            with self.subTest(query=query):
+                self.assertIsNone(resolve_explicit_series_alias(query))
+
+        ambiguous = "сравните LAD LED R320 Ex и LAD LED R500 2Ex"
+        self.assertEqual(
+            explicit_series_alias_candidates(ambiguous),
+            ["LAD LED R500 2Ex", "LAD LED R320 Ex"],
+        )
+        self.assertIsNone(resolve_explicit_series_alias(ambiguous))
+
+    def test_series_catalog_rejects_alias_shared_between_canonical_series(self):
+        catalog = json.loads(json.dumps(load_canonical_series_catalog()))
+        catalog["series"][0]["aliases"] = ["shared alias"]
+        catalog["series"][1]["aliases"] = ["SHARED   ALIAS"]
+
+        with self.assertRaisesRegex(ValueError, "shared by"):
+            _validate_series_catalog(catalog)
 
     def _write_repo_manifest(self, repo_root: Path, payload: dict) -> None:
         route_dir = repo_root / "doc-corpus" / "manifests" / "routes"

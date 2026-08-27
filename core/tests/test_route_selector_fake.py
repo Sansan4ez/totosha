@@ -39,6 +39,9 @@ class _DummySpan:
     def set_attribute(self, *args, **kwargs):
         return None
 
+    def add_event(self, *args, **kwargs):
+        return None
+
 
 class _DummyTrace:
     @staticmethod
@@ -346,6 +349,84 @@ class RouteSelectorFakeTests(unittest.TestCase):
 
         self.assertEqual(len(fake.calls), 3)
         self.assertIn("route argument builder output rejected", str(ctx.exception))
+
+    def test_lamp_filter_explicit_2ex_alias_fills_missing_series_before_validation(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_db.lamp_filters"),
+                _arguments({"flux_lm_min": 11540}),
+            ]
+        )
+
+        route_selection, route_hint, _secondary = self._run("2 ex, поток от 11540 лм", fake)
+
+        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(route_hint["tool_args"]["series"], "LAD LED R500 2Ex")
+        self.assertEqual(route_hint["tool_args"]["flux_lm_min"], 11540)
+        self.assertEqual(route_selection["selector"]["argument_builder_status"], "valid")
+
+    def test_lamp_filter_explicit_alias_conflict_repairs_locally(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_db.lamp_filters"),
+                _arguments({"series": "LAD LED R320 Ex", "flux_lm_min": 11540}),
+                _arguments({"series": "LAD LED R500 2Ex", "flux_lm_min": 11540}),
+            ]
+        )
+
+        route_selection, route_hint, _secondary = self._run("2Ex, поток от 11540 лм", fake)
+
+        self.assertEqual(
+            [purpose for _, purpose in fake.calls],
+            ["route_selector", "route_argument_builder", "route_argument_builder_repair"],
+        )
+        self.assertEqual(route_hint["tool_args"]["series"], "LAD LED R500 2Ex")
+        self.assertEqual(route_selection["selector"]["validation_error_code"], "series_alias_conflict")
+        self.assertEqual(route_selection["selector"]["argument_builder_status"], "repaired")
+        repair_text = "\n".join(str(message.get("content") or "") for message in fake.calls[2][0])
+        self.assertIn("LAD LED R500 2Ex", repair_text)
+
+    def test_lamp_filter_alias_conflict_fails_closed_when_repair_stays_wrong(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_db.lamp_filters"),
+                _arguments({"series": "LAD LED R320 Ex"}),
+                _arguments({"series": "LAD LED R320 Ex"}),
+            ]
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self._run("нужны модели 2Ex", fake)
+
+        self.assertEqual(len(fake.calls), 3)
+        self.assertIn("series_alias_conflict", str(ctx.exception))
+
+    def test_lamp_filter_bare_ex_does_not_become_specific_series(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_db.lamp_filters"),
+                _arguments({"flux_lm_min": 11540}),
+            ]
+        )
+
+        _route_selection, route_hint, _secondary = self._run("Ex, поток от 11540 лм", fake)
+
+        self.assertNotIn("series", route_hint["tool_args"])
+        self.assertEqual(route_hint["tool_args"]["flux_lm_min"], 11540)
+
+    def test_lamp_filter_bare_ex_rejects_invented_specific_series(self):
+        fake = ScriptedRouteSelectorLLM(
+            [
+                _choice("corp_db.lamp_filters"),
+                _arguments({"series": "LAD LED R500 2Ex"}),
+                _arguments({"explosion_protected": True}),
+            ]
+        )
+
+        route_selection, route_hint, _secondary = self._run("нужен светильник Ex", fake)
+
+        self.assertNotIn("series", route_hint["tool_args"])
+        self.assertEqual(route_selection["selector"]["argument_builder_status"], "repaired")
 
     def test_document_route_accepts_bounded_names_array(self):
         # RFC-029 workstream 3: certificate lookups carry names: array<string> (1..5 items).
