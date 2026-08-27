@@ -83,6 +83,9 @@ class LiveMigrationTests(unittest.TestCase):
         self.assertIn("DELETE FROM corp.sphere_curated_categories", executed_sql)
         self.assertIn("CREATE OR REPLACE FUNCTION corp.corp_hybrid_search", executed_sql)
         self.assertIn("source_files text[] DEFAULT NULL", executed_sql)
+        self.assertIn("CREATE OR REPLACE VIEW corp.v_catalog_lamps_agent", executed_sql)
+        self.assertIn("WITH RECURSIVE category_ancestry", executed_sql)
+        self.assertIn("ca.ancestor_name AS series_name", executed_sql)
 
         sphere_upserts = [
             args for sql, args in conn.executemany_calls if "INSERT INTO corp.spheres" in sql
@@ -98,7 +101,8 @@ class LiveMigrationTests(unittest.TestCase):
         self.assertEqual(sphere_upserts[0][0][:3], (7, "РЖД", "https://example.test/rzd"))
         self.assertEqual(parent_updates, [[(1, None), (2, 1)]])
         self.assertEqual(curated_inserts, [[(7, 2, 1, curated_inserts[0][0][3])]])
-        self.assertEqual(conn.execute_calls[-1][1], [[7]])
+        delete_calls = [args for sql, args in conn.execute_calls if "DELETE FROM corp.sphere_curated_categories" in sql]
+        self.assertEqual(delete_calls, [[[7]]])
 
     def test_ensure_rfc026_schema_clears_removed_parent_links_and_empty_curated_sets(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -156,7 +160,8 @@ class LiveMigrationTests(unittest.TestCase):
 
         self.assertEqual(parent_updates, [[(1, None), (2, None)]])
         self.assertEqual(curated_inserts, [[(7, 2, 1, curated_inserts[0][0][3])]])
-        self.assertEqual(conn.execute_calls[-1][1], [[7, 8]])
+        delete_calls = [args for sql, args in conn.execute_calls if "DELETE FROM corp.sphere_curated_categories" in sql]
+        self.assertEqual(delete_calls, [[[7, 8]]])
 
     def test_ensure_rfc026_schema_downgrades_orphan_parent_refs_to_null(self):
         with tempfile.TemporaryDirectory() as tmpdir:

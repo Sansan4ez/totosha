@@ -154,6 +154,8 @@ class SecurityDoctorRfc026Tests(unittest.TestCase):
                 "idx_categories_parent_category_id": True,
                 "idx_sphere_curated_categories_category_id": True,
                 "idx_sphere_curated_categories_sphere_position": True,
+                "catalog_lamps_agent_series_name_column": True,
+                "catalog_lamps_agent_series_consistent": True,
                 "curated_rows": 1,
                 "parent_links": 1,
             }

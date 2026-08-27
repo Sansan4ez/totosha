@@ -98,6 +98,13 @@ def build_category_parent_assignments(category_rows: list[dict]) -> list[tuple]:
 
 
 HYBRID_SEARCH_FUNCTION_SQL = Path(__file__).resolve().parent / "sql" / "corp_hybrid_search.sql"
+CATALOG_LAMPS_AGENT_VIEW_SQL = Path(__file__).resolve().parent / "sql" / "catalog_lamps_agent.sql"
+
+
+async def ensure_catalog_lamps_agent_view(conn) -> None:
+    """Converge the agent lamp view, including category-ancestry series_name."""
+    ddl = CATALOG_LAMPS_AGENT_VIEW_SQL.read_text(encoding="utf-8")
+    await conn.execute(ddl)
 
 
 async def ensure_hybrid_search_function(conn) -> None:
@@ -182,6 +189,8 @@ async def ensure_rfc026_schema(conn, sources_dir: Path) -> dict[str, int]:
                 """,
                 curated_records,
             )
+
+        await ensure_catalog_lamps_agent_view(conn)
 
     return {
         "schema_statements": len(RFC026_SCHEMA_STATEMENTS),

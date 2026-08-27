@@ -314,6 +314,7 @@ ROUTE_BUSINESS_METADATA = {
 }
 SERIES_AWARE_ROUTE_IDS = {
     "corp_kb.series_description",
+    "corp_db.lamp_filters",
     "corp_db.category_mountings",
     "corp_db.lamp_mounting_compatibility",
 }
@@ -450,8 +451,8 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "query",
     },
     "corp_db.lamp_filters": {
-        "query",
         "category",
+        "series",
         "mounting_type",
         "beam_pattern",
         "climate_execution",
@@ -782,7 +783,7 @@ def _apply_runtime_argument_overrides(route: dict[str, Any], *, sphere_context: 
     if route_id in MOUNTING_TYPE_AWARE_ROUTE_IDS and "mounting_type" in route["argument_schema"]["properties"]:
         hints["mounting_type"] = "Choose one canonical mounting type when the user explicitly names a mounting option."
     if route_id in SERIES_AWARE_ROUTE_IDS:
-        hints["series"] = "Choose one canonical business series when the user asks at model-family level."
+        hints.setdefault("series", "Choose one canonical business series when the user asks at model-family level.")
     if scoped_sphere_name and route_id in CATEGORY_AWARE_ROUTE_IDS and "category" in route["argument_schema"]["properties"]:
         hints["category"] = f"Choose one curated category from the active sphere context: {scoped_sphere_name}."
     route["argument_hints"] = hints

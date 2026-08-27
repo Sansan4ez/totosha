@@ -114,8 +114,8 @@
     "power_w_min": {
       "type": "integer"
     },
-    "query": {
-      "maxLength": 500,
+    "series": {
+      "maxLength": 240,
       "type": "string"
     },
     "supply_voltage_raw": {

@@ -353,6 +353,7 @@ LAMP_RESPONSE_FIELDS = (
 )
 LAMP_TEXT_FILTER_SPECS = (
     ("category", "category_name"),
+    ("series", "series_name"),
     ("mounting_type", "mounting_type"),
     ("ip", "ingress_protection"),
     ("beam_pattern", "beam_pattern"),
@@ -770,6 +771,7 @@ def _lamp_metadata(row: dict[str, Any] | asyncpg.Record, *, search_strategy: str
         "name": row["name"],
         "category_id": _row_get(row, "category_id"),
         "category_name": _row_get(row, "category_name"),
+        "series_name": _row_get(row, "series_name"),
         "url": _row_get(row, "url"),
         "image_url": _row_get(row, "image_url"),
         "preview": _row_get(row, "preview"),
@@ -797,6 +799,7 @@ def _serialize_lamp_row(
         "name": row["name"],
         "category_id": _row_get(row, "category_id"),
         "category_name": _row_get(row, "category_name"),
+        "series_name": _row_get(row, "series_name"),
         "url": _row_get(row, "url"),
         "image_url": _row_get(row, "image_url"),
         "preview": _row_get(row, "preview") or _preview(_row_get(row, "agent_summary") or row["name"]),
@@ -2616,7 +2619,10 @@ def _build_lamp_conditions(
             continue
         args.append(text)
         filters[field_name] = text
-        conditions.append(f"coalesce({alias}.{column}, '') ILIKE ('%' || ${len(args) + param_offset} || '%')")
+        if field_name == "series":
+            conditions.append(f"lower(trim(coalesce({alias}.{column}, ''))) = lower(trim(${len(args) + param_offset}))")
+        else:
+            conditions.append(f"coalesce({alias}.{column}, '') ILIKE ('%' || ${len(args) + param_offset} || '%')")
 
     for field_name, column in LAMP_EXACT_FILTER_SPECS:
         value = getattr(req, field_name)

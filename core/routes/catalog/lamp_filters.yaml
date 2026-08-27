@@ -3,11 +3,11 @@ route_family: corp_db.lamp_filters
 route_kind: corp_table
 authority: primary
 title: Lamp structured filters
-summary: Structured catalog filtering by power, flux, CCT, IP, voltage, dimensions, protection class,
-  category, and mounting type.
+summary: Structured catalog filtering by canonical business series, power, flux, CCT, IP, voltage,
+  dimensions, protection class, category, and mounting type.
 when_to_use: >-
-  Select when the user filters the catalog by explicit structured parameters: power, flux, CCT, IP,
-  voltage, dimensions, protection class, category, or mounting type they actually stated.
+  Select when the user filters the catalog by explicit structured parameters: canonical business series,
+  power, flux, CCT, IP, voltage, dimensions, protection class, category, or mounting type they actually stated.
 schema_ref: lamp_filters.schema.json
 topics:
 - catalog
@@ -15,6 +15,8 @@ topics:
 - lamp
 - mounting_type
 keywords:
+- серия
+- 2ex
 - мощность
 - световой поток
 - цветовая температура
@@ -35,9 +37,11 @@ executor_args_template:
   fuzzy: true
 argument_hints:
   category: >-
-    Extract category name only when the user names a real catalog category or series
-    (e.g. LAD LED R500). Colloquial luminaire words — «прожектор», «светильник»,
-    «лампа», «фонарь», «свет» — are not catalog categories: leave category empty for them.
+    Extract category name only when the user names a real catalog category. Colloquial luminaire words —
+    «прожектор», «светильник», «лампа», «фонарь», «свет» — are not catalog categories: leave category empty for them.
+  series: >-
+    Choose only a canonical business series from the enum. A module number inside a SKU is not a series marker:
+    LAD LED R320-2-... Ex belongs to LAD LED R320 Ex, not LAD LED R500 2Ex.
   mounting_type: Extract mounting type as a free string.
   ip: Extract IP rating like IP65 or 65.
 observability_labels:

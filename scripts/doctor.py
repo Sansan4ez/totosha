@@ -596,6 +596,42 @@ Checking 5 layers of protection:
             to_regclass('corp.idx_sphere_curated_categories_category_id') IS NOT NULL,
             'idx_sphere_curated_categories_sphere_position',
             to_regclass('corp.idx_sphere_curated_categories_sphere_position') IS NOT NULL,
+            'catalog_lamps_agent_series_name_column',
+            EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'corp'
+                  AND table_name = 'v_catalog_lamps_agent'
+                  AND column_name = 'series_name'
+            ),
+            'catalog_lamps_agent_series_consistent',
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'corp'
+                      AND table_name = 'v_catalog_lamps_agent'
+                      AND column_name = 'series_name'
+                ) THEN (
+                    SELECT coalesce(
+                        bool_and(
+                            CASE
+                                WHEN row_data->>'name' ILIKE 'LAD LED R320-2-% Ex'
+                                    THEN row_data->>'series_name' = 'LAD LED R320 Ex'
+                                WHEN row_data->>'name' ILIKE 'LAD LED R500-% 2Ex'
+                                    THEN row_data->>'series_name' = 'LAD LED R500 2Ex'
+                                ELSE true
+                            END
+                        ),
+                        true
+                    )
+                    FROM (
+                        SELECT to_jsonb(lamp_row) AS row_data
+                        FROM corp.v_catalog_lamps_agent lamp_row
+                    ) rows
+                )
+                ELSE false
+            END,
             'curated_rows',
             CASE
                 WHEN to_regclass('corp.sphere_curated_categories') IS NULL THEN NULL
@@ -658,6 +694,8 @@ Checking 5 layers of protection:
             "idx_categories_parent_category_id": "idx_categories_parent_category_id",
             "idx_sphere_curated_categories_category_id": "idx_sphere_curated_categories_category_id",
             "idx_sphere_curated_categories_sphere_position": "idx_sphere_curated_categories_sphere_position",
+            "catalog_lamps_agent_series_name_column": "corp.v_catalog_lamps_agent.series_name",
+            "catalog_lamps_agent_series_consistent": "corp.v_catalog_lamps_agent canonical series ancestry",
         }
         for key, label in object_checks.items():
             if not payload.get(key):

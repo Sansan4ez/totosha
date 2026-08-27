@@ -1497,6 +1497,21 @@ class CorpDbRouteTests(unittest.TestCase):
 
         self.assertIsNone(sanitized.knowledge_route_id)
 
+    def test_build_lamp_conditions_uses_exact_canonical_series_name(self):
+        from src.routes.corp_db import CorpDbSearchRequest, _build_lamp_conditions
+
+        req = CorpDbSearchRequest(
+            kind="lamp_filters",
+            series="LAD LED R500 2Ex",
+            flux_lm_min=11540,
+        )
+        conditions, args, filters = _build_lamp_conditions(req)
+
+        self.assertEqual(args, ["LAD LED R500 2Ex", 11540])
+        self.assertEqual(filters["series"], "LAD LED R500 2Ex")
+        self.assertTrue(any("l.series_name" in cond and " = lower(trim($1))" in cond for cond in conditions))
+        self.assertFalse(any("l.name" in cond or "search_text" in cond for cond in conditions))
+
     def test_build_lamp_conditions_normalizes_dimensions_and_voltage_kind(self):
         from src.routes.corp_db import CorpDbSearchRequest, _build_lamp_conditions
 
@@ -1554,6 +1569,61 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(args[0], Decimal("18.3"))
         self.assertEqual(args[1], Decimal("774.0"))
         self.assertEqual(args[2], Decimal("775.0"))
+
+    def test_lamp_filters_routes_r320_module_two_by_canonical_series_not_sku_number(self):
+        class CanonicalSeriesConn:
+            async def fetch(self, query, *args):
+                sql = str(query)
+                requested_series = args[0]
+                self.sql = sql
+                self.args = args
+                rows = [
+                    {
+                        "lamp_id": 3202,
+                        "name": "LAD LED R320-2-10G-230AC-50K Ex",
+                        "category_id": 153,
+                        "category_name": "110W",
+                        "series_name": "LAD LED R320 Ex",
+                        "luminous_flux_lm": 16000,
+                        "explosion_protection_marking": "1Ex db IIC T6 Gb X",
+                    },
+                    {
+                        "lamp_id": 5002,
+                        "name": "LAD LED R500-2-O-6-110L 2Ex",
+                        "category_id": 129,
+                        "category_name": "110W",
+                        "series_name": "LAD LED R500 2Ex",
+                        "luminous_flux_lm": 16000,
+                        "explosion_protection_marking": "2Ex db IIC T6 Gb X",
+                    },
+                ]
+                return [row for row in rows if row["series_name"] == requested_series and row["luminous_flux_lm"] >= args[1]]
+
+        conn = CanonicalSeriesConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            r500_response = client.post(
+                "/corp-db/search",
+                json={"kind": "lamp_filters", "series": "LAD LED R500 2Ex", "flux_lm_min": 11540},
+            )
+            r320_response = client.post(
+                "/corp-db/search",
+                json={"kind": "lamp_filters", "series": "LAD LED R320 Ex", "flux_lm_min": 11540},
+            )
+
+        self.assertEqual(r500_response.status_code, 200)
+        self.assertEqual(r320_response.status_code, 200)
+        r500_results = r500_response.json()["results"]
+        r320_results = r320_response.json()["results"]
+        self.assertEqual([row["series_name"] for row in r500_results], ["LAD LED R500 2Ex"])
+        self.assertTrue(all("2Ex" in row["name"] or "2Ex" in row["explosion_protection_marking"] for row in r500_results))
+        self.assertEqual([row["series_name"] for row in r320_results], ["LAD LED R320 Ex"])
+        self.assertEqual(r320_results[0]["name"], "LAD LED R320-2-10G-230AC-50K Ex")
+        self.assertNotIn("2Ex", r320_results[0]["explosion_protection_marking"])
+        self.assertIn("l.series_name", conn.sql)
+        self.assertNotIn("l.name ILIKE", conn.sql)
 
     def test_lamp_filters_route_sanitizes_zero_defaults_from_agent(self):
         conn = QueryCaptureConn()

@@ -1004,6 +1004,12 @@ class RoutingCatalogTests(unittest.TestCase):
             canonical_mounting_type_names(),
         )
         self.assertEqual(
+            routes["corp_db.lamp_filters"]["argument_schema"]["properties"]["series"]["enum"],
+            canonical_series_names(),
+        )
+        self.assertNotIn("query", routes["corp_db.lamp_filters"]["argument_schema"]["properties"])
+        self.assertIn("query", routes["corp_db.lamp_filters"]["execution_argument_schema"]["properties"])
+        self.assertEqual(
             routes["corp_db.category_mountings"]["argument_schema"]["properties"]["series"]["enum"],
             canonical_series_names(),
         )
@@ -1135,6 +1141,11 @@ class RoutingCatalogTests(unittest.TestCase):
             routes["corp_db.lamp_filters"]["argument_schema"]["properties"]["mounting_type"]["enum"],
             canonical_mounting_type_names(),
         )
+        self.assertEqual(
+            routes["corp_db.lamp_filters"]["argument_schema"]["properties"]["series"]["enum"],
+            canonical_series_names(),
+        )
+        self.assertNotIn("query", routes["corp_db.lamp_filters"]["argument_schema"]["properties"])
         self.assertNotIn("series", routes["corp_db.catalog_lookup"]["argument_schema"]["properties"])
         for route in routes.values():
             category_schema = route["argument_schema"]["properties"].get("category")
