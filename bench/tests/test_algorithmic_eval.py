@@ -1,6 +1,7 @@
 import unittest
 
 from bench.bench_lib import (
+    eval_algorithmic_payload,
     evaluate_case_result,
     get_execution,
     get_validation,
@@ -76,6 +77,43 @@ class BenchAlgorithmicEvalTests(unittest.TestCase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(len(payload["results"]), 2)
         self.assertEqual(payload["queries"], ["q1", "q2"])
+
+    def test_incident_semantic_checks_apply_to_every_result(self):
+        payload = {
+            "results": [
+                {
+                    "series_name": "LAD LED R500 2Ex",
+                    "name": "LAD LED R500-4-O-12-140L 2Ex",
+                    "luminous_flux_lm": 19768,
+                },
+                {
+                    "series_name": "LAD LED R500 2Ex",
+                    "name": "LAD LED R500-4-60-12-140L 2Ex",
+                    "luminous_flux_lm": 22803,
+                },
+            ]
+        }
+        passed, errors = eval_algorithmic_payload(
+            payload,
+            [
+                {"type": "all_equals", "path": "results[*].series_name", "value": "LAD LED R500 2Ex"},
+                {"type": "all_contains", "path": "results[*].name", "value": ["R500", "2Ex"]},
+                {"type": "none_contains", "path": "results[*].name", "value": ["R320"]},
+                {"type": "all_number_range", "path": "results[*].luminous_flux_lm", "min": 11540},
+                {"type": "absent", "path": "filters.series"},
+            ],
+        )
+
+        self.assertTrue(passed, errors)
+
+        payload["results"][1]["name"] = "LAD LED R500-4-60-12-140L Ex"
+        passed, errors = eval_algorithmic_payload(
+            payload,
+            [{"type": "all_contains", "path": "results[*].name", "value": ["R500", "2Ex"]}],
+        )
+
+        self.assertFalse(passed)
+        self.assertTrue(any(error.startswith("all_contains:") for error in errors))
 
     def test_evaluate_case_result_runs_algorithmic_checks(self):
         case = {

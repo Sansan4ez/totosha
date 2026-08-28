@@ -265,6 +265,8 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         artifact = result.metadata.get("bench_artifact")
         self.assertEqual(artifact["tool"], "corp_db_search")
         self.assertEqual(artifact["kind"], "hybrid_search")
+        self.assertEqual(artifact["arguments"]["kind"], "hybrid_search")
+        self.assertEqual(artifact["arguments"]["query"], "контакты компании ЛАДзавод светотехники")
         self.assertEqual(artifact["payload"]["result_format"], "compact_company_fact_v1")
         self.assertTrue(artifact["payload"]["results"][0]["preview"].endswith("…"))
 

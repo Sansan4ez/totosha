@@ -1308,6 +1308,7 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         meta["retrieval_evidence_status"] = str(state.get("retrieval_evidence_status") or "")
         meta["retrieval_retry_count"] = int(state.get("retrieval_retry_count") or 0)
         meta["retrieval_close_reason"] = str(state.get("retrieval_close_reason") or "")
+        meta["retrieval_selected_tool_args"] = dict(state.get("retrieval_selected_tool_args") or {})
         meta["retrieval_validated_arg_keys"] = list(state.get("retrieval_validated_arg_keys") or [])
         meta["retrieval_validation_errors"] = list(state.get("retrieval_validation_errors") or [])
         meta["retrieval_validation_status"] = route_arg_validation_status
@@ -3867,6 +3868,7 @@ async def _run_agent_impl(
         "retrieval_evidence_status": "",
         "retrieval_retry_count": 0,
         "retrieval_close_reason": "",
+        "retrieval_selected_tool_args": dict(route_hint_args),
         "retrieval_validated_arg_keys": list(route_hint.get("validated_arg_keys") or selector_meta.get("validated_arg_keys") or []) if route_hint else [],
         "retrieval_validation_errors": [
             str(item)

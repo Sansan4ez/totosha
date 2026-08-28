@@ -24,7 +24,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from admin_auth import AdminTokenNotFound, admin_headers
 
 
-DEFAULT_DATASET = REPO_ROOT / "bench" / "golden" / "incident-pfit7.jsonl"
+DEFAULT_DATASET = REPO_ROOT / "bench" / "golden" / "incident-ex-2ex-20260827.jsonl"
 DEFAULT_CORE_URL = "http://127.0.0.1:4000"
 DEFAULT_TOOLS_API_URL = "http://127.0.0.1:8100"
 DEFAULT_SMOKE_USER_ID = 5202705269
@@ -39,40 +39,51 @@ REQUIRED_DOCTOR_CHECKS = (
 class ChatReplayExpectation:
     slug: str
     message: str
-    expected_route_id: str
-    expected_route_kind: str
-    expected_tool: str
-    expected_business_family_id: str
-    expected_leaf_route_id: str
-    expected_route_stage: str
+    expected_series: str | None
+    forbidden_answer_tokens: tuple[str, ...] = ()
 
 
 CHAT_REPLAYS = (
     ChatReplayExpectation(
-        slug="series_list",
-        message="Какие у вас есть серии светильников?",
-        expected_route_id="corp_kb.company_common",
-        expected_route_kind="corp_table",
-        expected_tool="corp_db_search",
-        expected_business_family_id="company_info",
-        expected_leaf_route_id="series_description",
-        expected_route_stage="stage2_specialized",
+        slug="compact_2ex",
+        message="2ex световой поток не менее 11540 Лм",
+        expected_series="LAD LED R500 2Ex",
+        forbidden_answer_tokens=("LAD LED R320",),
     ),
     ChatReplayExpectation(
-        slug="series_descriptions",
-        message="В общей базе есть описание всех серий",
-        expected_route_id="corp_kb.company_common",
-        expected_route_kind="corp_table",
-        expected_tool="corp_db_search",
-        expected_business_family_id="company_info",
-        expected_leaf_route_id="series_description",
-        expected_route_stage="stage2_specialized",
+        slug="spaced_2ex",
+        message="2 ex световой поток не менее 11540 Лм",
+        expected_series="LAD LED R500 2Ex",
+        forbidden_answer_tokens=("LAD LED R320",),
+    ),
+    ChatReplayExpectation(
+        slug="canonical_r500_2ex",
+        message="LAD LED R500 2Ex, поток от 11540 лм",
+        expected_series="LAD LED R500 2Ex",
+        forbidden_answer_tokens=("LAD LED R320",),
+    ),
+    ChatReplayExpectation(
+        slug="canonical_r320_ex",
+        message="LAD LED R320 Ex, поток от 11540 лм",
+        expected_series="LAD LED R320 Ex",
+        forbidden_answer_tokens=("LAD LED R500", "2Ex"),
+    ),
+    ChatReplayExpectation(
+        slug="generic_ex",
+        message="взрывозащищенный светильник, поток от 11540 лм",
+        expected_series=None,
+    ),
+    ChatReplayExpectation(
+        slug="r320_module_two_counterexample",
+        message="LAD LED R320-2-10G-230AC-50K Ex",
+        expected_series="LAD LED R320 Ex",
+        forbidden_answer_tokens=("LAD LED R500", "2Ex"),
     ),
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run focused post-incident replay smoke for totosha-pfit.7.")
+    parser = argparse.ArgumentParser(description="Run focused Ex vs 2Ex incident replay smoke for totosha-6y9m.3.")
     parser.add_argument("--dataset", default=str(DEFAULT_DATASET), help="Incident replay dataset JSONL")
     parser.add_argument("--core-url", default=DEFAULT_CORE_URL, help="Core base URL")
     parser.add_argument("--tools-api-url", default=DEFAULT_TOOLS_API_URL, help="Tools API base URL")
@@ -277,26 +288,33 @@ def validate_chat_replay_response(payload: dict[str, Any], expected: ChatReplayE
         errors.append(f"{expected.slug}:meta_status={meta.get('status')}")
     if meta.get("request_id") != request_id:
         errors.append(f"{expected.slug}:request_id={meta.get('request_id')}")
-    if meta.get("retrieval_route_id") != expected.expected_route_id:
+    if meta.get("retrieval_route_id") != "corp_db.lamp_filters":
         errors.append(f"{expected.slug}:route_id={meta.get('retrieval_route_id')}")
-    if meta.get("retrieval_selected_route_kind") != expected.expected_route_kind:
+    if meta.get("retrieval_selected_route_kind") != "corp_table":
         errors.append(f"{expected.slug}:route_kind={meta.get('retrieval_selected_route_kind')}")
-    if meta.get("retrieval_business_family_id") != expected.expected_business_family_id:
-        errors.append(f"{expected.slug}:business_family={meta.get('retrieval_business_family_id')}")
-    if meta.get("retrieval_leaf_route_id") != expected.expected_leaf_route_id:
-        errors.append(f"{expected.slug}:leaf_route_id={meta.get('retrieval_leaf_route_id')}")
-    if meta.get("retrieval_route_stage") != expected.expected_route_stage:
-        errors.append(f"{expected.slug}:route_stage={meta.get('retrieval_route_stage')}")
-    if meta.get("retrieval_validation_status") != "ok":
+    if meta.get("retrieval_validation_status") not in {"ok", "repaired"}:
         errors.append(f"{expected.slug}:validation_status={meta.get('retrieval_validation_status')}")
     if meta.get("retrieval_selected_source") != "corp_db":
         errors.append(f"{expected.slug}:selected_source={meta.get('retrieval_selected_source')}")
+    if meta.get("retrieval_used_fallback_route_id"):
+        errors.append(f"{expected.slug}:fallback={meta.get('retrieval_used_fallback_route_id')}")
+    if int(meta.get("routing_guardrail_hits") or 0) != 0:
+        errors.append(f"{expected.slug}:guardrail_hits={meta.get('routing_guardrail_hits')}")
     tools_used = meta.get("tools_used") if isinstance(meta.get("tools_used"), list) else []
-    if expected.expected_tool not in tools_used:
+    if "corp_db_search" not in tools_used:
         errors.append(f"{expected.slug}:tools_used={tools_used}")
+    selected_args = meta.get("retrieval_selected_tool_args") if isinstance(meta.get("retrieval_selected_tool_args"), dict) else {}
+    if selected_args.get("series") != expected.expected_series:
+        errors.append(f"{expected.slug}:series={selected_args.get('series')}")
+    if expected.expected_series is None and "series" in selected_args:
+        errors.append(f"{expected.slug}:unexpected_specific_series={selected_args.get('series')}")
     answer = str(payload.get("answer") or payload.get("response") or "")
     if not answer.strip():
         errors.append(f"{expected.slug}:empty_answer")
+    answer_folded = answer.casefold()
+    for token in expected.forbidden_answer_tokens:
+        if token.casefold() in answer_folded:
+            errors.append(f"{expected.slug}:forbidden_answer_token={token}")
     return errors
 
 
@@ -313,6 +331,7 @@ def run_chat_route_checks(args: argparse.Namespace) -> list[str]:
             "chat_type": "private",
             "source": "bot",
             "return_meta": True,
+            "execution_mode": "benchmark",
         }
         status, response = http_json(
             f"{args.core_url.rstrip('/')}/api/chat",
@@ -323,7 +342,10 @@ def run_chat_route_checks(args: argparse.Namespace) -> list[str]:
         )
         if status != 200:
             errors.append(f"{replay.slug}:http_status={status}")
+            print(f"replay slug={replay.slug} request_id={request_id} trace_id=- http_status={status}")
             continue
+        meta = response.get("meta") if isinstance(response.get("meta"), dict) else {}
+        print(f"replay slug={replay.slug} request_id={request_id} trace_id={meta.get('trace_id') or '-'}")
         errors.extend(validate_chat_replay_response(response, replay, request_id))
     return errors
 

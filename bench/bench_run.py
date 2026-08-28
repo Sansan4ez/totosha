@@ -424,6 +424,7 @@ def main() -> None:
                                 "success": True,
                                 "kind": str(tool_args.get("kind") or data.get("kind") or ("doc_search" if tool_name == "doc_search" else "")),
                                 "captured_from": "direct_tool",
+                                "arguments": dict(tool_args),
                                 "payload": data,
                             }
                             bench_artifacts = [primary_artifact]

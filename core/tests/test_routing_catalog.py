@@ -57,6 +57,18 @@ class RoutingCatalogTests(unittest.TestCase):
         )
 
     def test_explicit_series_alias_resolver_is_boundary_aware_and_ambiguity_safe(self):
+        incident_matrix = (
+            ("2ex световой поток не менее 11540 Лм", "LAD LED R500 2Ex"),
+            ("2 ex световой поток не менее 11540 Лм", "LAD LED R500 2Ex"),
+            ("LAD LED R500 2Ex, поток от 11540 лм", "LAD LED R500 2Ex"),
+            ("LAD LED R320 Ex, поток от 11540 лм", "LAD LED R320 Ex"),
+            ("взрывозащищенный светильник, поток от 11540 лм", None),
+            ("LAD LED R320-2-10G-230AC-50K Ex", "LAD LED R320 Ex"),
+        )
+        for query, expected in incident_matrix:
+            with self.subTest(query=query):
+                self.assertEqual(resolve_explicit_series_alias(query), expected)
+
         for query in (
             "2Ex",
             "2ex",
@@ -71,7 +83,6 @@ class RoutingCatalogTests(unittest.TestCase):
         for query in (
             "LAD LED R320 Ex",
             "нужен r320 ex, IP65",
-            "LAD LED R320-2-10G-230AC-50K Ex",
         ):
             with self.subTest(query=query):
                 self.assertEqual(resolve_explicit_series_alias(query), "LAD LED R320 Ex")

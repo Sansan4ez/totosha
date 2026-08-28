@@ -219,6 +219,7 @@ def _build_bench_artifact(args: dict | None, data: object) -> dict | None:
         "success": True,
         "kind": kind or None,
         "captured_from": "tool_result_metadata",
+        "arguments": _compact_bench_value(dict(args or {})),
         "payload": payload,
     }
 

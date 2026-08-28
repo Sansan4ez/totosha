@@ -126,6 +126,7 @@ def _build_run_meta(*, execution_mode: str) -> dict:
         "retrieval_evidence_status": "",
         "retrieval_retry_count": 0,
         "retrieval_close_reason": "",
+        "retrieval_selected_tool_args": {},
         "retrieval_validated_arg_keys": [],
         "retrieval_validation_errors": [],
         "retrieval_validation_status": "none",

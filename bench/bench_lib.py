@@ -295,6 +295,12 @@ def check_equals(values: list[Any], expected: Any) -> tuple[bool, str]:
     return False, f"expected={expected!r} actual={values[:5]!r}"
 
 
+def check_all_equals(values: list[Any], expected: Any) -> tuple[bool, str]:
+    if values and all(value == expected for value in values):
+        return True, ""
+    return False, f"expected_all={expected!r} actual={values[:5]!r}"
+
+
 def check_one_of(values: list[Any], expected: list[Any]) -> tuple[bool, str]:
     if any(value in expected for value in values):
         return True, ""
@@ -327,6 +333,23 @@ def check_path_contains_any(values: list[Any], expected: list[str]) -> tuple[boo
     return False, f"none_of={expected!r}"
 
 
+def check_all_contains(values: list[Any], expected: list[str]) -> tuple[bool, str]:
+    strings = [norm_text(item) for item in _string_values(values)]
+    needles = [norm_text(item) for item in expected]
+    if strings and needles and all(all(needle in hay for needle in needles) for hay in strings):
+        return True, ""
+    return False, f"expected_each_to_contain_all={expected!r} actual={strings[:5]!r}"
+
+
+def check_none_contains(values: list[Any], forbidden: list[str]) -> tuple[bool, str]:
+    strings = [norm_text(item) for item in _string_values(values)]
+    needles = [norm_text(item) for item in forbidden]
+    matches = [hay for hay in strings if any(needle in hay for needle in needles)]
+    if not matches:
+        return True, ""
+    return False, f"forbidden={forbidden!r} actual={matches[:5]!r}"
+
+
 def check_all_prefix(values: list[Any], prefix: str) -> tuple[bool, str]:
     strings = _string_values(values)
     if not strings:
@@ -356,6 +379,20 @@ def check_number_range(values: list[Any], min_value: Optional[float], max_value:
             continue
         return True, ""
     return False, f"expected_range=[{min_value},{max_value}] actual={numbers[:5]!r}"
+
+
+def check_all_number_range(values: list[Any], min_value: Optional[float], max_value: Optional[float]) -> tuple[bool, str]:
+    numbers = [_coerce_number(value) for value in values]
+    if not numbers or any(number is None for number in numbers):
+        return False, "no_numbers"
+    outside = [
+        number
+        for number in numbers
+        if (min_value is not None and number < min_value) or (max_value is not None and number > max_value)
+    ]
+    if not outside:
+        return True, ""
+    return False, f"expected_all_in_range=[{min_value},{max_value}] actual={numbers[:5]!r}"
 
 
 def select_artifact(row: dict[str, Any], selector: Optional[dict[str, Any]]) -> tuple[Optional[dict[str, Any]], Any, Optional[str]]:
@@ -420,12 +457,19 @@ def eval_algorithmic_payload(payload: Any, checks: list[dict[str, Any]]) -> tupl
         ctype = str(check.get("type") or "")
         path = str(check.get("path") or "")
         values, path_error = resolve_path_values(payload, path)
+        if ctype == "absent":
+            if path_error or not values:
+                continue
+            errors.append(f"absent:actual={values[:5]!r}")
+            continue
         if path_error:
             errors.append(f"{ctype}:{path_error}")
             continue
 
         if ctype == "equals":
             ok, msg = check_equals(values, check.get("value"))
+        elif ctype == "all_equals":
+            ok, msg = check_all_equals(values, check.get("value"))
         elif ctype == "one_of":
             val = check.get("value")
             if not isinstance(val, list):
@@ -441,12 +485,17 @@ def eval_algorithmic_payload(payload: Any, checks: list[dict[str, Any]]) -> tupl
                 errors.append("len_gte:bad_value")
                 continue
             ok, msg = check_len_gte(values, expected)
-        elif ctype == "contains_any":
+        elif ctype in {"contains_any", "all_contains", "none_contains"}:
             val = check.get("value")
             if not isinstance(val, list) or not all(isinstance(item, str) for item in val):
-                errors.append("contains_any:bad_value")
+                errors.append(f"{ctype}:bad_value")
                 continue
-            ok, msg = check_path_contains_any(values, val)
+            if ctype == "contains_any":
+                ok, msg = check_path_contains_any(values, val)
+            elif ctype == "all_contains":
+                ok, msg = check_all_contains(values, val)
+            else:
+                ok, msg = check_none_contains(values, val)
         elif ctype == "all_prefix":
             prefix = str(check.get("value") or "")
             if not prefix:
@@ -461,10 +510,13 @@ def eval_algorithmic_payload(payload: Any, checks: list[dict[str, Any]]) -> tupl
                 errors.append("number_eq:bad_value")
                 continue
             ok, msg = check_number_eq(values, expected, tolerance)
-        elif ctype == "number_range":
+        elif ctype in {"number_range", "all_number_range"}:
             min_value = _coerce_number(check.get("min"))
             max_value = _coerce_number(check.get("max"))
-            ok, msg = check_number_range(values, min_value, max_value)
+            if ctype == "number_range":
+                ok, msg = check_number_range(values, min_value, max_value)
+            else:
+                ok, msg = check_all_number_range(values, min_value, max_value)
         else:
             errors.append(f"unknown_check_type:{ctype}")
             continue

@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from admin_auth import AdminTokenNotFound
 from incident_replay_smoke import (
+    CHAT_REPLAYS,
     ChatReplayExpectation,
     _should_use_docker_exec,
     resolve_chat_identity,
@@ -61,73 +62,103 @@ class IncidentReplaySmokeTests(unittest.TestCase):
             with self.assertRaisesRegex(AdminTokenNotFound, "admin token not found"):
                 resolve_chat_identity("http://core:4000", 5.0, 0, 0)
 
-    def test_validate_chat_replay_response_accepts_expected_meta(self):
+    def test_chat_replay_matrix_contains_all_six_incident_prompts(self):
+        self.assertEqual(
+            [case.message for case in CHAT_REPLAYS],
+            [
+                "2ex световой поток не менее 11540 Лм",
+                "2 ex световой поток не менее 11540 Лм",
+                "LAD LED R500 2Ex, поток от 11540 лм",
+                "LAD LED R320 Ex, поток от 11540 лм",
+                "взрывозащищенный светильник, поток от 11540 лм",
+                "LAD LED R320-2-10G-230AC-50K Ex",
+            ],
+        )
+
+    def test_validate_chat_replay_response_accepts_exact_series_route(self):
         expected = ChatReplayExpectation(
-            slug="series_list",
-            message="Какие у вас есть серии светильников?",
-            expected_route_id="corp_kb.company_common",
-            expected_route_kind="corp_table",
-            expected_tool="corp_db_search",
-            expected_business_family_id="company_info",
-            expected_leaf_route_id="series_description",
-            expected_route_stage="stage2_specialized",
+            slug="compact_2ex",
+            message="2ex световой поток не менее 11540 Лм",
+            expected_series="LAD LED R500 2Ex",
+            forbidden_answer_tokens=("LAD LED R320",),
         )
         payload = {
-            "response": "Есть серии LAD LED R500 и LAD LED LINE.",
+            "response": "Подходят модели LAD LED R500-4-O-12-140L 2Ex.",
             "meta": {
                 "status": "ok",
                 "request_id": "req-1",
-                "retrieval_route_id": "corp_kb.company_common",
+                "retrieval_route_id": "corp_db.lamp_filters",
                 "retrieval_selected_route_kind": "corp_table",
-                "retrieval_business_family_id": "company_info",
-                "retrieval_leaf_route_id": "series_description",
-                "retrieval_route_stage": "stage2_specialized",
                 "retrieval_validation_status": "ok",
                 "retrieval_selected_source": "corp_db",
+                "retrieval_selected_tool_args": {
+                    "kind": "lamp_filters",
+                    "series": "LAD LED R500 2Ex",
+                    "flux_lm_min": 11540,
+                },
+                "retrieval_used_fallback_route_id": "",
+                "routing_guardrail_hits": 0,
                 "tools_used": ["corp_db_search"],
             },
         }
 
         self.assertEqual(validate_chat_replay_response(payload, expected, "req-1"), [])
 
-    def test_validate_chat_replay_response_reports_route_drift(self):
+    def test_validate_chat_replay_response_rejects_wrong_series_fallback_and_answer(self):
         expected = ChatReplayExpectation(
-            slug="series_descriptions",
-            message="В общей базе есть описание всех серий",
-            expected_route_id="corp_kb.company_common",
-            expected_route_kind="corp_table",
-            expected_tool="corp_db_search",
-            expected_business_family_id="company_info",
-            expected_leaf_route_id="series_description",
-            expected_route_stage="stage2_specialized",
+            slug="compact_2ex",
+            message="2ex световой поток не менее 11540 Лм",
+            expected_series="LAD LED R500 2Ex",
+            forbidden_answer_tokens=("LAD LED R320",),
         )
         payload = {
-            "answer": "",
+            "answer": "Подойдёт LAD LED R320-2-10G-230AC-50K Ex.",
             "meta": {
                 "status": "ok",
                 "request_id": "req-2",
-                "retrieval_route_id": "doc_search.document_lookup",
-                "retrieval_selected_route_kind": "doc_domain",
-                "retrieval_business_family_id": "document_lookup",
-                "retrieval_leaf_route_id": "document_domain_lookup",
-                "retrieval_route_stage": "stage1_general",
+                "retrieval_route_id": "corp_db.catalog_lookup",
+                "retrieval_selected_route_kind": "corp_table",
                 "retrieval_validation_status": "error",
-                "retrieval_selected_source": "doc_search",
-                "tools_used": ["doc_search"],
+                "retrieval_selected_source": "corp_db",
+                "retrieval_selected_tool_args": {"series": "LAD LED R320 Ex"},
+                "retrieval_used_fallback_route_id": "corp_db.catalog_lookup",
+                "routing_guardrail_hits": 1,
+                "tools_used": ["corp_db_search"],
             },
         }
 
         errors = validate_chat_replay_response(payload, expected, "req-2")
 
-        self.assertIn("series_descriptions:route_id=doc_search.document_lookup", errors)
-        self.assertIn("series_descriptions:route_kind=doc_domain", errors)
-        self.assertIn("series_descriptions:business_family=document_lookup", errors)
-        self.assertIn("series_descriptions:leaf_route_id=document_domain_lookup", errors)
-        self.assertIn("series_descriptions:route_stage=stage1_general", errors)
-        self.assertIn("series_descriptions:validation_status=error", errors)
-        self.assertIn("series_descriptions:selected_source=doc_search", errors)
-        self.assertIn("series_descriptions:tools_used=['doc_search']", errors)
-        self.assertIn("series_descriptions:empty_answer", errors)
+        self.assertIn("compact_2ex:route_id=corp_db.catalog_lookup", errors)
+        self.assertIn("compact_2ex:validation_status=error", errors)
+        self.assertIn("compact_2ex:fallback=corp_db.catalog_lookup", errors)
+        self.assertIn("compact_2ex:guardrail_hits=1", errors)
+        self.assertIn("compact_2ex:series=LAD LED R320 Ex", errors)
+        self.assertIn("compact_2ex:forbidden_answer_token=LAD LED R320", errors)
+
+    def test_validate_chat_replay_response_keeps_generic_ex_without_specific_series(self):
+        expected = ChatReplayExpectation(
+            slug="generic_ex",
+            message="взрывозащищенный светильник, поток от 11540 лм",
+            expected_series=None,
+        )
+        payload = {
+            "response": "Нашёл несколько взрывозащищённых светильников.",
+            "meta": {
+                "status": "ok",
+                "request_id": "req-3",
+                "retrieval_route_id": "corp_db.lamp_filters",
+                "retrieval_selected_route_kind": "corp_table",
+                "retrieval_validation_status": "ok",
+                "retrieval_selected_source": "corp_db",
+                "retrieval_selected_tool_args": {"kind": "lamp_filters", "explosion_protected": True},
+                "retrieval_used_fallback_route_id": "",
+                "routing_guardrail_hits": 0,
+                "tools_used": ["corp_db_search"],
+            },
+        }
+
+        self.assertEqual(validate_chat_replay_response(payload, expected, "req-3"), [])
 
 
 if __name__ == "__main__":
