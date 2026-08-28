@@ -1,5 +1,22 @@
 {
   "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "query"
+      ]
+    },
+    {
+      "required": [
+        "etm"
+      ]
+    },
+    {
+      "required": [
+        "oracl"
+      ]
+    }
+  ],
   "properties": {
     "code_system": {
       "enum": [
@@ -20,10 +37,6 @@
       "maximum": 50,
       "minimum": 1,
       "type": "integer"
-    },
-    "name": {
-      "maxLength": 240,
-      "type": "string"
     },
     "offset": {
       "maximum": 10000,

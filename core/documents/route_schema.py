@@ -37,6 +37,8 @@ from typing import Any
 
 import yaml
 
+from documents.corp_db_contract import apply_requirements
+
 
 MAX_COMPACT_ENUM_VALUES = 60
 MAX_COMPACT_ENUM_VALUE_LENGTH = 80
@@ -368,12 +370,16 @@ def default_argument_schema(
         }
         required = [key for key in required if key in properties]
 
-    return {
+    schema = {
         "type": "object",
         "additionalProperties": False,
         "properties": properties,
         "required": required,
     }
+    if executor == "corp_db_search":
+        kind = str(executor_args_template.get("kind") or locked_args.get("kind") or "").strip()
+        apply_requirements(schema, kind=kind, fixed_args={**executor_args_template, **locked_args})
+    return schema
 
 
 def _validate_compact_enum(field_path: str, values: Any) -> None:
@@ -431,6 +437,25 @@ def normalize_argument_schema(schema: Any) -> dict[str, Any]:
     if not isinstance(required, list) or any(str(item) not in normalized["properties"] for item in required):
         raise RouteCardContractError("argument_schema.required must reference declared properties")
     normalized["required"] = [str(item) for item in required]
+    any_of = normalized.get("anyOf") or []
+    if not isinstance(any_of, list):
+        raise RouteCardContractError("argument_schema.anyOf must be a list")
+    normalized_any_of: list[dict[str, list[str]]] = []
+    for index, alternative in enumerate(any_of):
+        alternative_required = alternative.get("required") if isinstance(alternative, dict) else None
+        if (
+            not isinstance(alternative_required, list)
+            or not alternative_required
+            or any(str(item) not in normalized["properties"] for item in alternative_required)
+        ):
+            raise RouteCardContractError(
+                f"argument_schema.anyOf[{index}].required must reference declared properties"
+            )
+        normalized_any_of.append({"required": [str(item) for item in alternative_required]})
+    if normalized_any_of:
+        normalized["anyOf"] = normalized_any_of
+    else:
+        normalized.pop("anyOf", None)
     for key, property_schema in normalized["properties"].items():
         _validate_property_schema(f"argument_schema.properties.{key}", property_schema)
     return normalized
@@ -504,6 +529,16 @@ def validate_tool_args(
         for key in schema.get("required", []):
             if key not in tool_args:
                 raise RouteSelectorOutputError("missing_required", f"tool_args.{key} is required")
+        alternatives = schema.get("anyOf") or []
+        if alternatives and not any(
+            all(key in tool_args for key in alternative.get("required", []))
+            for alternative in alternatives
+        ):
+            choices = [key for alternative in alternatives for key in alternative.get("required", [])]
+            raise RouteSelectorOutputError(
+                "missing_required",
+                f"tool_args must include at least one of: {', '.join(choices)}",
+            )
 
 
 def _contains_selector_bypass(value: Any) -> str:

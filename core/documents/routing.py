@@ -512,17 +512,6 @@ ROUTE_ARGUMENT_PROPERTY_ALLOWLISTS = {
         "query",
     },
 }
-ROUTE_REQUIRED_ARGUMENTS = {
-    "corp_db.application_recommendation": {"query"},
-    "corp_db.documents_by_lamp_name": {"names"},
-    "corp_db.portfolio_lookup": {"query"},
-    "corp_db.portfolio_by_sphere": {"sphere"},
-    "corp_db.showcase_lamps_by_category": {"category"},
-    "corp_db.sku_codes_lookup": {"name"},
-    "corp_kb.series_description": {"query"},
-    "corp_db.sphere_curated_categories": {"sphere"},
-    "corp_db.sphere_categories": {"sphere"},
-}
 
 
 class RouteCatalogUnavailable(RuntimeError):
@@ -734,12 +723,6 @@ def _retain_argument_properties(route_id: str, properties: dict[str, Any]) -> di
     }
 
 
-def _required_route_argument_keys(route_id: str, schema: dict[str, Any]) -> list[str]:
-    required = set(schema.get("required") or [])
-    required.update(ROUTE_REQUIRED_ARGUMENTS.get(route_id, set()))
-    return [key for key in schema.get("properties", {}) if key in required]
-
-
 def _apply_runtime_argument_overrides(route: dict[str, Any], *, sphere_context: dict[str, Any] | None = None) -> None:
     route_id = str(route.get("route_id") or "").strip()
     executor = str(route.get("executor") or route.get("tool_name") or "").strip()
@@ -761,6 +744,19 @@ def _apply_runtime_argument_overrides(route: dict[str, Any], *, sphere_context: 
             route_id,
             dict(route["argument_schema"].get("properties") or {}),
         )
+    if executor == "corp_db_search":
+        from documents.corp_db_contract import allowed_fields_for_kind
+
+        kind = str(executor_args_template.get("kind") or locked_args.get("kind") or "").strip()
+        consumed_fields = allowed_fields_for_kind(
+            kind,
+            fixed_args={**executor_args_template, **locked_args},
+        )
+        route["argument_schema"]["properties"] = {
+            key: value
+            for key, value in route["argument_schema"]["properties"].items()
+            if key in consumed_fields
+        }
     route["execution_argument_schema"] = default_argument_schema(
         executor=executor,
         executor_args_template=executor_args_template,
@@ -776,7 +772,14 @@ def _apply_runtime_argument_overrides(route: dict[str, Any], *, sphere_context: 
     scoped_sphere_name = str((sphere_context or {}).get("sphere_name") or "").strip()
     if scoped_sphere_name and route_id in CATEGORY_AWARE_ROUTE_IDS and "category" in route["argument_schema"]["properties"]:
         route["argument_schema"]["properties"]["category"] = _scoped_category_property_schema(scoped_sphere_name)
-    route["argument_schema"]["required"] = _required_route_argument_keys(route_id, route["argument_schema"])
+    if executor == "corp_db_search":
+        from documents.corp_db_contract import apply_requirements
+
+        apply_requirements(
+            route["argument_schema"],
+            kind=kind,
+            fixed_args={**executor_args_template, **locked_args},
+        )
     hints = dict(route.get("argument_hints") or {})
     if route_id in SPHERE_AWARE_ROUTE_IDS and "sphere" in route["argument_schema"]["properties"]:
         hints["sphere"] = "Choose one canonical application sphere when the user clearly asks by segment or environment."

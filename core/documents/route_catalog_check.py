@@ -25,6 +25,7 @@ from typing import Any
 
 import yaml
 
+from documents.corp_db_contract import contract_for_kind, validate_waivers, waiver_fields
 from documents.route_schema import RouteCardContractError, normalize_argument_schema
 from documents.routing import _bootstrap_catalog_payload, _route_schema_file_path, static_route_catalog_dir
 
@@ -77,6 +78,72 @@ def check_schema_closed(routes: list[dict[str, Any]]) -> list[str]:
                 continue
             if schema.get("additionalProperties") is not False:
                 errors.append(f"{route_id}: {schema_field}.additionalProperties must be false")
+    return errors
+
+
+def check_corp_db_contract_parity(routes: list[dict[str, Any]]) -> list[str]:
+    """Check selector-visible route fields against operational semantics by executor kind."""
+    errors = validate_waivers(static_route_catalog_dir().parents[1])
+    for route in routes:
+        if str(route.get("executor") or route.get("tool_name") or "") != "corp_db_search":
+            continue
+        route_id = str(route.get("route_id") or "")
+        template = dict(route.get("executor_args_template") or {})
+        locked = dict(route.get("locked_args") or template)
+        fixed_args = {**template, **locked}
+        kind = str(fixed_args.get("kind") or "").strip()
+        contract = contract_for_kind(kind, fixed_args)
+        if contract is None:
+            errors.append(f"{route_id}: corp_db_search kind '{kind}' is missing from the contract manifest")
+            continue
+        schema = route.get("argument_schema") if isinstance(route.get("argument_schema"), dict) else {}
+        properties = set((schema.get("properties") or {}).keys())
+        required = set(schema.get("required") or [])
+        alternatives = {
+            field
+            for alternative in schema.get("anyOf") or []
+            for field in (alternative.get("required") or [])
+            if isinstance(alternative, dict)
+        }
+        fixed_fields = set(template) | set(locked)
+        allowed = set(contract["consumed"]) | set(contract["passthrough"])
+
+        locked_visible = properties & fixed_fields
+        locked_visible -= waiver_fields(route_id, "locked-visible")
+        if locked_visible:
+            errors.append(
+                f"{route_id}: selector schema re-exposes locked/template fields: {', '.join(sorted(locked_visible))}"
+            )
+
+        ignored = properties - allowed
+        ignored -= waiver_fields(route_id, "selector-visible-but-ignored")
+        if ignored:
+            errors.append(
+                f"{route_id}: selector-visible fields are not consumed or passthrough for kind {kind}: "
+                f"{', '.join(sorted(ignored))}"
+            )
+
+        missing_required = {
+            field for field in contract["required"]
+            if field not in fixed_fields and field not in required
+        }
+        missing_required -= waiver_fields(route_id, "missing-required")
+        if missing_required:
+            errors.append(
+                f"{route_id}: executor-required fields are not required by schema for kind {kind}: "
+                f"{', '.join(sorted(missing_required))}"
+            )
+
+        for group in contract["required_any_of"]:
+            if any(field in fixed_fields for field in group):
+                continue
+            if not (set(group) & required) and not set(group).issubset(alternatives):
+                waived = waiver_fields(route_id, "missing-required")
+                if not set(group).issubset(waived):
+                    errors.append(
+                        f"{route_id}: executor requires one of ({', '.join(group)}) for kind {kind}, "
+                        "but schema does not enforce the alternatives"
+                    )
     return errors
 
 
@@ -160,6 +227,7 @@ def run_checks() -> list[str]:
     errors: list[str] = list(payload.get("validation_report", {}).get("errors") or [])
     errors.extend(check_executor_resolution(routes))
     errors.extend(check_schema_closed(routes))
+    errors.extend(check_corp_db_contract_parity(routes))
     errors.extend(check_sibling_fallback_coverage(routes))
     errors.extend(check_schema_files())
     return errors

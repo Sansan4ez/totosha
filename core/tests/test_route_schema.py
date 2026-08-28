@@ -15,6 +15,7 @@ from documents.route_schema import (
     validate_selector_output,
 )
 from documents.routing import load_routing_index
+from agent import _compact_selector_argument_schema
 
 
 def _route(payload: dict) -> dict:
@@ -507,6 +508,63 @@ class RouteSchemaTests(unittest.TestCase):
         self.assertTrue(valid_by_name.valid)
         self.assertFalse(invalid.valid)
         self.assertEqual(invalid.error_code, "invalid_tool_args")
+
+    def test_any_of_required_arguments_are_enforced(self):
+        route = normalize_route_card_contract(
+            {
+                "route_id": "corp_db.sku_lookup",
+                "route_family": "corp_db.sku_lookup",
+                "family_id": "codes_and_sku",
+                "route_kind": "corp_table",
+                "authority": "primary",
+                "title": "Code lookup",
+                "executor": "corp_db_search",
+                "executor_args_template": {"kind": "lamp_code_lookup", "lookup_direction": "by_code"},
+                "argument_schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "query": {"type": "string"},
+                        "etm": {"type": "string"},
+                        "oracl": {"type": "string"},
+                    },
+                    "required": [],
+                    "anyOf": [
+                        {"required": ["query"]},
+                        {"required": ["etm"]},
+                        {"required": ["oracl"]},
+                    ],
+                },
+            }
+        )
+
+        missing = validate_selector_output(
+            {"selected_route_id": "corp_db.sku_lookup", "tool_args": {}},
+            [route],
+        )
+        valid = validate_selector_output(
+            {"selected_route_id": "corp_db.sku_lookup", "tool_args": {"etm": "123456"}},
+            [route],
+        )
+
+        self.assertFalse(missing.valid)
+        self.assertEqual(missing.error_code, "missing_required")
+        self.assertTrue(valid.valid)
+
+    def test_compact_selector_schema_preserves_required_alternatives(self):
+        compact = _compact_selector_argument_schema(
+            {
+                "properties": {
+                    "query": {"type": "string"},
+                    "etm": {"type": "string"},
+                },
+                "required": [],
+                "anyOf": [{"required": ["query"]}, {"required": ["etm"]}],
+            },
+            {"kind": "lamp_code_lookup", "lookup_direction": "by_code"},
+        )
+
+        self.assertEqual(compact["required_any_of"], [["query"], ["etm"]])
 
     def test_large_enum_domains_are_rejected_by_route_schema(self):
         with self.assertRaises(RouteCardContractError):

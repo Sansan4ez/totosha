@@ -14,7 +14,8 @@ import os
 from functools import lru_cache
 from time import perf_counter
 
-from documents.route_schema import SANITIZE_DROPPED_TOOL_ARG, selector_arg_keys_for_kind
+from documents.corp_db_contract import allowed_fields_for_kind
+from documents.route_schema import SANITIZE_DROPPED_TOOL_ARG
 from models import ToolResult, ToolContext
 from observability import (
     REQUEST_ID as OBS_REQUEST_ID,
@@ -55,7 +56,7 @@ KIND_SPECIFIC_ARG_KINDS = frozenset({"application_recommendation"})
 
 @lru_cache(maxsize=None)
 def _allowed_args_for_kind(kind: str) -> frozenset[str]:
-    return frozenset(TRANSPORT_ARG_KEYS | selector_arg_keys_for_kind(kind))
+    return frozenset(TRANSPORT_ARG_KEYS | allowed_fields_for_kind(kind))
 
 
 def _timeout_budget_seconds() -> dict[str, float]:

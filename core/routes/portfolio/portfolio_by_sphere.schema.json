@@ -11,10 +11,6 @@
       "minimum": 0,
       "type": "integer"
     },
-    "query": {
-      "maxLength": 500,
-      "type": "string"
-    },
     "sphere": {
       "enum": [
         "Промышленное освещение",

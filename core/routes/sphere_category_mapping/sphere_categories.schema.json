@@ -1,10 +1,6 @@
 {
   "additionalProperties": false,
   "properties": {
-    "query": {
-      "maxLength": 500,
-      "type": "string"
-    },
     "sphere": {
       "enum": [
         "Промышленное освещение",

@@ -1,5 +1,22 @@
 {
   "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "category"
+      ]
+    },
+    {
+      "required": [
+        "series"
+      ]
+    },
+    {
+      "required": [
+        "mounting_type"
+      ]
+    }
+  ],
   "properties": {
     "category": {
       "maxLength": 240,
@@ -28,10 +45,6 @@
         "встриваемый корпус",
         "накладной корпус NL VEGA"
       ],
-      "type": "string"
-    },
-    "query": {
-      "maxLength": 500,
       "type": "string"
     },
     "series": {

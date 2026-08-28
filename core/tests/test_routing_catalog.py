@@ -1116,7 +1116,11 @@ class RoutingCatalogTests(unittest.TestCase):
             routes["corp_db.sku_lookup"]["argument_schema"]["properties"]["code_system"]["enum"],
             list(("etm", "oracl", "sku", "article", "catalog_identifier", "mixed")),
         )
-        self.assertIn("name", routes["corp_db.sku_lookup"]["argument_schema"]["properties"])
+        self.assertNotIn("name", routes["corp_db.sku_lookup"]["argument_schema"]["properties"])
+        self.assertEqual(
+            routes["corp_db.sku_lookup"]["argument_schema"]["anyOf"],
+            [{"required": ["query"]}, {"required": ["etm"]}, {"required": ["oracl"]}],
+        )
         self.assertEqual(routes["corp_db.sku_codes_lookup"]["argument_schema"]["required"], ["name"])
         self.assertEqual(routes["corp_db.sku_codes_lookup"]["locked_args"]["lookup_direction"], "by_name")
         self.assertEqual(

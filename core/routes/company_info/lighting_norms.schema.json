@@ -11,6 +11,8 @@
       "type": "string"
     }
   },
-  "required": [],
+  "required": [
+    "query"
+  ],
   "type": "object"
 }

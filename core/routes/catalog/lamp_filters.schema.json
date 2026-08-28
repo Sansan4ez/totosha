@@ -115,7 +115,15 @@
       "type": "integer"
     },
     "series": {
-      "maxLength": 240,
+      "enum": [
+        "LAD LED R500",
+        "LAD LED R700",
+        "LAD LED R500 2Ex",
+        "LAD LED R320 Ex",
+        "LAD LED LINE",
+        "NL Nova",
+        "NL VEGA"
+      ],
       "type": "string"
     },
     "supply_voltage_raw": {

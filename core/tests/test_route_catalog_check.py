@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from documents.route_catalog_check import (
+    check_corp_db_contract_parity,
     check_executor_resolution,
     check_schema_closed,
     check_sibling_fallback_coverage,
@@ -36,6 +37,52 @@ class RouteCatalogCheckTests(unittest.TestCase):
         # pass with zero errors.
         errors = run_checks()
         self.assertEqual(errors, [])
+
+    def test_contract_parity_flags_missing_required_and_selector_visible_ignored_fields(self):
+        route = {
+            "route_id": "corp_db.lamp_filters",
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_filters"},
+            "locked_args": {"kind": "lamp_filters"},
+            "argument_schema": {
+                "properties": {"query": {"type": "string"}},
+                "required": [],
+            },
+        }
+        missing_required_route = {
+            "route_id": "corp_db.catalog_lookup",
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact"},
+            "locked_args": {"kind": "lamp_exact"},
+            "argument_schema": {
+                "properties": {"name": {"type": "string"}},
+                "required": [],
+            },
+        }
+
+        errors = check_corp_db_contract_parity([route, missing_required_route])
+
+        self.assertTrue(any("lamp_filters" in error and "query" in error for error in errors))
+        self.assertTrue(any("catalog_lookup" in error and "name" in error for error in errors))
+
+    def test_contract_parity_flags_locked_template_field_reexposed_to_selector(self):
+        route = {
+            "route_id": "corp_db.catalog_lookup",
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "lamp_exact"},
+            "locked_args": {"kind": "lamp_exact"},
+            "argument_schema": {
+                "properties": {
+                    "kind": {"type": "string"},
+                    "name": {"type": "string"},
+                },
+                "required": ["name"],
+            },
+        }
+
+        errors = check_corp_db_contract_parity([route])
+
+        self.assertTrue(any("locked/template" in error and "kind" in error for error in errors))
 
     def test_sibling_kb_scope_without_mutual_fallback_is_flagged(self):
         route_a = _kb_route("family.a", "family_x")

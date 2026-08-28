@@ -1378,12 +1378,13 @@ class RoutingGuardrailTests(unittest.TestCase):
                                         except Exception:
                                             planned_tool_args = {}
                                     break
-                        if not planned_tool_name:
-                            planned_tool_name, planned_tool_args = default_sequence[0]
                         selection = self._selection_for_planned_tool(user_message, planned_tool_name, planned_tool_args)
+                        selector_tool_args = planned_tool_args
+                        if planned_tool_name not in {"corp_db_search", "doc_search"}:
+                            _, selector_tool_args = default_sequence[0]
                         selector_call_a = self._selector_response(
                             selection,
-                            tool_args_override=planned_tool_args if isinstance(planned_tool_args, dict) else None,
+                            tool_args_override=selector_tool_args if isinstance(selector_tool_args, dict) else None,
                         )
                         selector_llm_responses = [selector_call_a]
                         builder_response = self._argument_builder_response_for(selector_call_a)

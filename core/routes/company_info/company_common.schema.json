@@ -19,6 +19,8 @@
       "type": "array"
     }
   },
-  "required": [],
+  "required": [
+    "query"
+  ],
   "type": "object"
 }

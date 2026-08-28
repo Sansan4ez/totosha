@@ -2822,6 +2822,14 @@ def _compact_selector_argument_schema(argument_schema: dict[str, Any], locked_ar
         "required": list(required) if isinstance(required, list) else [],
         "allowed_args": sorted(str(name) for name in properties.keys()),
     }
+    alternatives = argument_schema.get("anyOf") if isinstance(argument_schema, dict) else []
+    required_any_of = [
+        list(alternative.get("required") or [])
+        for alternative in alternatives or []
+        if isinstance(alternative, dict) and alternative.get("required")
+    ]
+    if required_any_of:
+        compact["required_any_of"] = required_any_of
     enum_args: dict[str, list[Any]] = {}
     for name, spec in properties.items():
         if not isinstance(spec, dict):
