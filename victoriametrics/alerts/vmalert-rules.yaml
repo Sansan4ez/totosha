@@ -59,3 +59,14 @@ groups:
           summary: '{{ $value }} corp_search_docs rows have no embedding.'
           impact: Semantic retrieval is blind to these documents, so colloquial queries ("а как позвонить?") silently fall back to lexical-only matching and return empty for scoped KB lookups. Rebuild search docs without --skip-embeddings.
           runbook: docs/operations/observability-runbook.md
+      - alert: CorpDbFilterContractMismatchSustained
+        expr: sum(rate(corp_db_filter_contract_total{status="ignored"}[15m])) + sum(rate(retrieval_constraint_evidence_total{status="mismatch"}[15m])) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+          alert_id: OBS-ALERT-008
+          service: catalog-retrieval
+        annotations:
+          summary: Catalog constraints are being ignored or contradicted at a sustained rate.
+          impact: Tool calls can remain successful while requested series or Ex constraints do not reach SQL or do not match returned evidence.
+          runbook: docs/operations/observability-runbook.md

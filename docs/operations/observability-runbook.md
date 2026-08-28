@@ -202,6 +202,9 @@ For RFC-020 correlation, confirm span tags include:
 - `selected_route_kind`
 - `tool_name`
 - `knowledge_route_id` or `document_id`
+- `corp_db.requested_filter_fields`, `corp_db.applied_filter_fields`, `corp_db.ignored_filter_fields`
+- `corp_db.filter_contract_status`
+- core-side `retrieval_constraint_evidence_status`
 
 Interpretation:
 
@@ -229,12 +232,21 @@ Expected result:
 - fallback traffic is split between `family_local` and `cross_family`;
 - route-level fallback targets stay visible through `used_fallback_route_id`.
 
-6. Attribute time inside `corp_db_search`.
+6. Attribute time and constraint application inside `corp_db_search`.
 
 ```bash
 curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=histogram_quantile%280.95%2C%20sum%20by%20%28le%2Ckind%2Cprofile%2Cstatus%29%20%28rate%28corp_db_search_duration_milliseconds_bucket%5B15m%5D%29%29%29'
 curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=increase%28corp_db_search_phase_duration_milliseconds_count%5B15m%5D%29'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28kind%2Cfield%2Cstatus%29%20%28increase%28corp_db_filter_contract_total%5B15m%5D%29%29'
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=sum%20by%20%28selected_route_id%2Ckind%2Cstatus%29%20%28increase%28retrieval_constraint_evidence_total%7Bservice_name%3D%22core%22%7D%5B15m%5D%29%29'
 ```
+
+Interpret the contract signals as follows:
+
+- `status="ignored"` identifies a fixed schema field requested by the caller but absent from the applied filter set;
+- `status="mismatch"` means returned rows contradict a requested canonical `series` or `explosion_protected=true` constraint;
+- `unknown` means there was no supported canonical constraint or no returned evidence to compare;
+- labels are intentionally limited to `kind`, fixed `field`, and bounded `status`; raw query text, user ids, SKUs, and series values must not appear.
 
 Reference acceptance after RFC-004 rollout:
 
@@ -258,6 +270,8 @@ Notes
 - Proxy-specific user-path alerts now track:
   - `ProxyUserPathHigh5xxRatio`
   - `ProxyUserPathHighP95Latency`
+- `CorpDbFilterContractMismatchSustained` (OBS-ALERT-008) fires only after a non-trivial
+  ignored/mismatch rate persists for 15 minutes; single requests remain trace-level evidence.
 - `RouteSelectorSanitizationSustained` (OBS-ALERT-006) fires when the route selector keeps
   proposing undeclared fallback routes over a 30m window. RFC-028 (`documents/route_schema.py`)
   sanitizes this at request time so users still get an answer, but a sustained rate means

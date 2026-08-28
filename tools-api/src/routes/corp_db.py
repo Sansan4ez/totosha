@@ -385,6 +385,22 @@ LAMP_RANGE_FILTER_SPECS = (
     ("height_mm_min", "height_mm_max", "height_mm"),
     ("warranty_years_min", "warranty_years_max", "warranty_years"),
 )
+# Fixed, bounded field names only. Values (queries, series names, SKUs, user ids) must
+# never be copied into metric labels or contract telemetry attributes.
+CORP_DB_FILTER_CONTRACT_FIELDS = tuple(
+    dict.fromkeys(
+        ["query"]
+        + [field_name for field_name, _ in LAMP_TEXT_FILTER_SPECS]
+        + [field_name for field_name, _ in LAMP_EXACT_FILTER_SPECS]
+        + [field_name for field_name, _ in LAMP_BOOLEAN_FILTER_SPECS]
+        + [field_name for min_field, max_field, _ in LAMP_RANGE_FILTER_SPECS for field_name in (min_field, max_field)]
+        + ["temp_c_min", "temp_c_max"]
+    )
+)
+CORP_DB_FILTER_CONTRACT_FIELD_SET = frozenset(CORP_DB_FILTER_CONTRACT_FIELDS)
+FILTER_CONTRACT_REQUEST_APPLIED_KINDS = frozenset(
+    {"hybrid_search", "lamp_suggest", "application_recommendation", "category_lamps"}
+)
 KB_ROUTE_FORBIDDEN_FILTER_FIELDS = (
     [field_name for field_name, _ in LAMP_TEXT_FILTER_SPECS]
     + [field_name for field_name, _ in LAMP_EXACT_FILTER_SPECS]
@@ -456,6 +472,12 @@ CORP_DB_SEARCH_PHASE_DURATION_MS = Histogram(
     labelnames=("kind", "profile", "phase", "status"),
     registry=REGISTRY,
     buckets=LATENCY_BUCKETS_MS,
+)
+CORP_DB_FILTER_CONTRACT_TOTAL = Counter(
+    "corp_db_filter_contract_total",
+    "Requested catalog filter fields grouped by bounded field name and application status.",
+    labelnames=("kind", "field", "status"),
+    registry=REGISTRY,
 )
 CORP_DB_EMBEDDINGS_UNAVAILABLE_TOTAL = Counter(
     "corp_db_embeddings_unavailable_total",
@@ -944,6 +966,85 @@ def _hybrid_response_filters(
 
 def _get_tracer():
     return trace.get_tracer("tools-api.corp_db")
+
+
+def _request_fields_set(req: CorpDbSearchRequest) -> set[str]:
+    fields = getattr(req, "model_fields_set", None)
+    if fields is None:
+        fields = getattr(req, "__fields_set__", set())
+    return {str(field) for field in fields or set()}
+
+
+def _requested_filter_fields(req: CorpDbSearchRequest) -> tuple[str, ...]:
+    explicit_fields = _request_fields_set(req)
+    return tuple(
+        field
+        for field in CORP_DB_FILTER_CONTRACT_FIELDS
+        if field in explicit_fields and getattr(req, field, None) not in (None, "", [], {})
+    )
+
+
+def _applied_filter_fields(
+    *,
+    req: CorpDbSearchRequest,
+    requested_fields: tuple[str, ...],
+    result: dict[str, Any],
+) -> tuple[str, ...]:
+    requested = set(requested_fields)
+    applied: set[str] = set()
+    response_filters = result.get("filters") if isinstance(result.get("filters"), dict) else {}
+    applied.update(requested.intersection(response_filters))
+
+    # These executors apply their structured request constraints internally but return
+    # summary filters rather than echoing every bounded field. The values themselves are
+    # deliberately never copied into telemetry.
+    if req.kind in FILTER_CONTRACT_REQUEST_APPLIED_KINDS:
+        if "query" in requested and str(req.query or "").strip():
+            applied.add("query")
+        for field in requested.intersection(CORP_DB_FILTER_CONTRACT_FIELD_SET - {"query"}):
+            if getattr(req, field, None) not in (None, "", [], {}, False):
+                applied.add(field)
+
+    return tuple(field for field in CORP_DB_FILTER_CONTRACT_FIELDS if field in applied)
+
+
+def _observe_filter_contract(
+    *,
+    req: CorpDbSearchRequest,
+    requested_fields: tuple[str, ...],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    applied_fields = _applied_filter_fields(req=req, requested_fields=requested_fields, result=result)
+    applied = set(applied_fields)
+    ignored_fields = tuple(field for field in requested_fields if field not in applied)
+    status = "ignored" if ignored_fields else "ok"
+
+    span = trace.get_current_span()
+    span.set_attribute("corp_db.requested_filter_fields", ",".join(requested_fields))
+    span.set_attribute("corp_db.applied_filter_fields", ",".join(applied_fields))
+    span.set_attribute("corp_db.ignored_filter_fields", ",".join(ignored_fields))
+    span.set_attribute("corp_db.filter_contract_status", status)
+    for field in requested_fields:
+        CORP_DB_FILTER_CONTRACT_TOTAL.labels(
+            req.kind,
+            field,
+            "applied" if field in applied else "ignored",
+        ).inc()
+    logger.info(
+        "corp_db.requested_filter_fields=%s corp_db.applied_filter_fields=%s "
+        "corp_db.ignored_filter_fields=%s corp_db.filter_contract_status=%s kind=%s",
+        ",".join(requested_fields) or "-",
+        ",".join(applied_fields) or "-",
+        ",".join(ignored_fields) or "-",
+        status,
+        req.kind,
+    )
+    return {
+        "requested_filter_fields": list(requested_fields),
+        "applied_filter_fields": list(applied_fields),
+        "ignored_filter_fields": list(ignored_fields),
+        "status": status,
+    }
 
 
 @asynccontextmanager
@@ -4318,6 +4419,7 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
     limit, offset = _clamp(req.limit, req.offset)
     started_at = perf_counter()
     status = "error"
+    requested_filter_fields = _requested_filter_fields(req)
     req = _sanitize_filter_defaults(req)
     profile_name = req.profile or ("kb_route_lookup" if _is_kb_route_lookup(req) else "none")
     selected_route_id = str(req.knowledge_route_id or "").strip() or f"corp_db.{req.kind}"
@@ -4376,6 +4478,11 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
             else:
                 result = await _lamp_filters(conn, req, limit, offset)
 
+            result["filter_contract"] = _observe_filter_contract(
+                req=req,
+                requested_fields=requested_filter_fields,
+                result=result,
+            )
             result["user_id"] = user_id
             status = str(result.get("status", "success"))
             update_correlation_context(

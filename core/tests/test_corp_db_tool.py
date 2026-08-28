@@ -12,22 +12,29 @@ from contextvars import ContextVar
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 class _DummySpan:
+    def __init__(self):
+        self.attributes = {}
+
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc, tb):
         return False
 
-    def set_attribute(self, *args, **kwargs):
-        return None
+    def set_attribute(self, key, value):
+        self.attributes[key] = value
 
     def record_exception(self, *args, **kwargs):
         return None
 
 
 class _DummyTracer:
+    def __init__(self):
+        self.last_span = None
+
     def start_as_current_span(self, *args, **kwargs):
-        return _DummySpan()
+        self.last_span = _DummySpan()
+        return self.last_span
 
 
 # Stub corp_db.py's heavy dependencies only when the real module is unavailable in this
@@ -46,6 +53,7 @@ for _name, _stub in (
             REQUEST_ID=ContextVar("request_id", default="-"),
             get_correlation_context=lambda: {},
             inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
+            observe_retrieval_constraint_evidence=lambda *args, **kwargs: None,
             observe_route_selector_sanitization=lambda *args, **kwargs: None,
             update_correlation_context=lambda *args, **kwargs: {},
         ),
@@ -222,6 +230,68 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(decoded["kind"], "lamp_filters")
         self.assertEqual(decoded["results"][0]["name"], "NL Nova30-N-O")
         self.assertEqual(decoded["results"][0]["facts"]["color_rendering_index_ra"]["text"], "Ra 80")
+        self.assertEqual(result.metadata["retrieval_constraint_evidence_status"], "unknown")
+
+    def test_tool_correlates_series_and_ex_constraint_evidence(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {
+            "status": "success",
+            "kind": "lamp_filters",
+            "filter_contract": {
+                "requested_filter_fields": ["series", "explosion_protected"],
+                "applied_filter_fields": ["series", "explosion_protected"],
+                "ignored_filter_fields": [],
+                "status": "ok",
+            },
+            "results": [
+                {
+                    "name": "LAD LED R500-4-O-12-140L 2Ex",
+                    "series_name": "LAD LED R500 2Ex",
+                    "is_explosion_protected": True,
+                }
+            ],
+        }
+
+        with patch.object(_MODULE, "aiohttp", _aiohttp_stub_for_payload(payload)):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {
+                        "kind": "lamp_filters",
+                        "series": "LAD LED R500 2Ex",
+                        "explosion_protected": True,
+                    },
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.metadata["retrieval_constraint_evidence_status"], "matched")
+        self.assertEqual(result.metadata["filter_contract"]["status"], "ok")
+
+    def test_tool_marks_constraint_mismatch_without_exposing_values_as_metric_labels(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        payload = {
+            "status": "success",
+            "kind": "lamp_filters",
+            "results": [
+                {
+                    "name": "LAD LED R320-2-10G-230AC-50K Ex",
+                    "series_name": "LAD LED R320 Ex",
+                    "is_explosion_protected": True,
+                }
+            ],
+        }
+
+        with patch.object(_MODULE, "aiohttp", _aiohttp_stub_for_payload(payload)):
+            result = asyncio.run(
+                tool_corp_db_search(
+                    {"kind": "lamp_filters", "series": "LAD LED R500 2Ex"},
+                    ctx,
+                )
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.metadata["retrieval_constraint_evidence_status"], "mismatch")
 
     def test_tool_returns_full_company_fact_runtime_payload_and_compact_artifact(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")

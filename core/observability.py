@@ -80,6 +80,7 @@ CORRELATION_FIELDS = (
     "tool_status",
     "retrieval_phase",
     "retrieval_evidence_status",
+    "retrieval_constraint_evidence_status",
     "retrieval_close_reason",
     "route_arg_validation_status",
     "route_selector_validation_error_code",
@@ -112,6 +113,7 @@ CORRELATION_FIELD_DEFAULTS = {
     "tool_status": "-",
     "retrieval_phase": "-",
     "retrieval_evidence_status": "-",
+    "retrieval_constraint_evidence_status": "unknown",
     "retrieval_close_reason": "-",
     "route_arg_validation_status": "none",
     "route_selector_validation_error_code": "-",
@@ -144,6 +146,7 @@ SPAN_ATTRIBUTE_NAMES = {
     "tool_status": "tool_status",
     "retrieval_phase": "retrieval_phase",
     "retrieval_evidence_status": "retrieval_evidence_status",
+    "retrieval_constraint_evidence_status": "retrieval_constraint_evidence_status",
     "retrieval_close_reason": "retrieval_close_reason",
     "route_arg_validation_status": "route_arg_validation_status",
     "route_selector_validation_error_code": "route_selector_validation_error_code",
@@ -274,6 +277,12 @@ TOOL_EXECUTIONS_TOTAL = Counter(
         "route_arg_validation_status",
         "used_fallback_scope",
     ),
+    registry=REGISTRY,
+)
+RETRIEVAL_CONSTRAINT_EVIDENCE_TOTAL = Counter(
+    "retrieval_constraint_evidence_total",
+    "Corp DB results grouped by bounded route, kind, and canonical constraint evidence status.",
+    labelnames=("service", "selected_route_id", "kind", "status"),
     registry=REGISTRY,
 )
 TOOL_EXECUTION_DURATION_MS = Histogram(
@@ -732,6 +741,18 @@ def observe_route_selector_sanitization(
     ).inc()
 
 
+def observe_retrieval_constraint_evidence(status: str, *, kind: str) -> None:
+    normalized_status = status if status in {"matched", "mismatch", "unknown"} else "unknown"
+    normalized_kind = str(kind or "unknown").strip() or "unknown"
+    context = get_correlation_context()
+    RETRIEVAL_CONSTRAINT_EVIDENCE_TOTAL.labels(
+        ACTIVE_SERVICE_NAME,
+        _metric_label(context, "selected_route_id"),
+        normalized_kind,
+        normalized_status,
+    ).inc()
+
+
 def observe_tool_execution(tool_name: str, tool_status: str, duration_ms: float) -> None:
     context = get_correlation_context()
     labels = (
@@ -828,7 +849,9 @@ def setup_observability(service_name: str) -> None:
         "selected_source=%(selected_source)s knowledge_route_id=%(knowledge_route_id)s "
         "document_id=%(document_id)s tool_name=%(tool_name)s tool_call_id=%(tool_call_id)s "
         "tool_call_seq=%(tool_call_seq)s tool_status=%(tool_status)s retrieval_phase=%(retrieval_phase)s "
-        "retrieval_evidence_status=%(retrieval_evidence_status)s retrieval_close_reason=%(retrieval_close_reason)s "
+        "retrieval_evidence_status=%(retrieval_evidence_status)s "
+        "retrieval_constraint_evidence_status=%(retrieval_constraint_evidence_status)s "
+        "retrieval_close_reason=%(retrieval_close_reason)s "
         "route_selector_status=%(route_selector_status)s route_selector_confidence=%(route_selector_confidence)s "
         "used_fallback_scope=%(used_fallback_scope)s used_fallback_route_id=%(used_fallback_route_id)s "
         "fallback_family_id=%(fallback_family_id)s routing_catalog_version=%(routing_catalog_version)s "

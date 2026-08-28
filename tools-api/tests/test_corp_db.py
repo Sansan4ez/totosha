@@ -1512,6 +1512,31 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertTrue(any("l.series_name" in cond and " = lower(trim($1))" in cond for cond in conditions))
         self.assertFalse(any("l.name" in cond or "search_text" in cond for cond in conditions))
 
+    def test_filter_contract_reports_requested_applied_and_ignored_bounded_fields(self):
+        from src.routes.corp_db import (
+            CorpDbSearchRequest,
+            _observe_filter_contract,
+            _requested_filter_fields,
+        )
+
+        req = CorpDbSearchRequest(
+            kind="lamp_filters",
+            query="legacy ignored text",
+            series="LAD LED R500 2Ex",
+            flux_lm_min=11540,
+        )
+        requested = _requested_filter_fields(req)
+        contract = _observe_filter_contract(
+            req=req,
+            requested_fields=requested,
+            result={"filters": {"series": "LAD LED R500 2Ex", "flux_lm_min": 11540}},
+        )
+
+        self.assertEqual(requested, ("query", "series", "flux_lm_min"))
+        self.assertEqual(contract["applied_filter_fields"], ["series", "flux_lm_min"])
+        self.assertEqual(contract["ignored_filter_fields"], ["query"])
+        self.assertEqual(contract["status"], "ignored")
+
     def test_build_lamp_conditions_normalizes_dimensions_and_voltage_kind(self):
         from src.routes.corp_db import CorpDbSearchRequest, _build_lamp_conditions
 
@@ -1647,6 +1672,11 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertTrue({row["name"] for row in r500_results}.isdisjoint({row["name"] for row in r320_results}))
         self.assertTrue(all("l.series_name" in sql for sql in conn.queries))
         self.assertTrue(all("l.name ILIKE" not in sql for sql in conn.queries))
+        r500_contract = responses["LAD LED R500 2Ex"].json()["filter_contract"]
+        self.assertEqual(r500_contract["requested_filter_fields"], ["series", "flux_lm_min"])
+        self.assertEqual(r500_contract["applied_filter_fields"], ["series", "flux_lm_min"])
+        self.assertEqual(r500_contract["ignored_filter_fields"], [])
+        self.assertEqual(r500_contract["status"], "ok")
 
     def test_lamp_filters_route_sanitizes_zero_defaults_from_agent(self):
         conn = QueryCaptureConn()
@@ -2004,6 +2034,10 @@ class CorpDbRouteTests(unittest.TestCase):
         text = metrics.text
         self.assertIn("corp_db_search_phase_duration_milliseconds_bucket", text)
         self.assertIn('phase="lamp_filters"', text)
+        self.assertIn("corp_db_filter_contract_total", text)
+        self.assertIn('field="mounting_type",kind="hybrid_search",status="applied"', text)
+        self.assertNotIn("подбери светильник", text)
+        self.assertNotIn("user_id=", text)
 
     def test_metrics_expose_portfolio_examples_phases(self):
         conn = PortfolioExamplesConn()

@@ -45,8 +45,12 @@ Minimum Expectations
 - Catalog retrieval services additionally emit:
   - metric `corp_db_search_duration_milliseconds`
   - metric `corp_db_search_phase_duration_milliseconds`
+  - metric `corp_db_filter_contract_total{kind,field,status}` with bounded field names only
+  - metric `retrieval_constraint_evidence_total{service,selected_route_id,kind,status}` for `matched|mismatch|unknown`
   - trace spans `tool.corp_db_search`, `corp_db.lamp_filters`, `corp_db.hybrid_primary`, `corp_db.embedding`, `corp_db.token_fallback`, `corp_db.alias_fallback`
+  - span/log attributes `corp_db.requested_filter_fields`, `corp_db.applied_filter_fields`, `corp_db.ignored_filter_fields`, `corp_db.filter_contract_status`, and `retrieval_constraint_evidence_status`
 - Every instrumented service adds `request_id`, `trace_id`, and `span_id` correlation to logs.
+- Catalog contract metric labels never contain raw query text, `user_id`, SKU, or a series value; those values remain payload data while telemetry uses fixed field names and statuses.
 - Route-aware retrieval logs and spans also expose `selected_route_id`, `selected_route_family`, `selected_business_family_id`, `selected_leaf_route_id`, `route_stage`, `route_arg_validation_status`, `used_fallback_scope`, `selected_route_kind`, `selected_source`, `knowledge_route_id`, `document_id`, `tool_name`, and `tool_status`.
 - Traces and logs are exported through the shared OTEL collector by default from the base app compose. `docker-compose.observability.yml` only adds localhost port bindings for local smoke and triage.
 - Metrics are scraped by the OTEL collector from each service `/metrics` endpoint and forwarded to VictoriaMetrics.

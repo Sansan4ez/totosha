@@ -21,6 +21,7 @@ from observability import (
     REQUEST_ID as OBS_REQUEST_ID,
     get_correlation_context,
     inject_trace_context,
+    observe_retrieval_constraint_evidence,
     observe_route_selector_sanitization,
     update_correlation_context,
 )
@@ -232,6 +233,53 @@ def _payload_error_message(data: dict) -> str:
     return "Корпоративная база временно недоступна"
 
 
+def _result_rows(data: dict) -> list[dict]:
+    rows = data.get("results")
+    if not isinstance(rows, list):
+        rows = data.get("recommended_lamps")
+    return [row for row in rows or [] if isinstance(row, dict)]
+
+
+def _row_value(row: dict, key: str) -> object:
+    if key in row:
+        return row.get(key)
+    metadata = row.get("metadata")
+    return metadata.get(key) if isinstance(metadata, dict) else None
+
+
+def _constraint_evidence_status(args: dict, data: object) -> str:
+    if not isinstance(data, dict):
+        return "unknown"
+    requested_series = str(args.get("series") or "").strip()
+    requested_ex = args.get("explosion_protected")
+    if not requested_series and requested_ex is not True:
+        return "unknown"
+    rows = _result_rows(data)
+    if not rows:
+        return "unknown"
+    if requested_series:
+        expected = requested_series.casefold()
+        if any(str(_row_value(row, "series_name") or "").strip().casefold() != expected for row in rows):
+            return "mismatch"
+    if requested_ex is True:
+        if any(_row_value(row, "is_explosion_protected") is not True for row in rows):
+            return "mismatch"
+    return "matched"
+
+
+def _apply_constraint_evidence(span, *, args: dict, data: object) -> str:
+    status = _constraint_evidence_status(args, data)
+    update_correlation_context(retrieval_constraint_evidence_status=status)
+    span.set_attribute("retrieval_constraint_evidence_status", status)
+    observe_retrieval_constraint_evidence(status, kind=str(args.get("kind") or "unknown"))
+    logger.info(
+        "corp_db constraint evidence kind=%s retrieval_constraint_evidence_status=%s",
+        args.get("kind"),
+        status,
+    )
+    return status
+
+
 async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
     tools_api_url = os.getenv("TOOLS_API_URL", "http://tools-api:8100")
     budget = _timeout_budget_seconds()
@@ -277,6 +325,7 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
             "tool_call_seq",
             "retrieval_phase",
             "retrieval_evidence_status",
+            "retrieval_constraint_evidence_status",
             "retrieval_close_reason",
             "application_recovery_outcome",
             "finalizer_mode",
@@ -313,6 +362,10 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
                             runtime_payload_format=RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
                             bench_payload_format=bench_payload_format,
                         )
+                        constraint_status = _apply_constraint_evidence(span, args=args, data=data)
+                        metadata["retrieval_constraint_evidence_status"] = constraint_status
+                        if isinstance(data, dict) and isinstance(data.get("filter_contract"), dict):
+                            metadata["filter_contract"] = dict(data["filter_contract"])
                         if isinstance(data, dict) and str(data.get("status") or "").lower() == "error":
                             return ToolResult(False, error=_payload_error_message(data), output=_serialize_runtime_payload(data), metadata=metadata)
                         return ToolResult(True, output=_serialize_runtime_payload(data), metadata=metadata)

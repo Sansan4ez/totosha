@@ -213,6 +213,65 @@ catalog:
       - path: docs/operations/observability-runbook.md
         contains:
           - corp_db_search_phase_duration_milliseconds_count
+  - name: corp_db_filter_contract_total
+    kind: metric
+    service: tools-api
+    emitter:
+      path: tools-api/src/routes/corp_db.py
+      description: Bounded requested-versus-applied catalog filter counter labeled only by kind, fixed field name, and status.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: alert
+        ref: OBS-ALERT-008
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+      - kind: smoke
+        ref: tools-api/tests/test_corp_db.py
+    coverage_paths:
+      - path: tools-api/src/routes/corp_db.py
+        contains:
+          - corp_db_filter_contract_total
+          - requested_filter_fields
+          - applied_filter_fields
+          - ignored_filter_fields
+      - path: tools-api/tests/test_corp_db.py
+        contains:
+          - corp_db_filter_contract_total
+      - path: victoriametrics/alerts/vmalert-rules.yaml
+        contains:
+          - CorpDbFilterContractMismatchSustained
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - corp_db_filter_contract_total
+  - name: retrieval_constraint_evidence_total
+    kind: metric
+    service: core
+    emitter:
+      path: core/observability.py
+      description: Core-side route-correlated matched, mismatch, or unknown evidence for bounded canonical series and Ex constraints.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: alert
+        ref: OBS-ALERT-008
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+      - kind: smoke
+        ref: core/tests/test_corp_db_tool.py
+    coverage_paths:
+      - path: core/observability.py
+        contains:
+          - retrieval_constraint_evidence_total
+      - path: core/tools/corp_db.py
+        contains:
+          - retrieval_constraint_evidence_status
+      - path: core/tests/test_corp_db_tool.py
+        contains:
+          - retrieval_constraint_evidence_status
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - retrieval_constraint_evidence_total
   - name: tool.corp_db_search
     kind: trace
     service: core

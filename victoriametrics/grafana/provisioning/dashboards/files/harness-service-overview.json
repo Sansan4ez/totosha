@@ -194,6 +194,25 @@
           "expr": "sum by (route) (rate(http_server_duration_milliseconds_count{service_name=\"proxy\",route=~\"/transcribe|/v1/.*\",status=~\"5..\"}[5m])) / clamp_min(sum by (route) (rate(http_server_duration_milliseconds_count{service_name=\"proxy\",route=~\"/transcribe|/v1/.*\"}[5m])), 0.0001)"
         }
       ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Catalog Constraint Contract (15m)",
+      "datasource": {
+        "type": "victoriametrics-metrics-datasource",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "expr": "sum by (kind, field, status) (increase(corp_db_filter_contract_total[15m]))",
+          "legendFormat": "tools {{kind}} {{field}} {{status}}"
+        },
+        {
+          "expr": "sum by (selected_route_id, kind, status) (increase(retrieval_constraint_evidence_total{service_name=\"core\"}[15m]))",
+          "legendFormat": "core {{selected_route_id}} {{kind}} {{status}}"
+        }
+      ]
     }
   ]
 }

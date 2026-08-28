@@ -15,3 +15,6 @@ This inventory is generated from the minimum alert catalog under `victoriametric
 | `OBS-ALERT-003` | vmalert | Proxy user-path 5xx ratio high | critical | VictoriaMetrics | `docs/operations/observability-runbook.md` |
 | `OBS-ALERT-004` | vmalert | Proxy user-path p95 latency high | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |
 | `OBS-ALERT-005` | manual | ASR compatibility smoke failed | warning | cli-proxy-api /transcribe | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-006` | vmalert | Route selector sanitization sustained | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-007` | vmalert | Corp DB search documents missing embeddings | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-008` | vmalert | Catalog filter contract mismatch sustained | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |

@@ -68,3 +68,27 @@ alerts:
     summary: The route selector keeps proposing fallback routes the catalog does not declare.
     impact: RFC-028 sanitization (core/documents/route_schema.py) hides this from users as a successful answer, but sustained hits mean core/routes/ has an undeclared sibling-fallback gap that should be fixed as data -- the same class of bug behind the 2026-07-06 incident (trace 7852fc7fe6909eec06529a124817e571). Check `python -m documents.route_catalog_check` output and core/routes/index.md.
     runbook: docs/operations/observability-runbook.md
+
+  - id: OBS-ALERT-007
+    execution: vmalert
+    alert_name: CorpDbSearchDocsMissingEmbeddings
+    title: Corp DB search documents missing embeddings
+    severity: warning
+    datasource: VictoriaMetrics
+    expr: max(corp_db_search_docs_missing_embeddings) > 0
+    for: 15m
+    summary: '{{ $value }} corp_search_docs rows have no embedding.'
+    impact: Semantic retrieval is blind to these documents and scoped KB lookups can silently degrade to lexical-only matching.
+    runbook: docs/operations/observability-runbook.md
+
+  - id: OBS-ALERT-008
+    execution: vmalert
+    alert_name: CorpDbFilterContractMismatchSustained
+    title: Catalog filter contract mismatch sustained
+    severity: warning
+    datasource: VictoriaMetrics
+    expr: sum(rate(corp_db_filter_contract_total{status="ignored"}[15m])) + sum(rate(retrieval_constraint_evidence_total{status="mismatch"}[15m])) > 0.01
+    for: 15m
+    summary: Catalog constraints are being ignored or contradicted at a sustained rate.
+    impact: Tool calls can remain successful while requested series or Ex constraints do not reach SQL or do not match returned evidence.
+    runbook: docs/operations/observability-runbook.md
