@@ -26,6 +26,7 @@ def _load_corp_db_module():
             REQUEST_ID=ContextVar("request_id", default="-"),
             get_correlation_context=lambda: {},
             inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
+            observe_retrieval_constraint_evidence=lambda *args, **kwargs: None,
             observe_route_selector_sanitization=lambda *args, **kwargs: None,
             update_correlation_context=lambda *args, **kwargs: {},
         ),
@@ -52,6 +53,9 @@ _sanitize_corp_db_args = _CORP_DB._sanitize_corp_db_args
 
 
 class CorpDbArgContractTests(unittest.TestCase):
+    def test_hermetic_loader_exposes_sanitizer(self):
+        self.assertTrue(callable(_CORP_DB._sanitize_corp_db_args))
+
     def test_manifest_covers_every_selector_schema_property(self):
         routes = routing.load_static_route_cards()
         for route in routes:
