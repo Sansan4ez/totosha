@@ -1,0 +1,178 @@
+{
+  "artifact_version": 1,
+  "benchmark": "canonical-series-lamp-filters",
+  "label": "baseline",
+  "timestamp_utc": "2026-08-29T20:53:53.809359Z",
+  "git_sha": "2c7f5a586926e510a0529b289f0555d38f48033a",
+  "schema_git_sha": "29b2f1d3b89c48ebadf6beeefba35375ad040981",
+  "production_like_path": "direct HTTP inside tools-api container to /corp-db/search",
+  "command": "python3 scripts/corp_db_lamp_filters_latency.py run --label baseline --output /tmp/totosha-latency/baseline.json --warmups 5 --measured 30",
+  "stack": {
+    "tools_api": {
+      "status": "ok",
+      "service": "tools-api",
+      "version": "3.0",
+      "build": {
+        "git_sha": "unknown",
+        "build_time": "unknown"
+      },
+      "mcp_enabled": true,
+      "skills_enabled": true,
+      "corp_db_rfc026": {
+        "applied": true,
+        "details": {
+          "sphere_curated_categories_table": true,
+          "categories_parent_category_id_column": true
+        }
+      }
+    },
+    "tools_api_container": {
+      "container": "tools-api",
+      "image": "totosha-tools-api",
+      "image_id": "sha256:2e7b09f23febd6f412034589028134b61d5b1ded86f57361cd2f6b7c801f09f1",
+      "created_at": "2026-08-06T20:51:47.454565854Z"
+    },
+    "corp_db_container": {
+      "container": "corp-db",
+      "image": "totosha-corp-db",
+      "image_id": "sha256:bb91d1cf13040563991bc637b0a578715aeb64041131ed5284db1c0904920026",
+      "created_at": "2026-08-29T20:22:14.742852572Z"
+    }
+  },
+  "dataset": {
+    "catalog_lamps": 709,
+    "categories": 163,
+    "catalog_series_families": 18,
+    "search_docs": 2116,
+    "database_size_bytes": 75200179,
+    "postgres_version": "17.11 (Debian 17.11-1.pgdg12+2)"
+  },
+  "sampling": {
+    "warmups_per_case": 5,
+    "measured_per_case": 30
+  },
+  "cases": [
+    {
+      "case_id": "r500_2ex",
+      "request": {
+        "kind": "lamp_filters",
+        "series": "LAD LED R500 2Ex",
+        "flux_lm_min": 11540,
+        "limit": 20
+      },
+      "metrics": {
+        "warmup_count": 5,
+        "sample_count": 30,
+        "http_success_count": 30,
+        "http_error_count": 0,
+        "http_success_rate": 1.0,
+        "application_success_count": 30,
+        "application_error_count": 0,
+        "median_ms": 130.284,
+        "p95_ms": 227.035,
+        "max_ms": 235.93
+      },
+      "explain_summary": {
+        "planning_time_ms": 7.627,
+        "execution_time_ms": 35.842,
+        "root_node_type": "Limit",
+        "root_actual_rows": 20,
+        "root_total_cost": 1949.35,
+        "shared_hit_blocks": 280,
+        "shared_read_blocks": 0,
+        "temp_read_blocks": 0,
+        "temp_written_blocks": 0,
+        "node_types": [
+          "Bitmap Heap Scan",
+          "Bitmap Index Scan",
+          "CTE Scan",
+          "Hash",
+          "Hash Join",
+          "Index Scan",
+          "Limit",
+          "Nested Loop",
+          "Recursive Union",
+          "Seq Scan",
+          "Sort",
+          "Subquery Scan",
+          "Unique",
+          "WorkTable Scan"
+        ],
+        "relations": [
+          "catalog_lamps",
+          "categories"
+        ],
+        "indexes": [
+          "categories_pkey",
+          "idx_catalog_lamps_category_id"
+        ]
+      }
+    },
+    {
+      "case_id": "r320_ex",
+      "request": {
+        "kind": "lamp_filters",
+        "series": "LAD LED R320 Ex",
+        "flux_lm_min": 11540,
+        "limit": 20
+      },
+      "metrics": {
+        "warmup_count": 5,
+        "sample_count": 30,
+        "http_success_count": 30,
+        "http_error_count": 0,
+        "http_success_rate": 1.0,
+        "application_success_count": 30,
+        "application_error_count": 0,
+        "median_ms": 143.411,
+        "p95_ms": 153.737,
+        "max_ms": 157.207
+      },
+      "explain_summary": {
+        "planning_time_ms": 6.248,
+        "execution_time_ms": 7.121,
+        "root_node_type": "Limit",
+        "root_actual_rows": 16,
+        "root_total_cost": 1949.35,
+        "shared_hit_blocks": 85,
+        "shared_read_blocks": 0,
+        "temp_read_blocks": 0,
+        "temp_written_blocks": 0,
+        "node_types": [
+          "Bitmap Heap Scan",
+          "Bitmap Index Scan",
+          "CTE Scan",
+          "Hash",
+          "Hash Join",
+          "Index Scan",
+          "Limit",
+          "Nested Loop",
+          "Recursive Union",
+          "Seq Scan",
+          "Sort",
+          "Subquery Scan",
+          "Unique",
+          "WorkTable Scan"
+        ],
+        "relations": [
+          "catalog_lamps",
+          "categories"
+        ],
+        "indexes": [
+          "categories_pkey",
+          "idx_catalog_lamps_category_id"
+        ]
+      }
+    }
+  ],
+  "privacy": {
+    "contains_user_text": false,
+    "contains_user_id": false,
+    "contains_secrets": false,
+    "raw_samples_retained": false
+  },
+  "evidence_build": {
+    "git_sha": "2c7f5a586926e510a0529b289f0555d38f48033a",
+    "build_time": "2026-08-29T20:53:53.809359Z"
+  }
+}
