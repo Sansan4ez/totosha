@@ -1150,7 +1150,12 @@ class CorpDbRouteTests(unittest.TestCase):
             client = TestClient(app)
             response = client.post(
                 "/corp-db/search",
-                json={"kind": "category_lamps", "category": "LAD LED R500"},
+                json={
+                    "kind": "category_lamps",
+                    "category": "LAD LED R500",
+                    "series": "LAD LED R500",
+                    "flux_lm_min": 10000,
+                },
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1159,6 +1164,41 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["filters"]["category_query_semantics"], "display_category_to_executable")
         self.assertEqual(payload["filters"]["executable_category_ids"], [68, 69])
         self.assertEqual([row["category_id"] for row in payload["results"]], [69, 68])
+        self.assertEqual(
+            payload["filter_contract"]["requested_filter_fields"],
+            ["category", "series", "flux_lm_min"],
+        )
+        self.assertEqual(
+            payload["filter_contract"]["applied_filter_fields"],
+            ["category", "series", "flux_lm_min"],
+        )
+        self.assertEqual(payload["filter_contract"]["ignored_filter_fields"], [])
+
+    def test_category_lamps_fallback_reports_unexecuted_structured_filters_as_ignored(self):
+        conn = ApplicationRecommendationConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+
+            client = TestClient(app)
+            response = client.post(
+                "/corp-db/search",
+                json={
+                    "kind": "category_lamps",
+                    "category": "Неразрешимая категория",
+                    "series": "LAD LED R500 2Ex",
+                    "flux_lm_min": 11540,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        contract = response.json()["filter_contract"]
+        self.assertEqual(
+            contract["requested_filter_fields"],
+            ["category", "series", "flux_lm_min"],
+        )
+        self.assertEqual(contract["applied_filter_fields"], ["category"])
+        self.assertEqual(contract["ignored_filter_fields"], ["series", "flux_lm_min"])
+        self.assertEqual(contract["status"], "ignored")
 
     def test_application_recommendation_normalizes_quarry_typo(self):
         conn = ApplicationRecommendationConn()
@@ -1529,13 +1569,27 @@ class CorpDbRouteTests(unittest.TestCase):
         contract = _observe_filter_contract(
             req=req,
             requested_fields=requested,
-            result={"filters": {"series": "LAD LED R500 2Ex", "flux_lm_min": 11540}},
+            result={
+                "filters": {"series": "LAD LED R500 2Ex", "flux_lm_min": 11540},
+                "_applied_filter_fields": ("series", "flux_lm_min"),
+            },
         )
 
         self.assertEqual(requested, ("query", "series", "flux_lm_min"))
         self.assertEqual(contract["applied_filter_fields"], ["series", "flux_lm_min"])
         self.assertEqual(contract["ignored_filter_fields"], ["query"])
         self.assertEqual(contract["status"], "ignored")
+
+    def test_filter_contract_requires_executor_execution_evidence(self):
+        from src.routes.corp_db import CorpDbSearchRequest, _observe_filter_contract
+
+        req = CorpDbSearchRequest(kind="lamp_filters", series="LAD LED R500 2Ex")
+        with self.assertRaisesRegex(AssertionError, "did not publish"):
+            _observe_filter_contract(
+                req=req,
+                requested_fields=("series",),
+                result={"filters": {"series": "LAD LED R500 2Ex"}},
+            )
 
     def test_build_lamp_conditions_normalizes_dimensions_and_voltage_kind(self):
         from src.routes.corp_db import CorpDbSearchRequest, _build_lamp_conditions

@@ -9,7 +9,7 @@ import re
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from time import perf_counter
-from typing import Any, Literal, Optional
+from typing import Any, Iterable, Literal, Optional
 
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request
@@ -398,9 +398,7 @@ CORP_DB_FILTER_CONTRACT_FIELDS = tuple(
     )
 )
 CORP_DB_FILTER_CONTRACT_FIELD_SET = frozenset(CORP_DB_FILTER_CONTRACT_FIELDS)
-FILTER_CONTRACT_REQUEST_APPLIED_KINDS = frozenset(
-    {"hybrid_search", "lamp_suggest", "application_recommendation", "category_lamps"}
-)
+_EXECUTION_FILTER_EVIDENCE_KEY = "_applied_filter_fields"
 KB_ROUTE_FORBIDDEN_FILTER_FIELDS = (
     [field_name for field_name, _ in LAMP_TEXT_FILTER_SPECS]
     + [field_name for field_name, _ in LAMP_EXACT_FILTER_SPECS]
@@ -984,28 +982,16 @@ def _requested_filter_fields(req: CorpDbSearchRequest) -> tuple[str, ...]:
     )
 
 
-def _applied_filter_fields(
-    *,
-    req: CorpDbSearchRequest,
-    requested_fields: tuple[str, ...],
-    result: dict[str, Any],
-) -> tuple[str, ...]:
-    requested = set(requested_fields)
-    applied: set[str] = set()
-    response_filters = result.get("filters") if isinstance(result.get("filters"), dict) else {}
-    applied.update(requested.intersection(response_filters))
+def _bounded_filter_field_names(fields: Iterable[str]) -> tuple[str, ...]:
+    field_set = {str(field) for field in fields}
+    unknown_fields = field_set - CORP_DB_FILTER_CONTRACT_FIELD_SET
+    if unknown_fields:
+        raise AssertionError(f"Unbounded filter-contract evidence: {sorted(unknown_fields)}")
+    return tuple(field for field in CORP_DB_FILTER_CONTRACT_FIELDS if field in field_set)
 
-    # These executors apply their structured request constraints internally but return
-    # summary filters rather than echoing every bounded field. The values themselves are
-    # deliberately never copied into telemetry.
-    if req.kind in FILTER_CONTRACT_REQUEST_APPLIED_KINDS:
-        if "query" in requested and str(req.query or "").strip():
-            applied.add("query")
-        for field in requested.intersection(CORP_DB_FILTER_CONTRACT_FIELD_SET - {"query"}):
-            if getattr(req, field, None) not in (None, "", [], {}, False):
-                applied.add(field)
 
-    return tuple(field for field in CORP_DB_FILTER_CONTRACT_FIELDS if field in applied)
+def _filter_fields_from_sql_filters(filters: dict[str, Any]) -> tuple[str, ...]:
+    return _bounded_filter_field_names(CORP_DB_FILTER_CONTRACT_FIELD_SET.intersection(filters))
 
 
 def _observe_filter_contract(
@@ -1014,7 +1000,14 @@ def _observe_filter_contract(
     requested_fields: tuple[str, ...],
     result: dict[str, Any],
 ) -> dict[str, Any]:
-    applied_fields = _applied_filter_fields(req=req, requested_fields=requested_fields, result=result)
+    evidence = result.pop(_EXECUTION_FILTER_EVIDENCE_KEY, None)
+    if evidence is None:
+        raise AssertionError(f"Executor {req.kind!r} did not publish filter-contract execution evidence")
+    if isinstance(evidence, str) or not isinstance(evidence, (tuple, list, set, frozenset)):
+        raise AssertionError(f"Executor {req.kind!r} published invalid filter-contract execution evidence")
+
+    requested = set(requested_fields)
+    applied_fields = tuple(field for field in _bounded_filter_field_names(evidence) if field in requested)
     applied = set(applied_fields)
     ignored_fields = tuple(field for field in requested_fields if field not in applied)
     status = "ignored" if ignored_fields else "ok"
@@ -1105,6 +1098,7 @@ async def _observe_search_phase(
 def _success(
     kind: str,
     *,
+    applied_filter_fields: Iterable[str],
     query: str | None = None,
     filters: dict[str, Any] | None = None,
     results: list[dict[str, Any]] | None = None,
@@ -1117,6 +1111,7 @@ def _success(
         "query": query,
         "filters": filters or {},
         "results": rows,
+        _EXECUTION_FILTER_EVIDENCE_KEY: _bounded_filter_field_names(applied_filter_fields),
     }
     if debug:
         response["debug"] = debug
@@ -1406,6 +1401,7 @@ def _portfolio_examples_response(
     query: str,
     status: str,
     filters: dict[str, Any],
+    applied_filter_fields: Iterable[str] = (),
     lamp: dict[str, Any] | None = None,
     spheres: list[dict[str, Any]] | None = None,
     portfolio_examples: list[dict[str, Any]] | None = None,
@@ -1418,6 +1414,7 @@ def _portfolio_examples_response(
         "filters": filters,
         "results": examples,
         "portfolio_examples": examples,
+        _EXECUTION_FILTER_EVIDENCE_KEY: _bounded_filter_field_names(applied_filter_fields),
     }
     if lamp is not None:
         payload["lamp"] = lamp
@@ -1450,6 +1447,7 @@ def _application_response(
     query: str,
     status: str,
     filters: dict[str, Any],
+    applied_filter_fields: Iterable[str],
     resolved_application: dict[str, Any] | None = None,
     categories: list[dict[str, Any]] | None = None,
     recommended_lamps: list[dict[str, Any]] | None = None,
@@ -1468,6 +1466,7 @@ def _application_response(
         "recommended_lamps": lamps,
         "portfolio_examples": portfolio_examples or [],
         "follow_up_question": follow_up_question,
+        _EXECUTION_FILTER_EVIDENCE_KEY: _bounded_filter_field_names(applied_filter_fields),
     }
     return payload
 
@@ -2143,9 +2142,10 @@ async def _resolve_application_categories(
     sphere_id: int | None,
     application_key: str | None = None,
     req: "CorpDbSearchRequest | None" = None,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
     if sphere_id is None:
-        return []
+        return [], ()
+    applied_filter_fields: tuple[str, ...] = ()
     curated_rows = await _fetch_curated_sphere_categories(conn, sphere_id=int(sphere_id))
     if curated_rows:
         enriched_curated = await _enrich_display_categories_with_executables(conn, curated_rows)
@@ -2157,16 +2157,22 @@ async def _resolve_application_categories(
             ]
         )
         if req is not None:
-            probe_rows = await _fetch_application_lamps(conn, category_ids=curated_category_ids, req=req, fetch_limit=1)
+            probe_rows, probe_filters = await _fetch_application_lamps(
+                conn,
+                category_ids=curated_category_ids,
+                req=req,
+                fetch_limit=1,
+            )
+            applied_filter_fields = _filter_fields_from_sql_filters(probe_filters)
         else:
             probe_rows = curated_category_ids
         if probe_rows:
-            return enriched_curated
+            return enriched_curated, applied_filter_fields
         # Curated categories exist but have zero lamps matching the request (often a
         # data-completeness gap) -- fall through to the application_key's category_queries
         # fallback below instead of returning categories that can never yield recommended_lamps.
     if not application_key:
-        return []
+        return [], applied_filter_fields
 
     category_queries = APPLICATION_PROFILES.get(application_key, {}).get("category_queries") or ()
     fallback_rows: list[dict[str, Any]] = []
@@ -2186,8 +2192,8 @@ async def _resolve_application_categories(
                 }
             )
     if not fallback_rows:
-        return []
-    return await _enrich_display_categories_with_executables(conn, fallback_rows)
+        return [], applied_filter_fields
+    return await _enrich_display_categories_with_executables(conn, fallback_rows), applied_filter_fields
 
 
 def _application_requested_explosion_protection(req: CorpDbSearchRequest, query: str) -> bool:
@@ -2377,9 +2383,9 @@ async def _fetch_application_lamps(
     category_ids: list[int],
     req: CorpDbSearchRequest,
     fetch_limit: int,
-) -> list[asyncpg.Record]:
-    conditions, args, _ = _build_lamp_conditions(req, alias="l", param_offset=1)
-    return await conn.fetch(
+) -> tuple[list[asyncpg.Record], dict[str, Any]]:
+    conditions, args, filters = _build_lamp_conditions(req, alias="l", param_offset=1)
+    rows = await conn.fetch(
         f"""
         /* application_lamps */
         SELECT l.*
@@ -2393,6 +2399,7 @@ async def _fetch_application_lamps(
         *args,
         fetch_limit,
     )
+    return rows, filters
 
 
 def _application_recommendation_reason(reasons: list[str], application_key: str) -> str:
@@ -2421,9 +2428,9 @@ async def _fetch_category_lamps_by_ids(
     req: CorpDbSearchRequest,
     limit: int,
     offset: int,
-) -> list[asyncpg.Record]:
-    conditions, args, _ = _build_lamp_conditions(req, alias="l", param_offset=1)
-    return await conn.fetch(
+) -> tuple[list[asyncpg.Record], dict[str, Any]]:
+    conditions, args, filters = _build_lamp_conditions(req, alias="l", param_offset=1)
+    rows = await conn.fetch(
         f"""
         /* category_lamps_by_ids */
         SELECT l.*
@@ -2438,6 +2445,7 @@ async def _fetch_category_lamps_by_ids(
         limit,
         offset,
     )
+    return rows, filters
 
 
 def _normalize_dimension_filter(text: str) -> str:
@@ -3088,6 +3096,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
         query_limit = max(query_limit, limit * 5)
 
     direct_filter_rows: list[dict[str, Any]] = []
+    applied_filter_fields: set[str] = {"query"}
     if explicit_lamp_filters:
         async with _observe_search_phase(
             kind="hybrid_search",
@@ -3096,6 +3105,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
             attributes={"corp_db.fast_path": True},
         ):
             direct_filter_result = await _lamp_filters(conn, _request_like(req, kind="lamp_filters"), limit, 0)
+        applied_filter_fields.update(direct_filter_result[_EXECUTION_FILTER_EVIDENCE_KEY])
         if direct_filter_result["results"]:
             direct_filter_rows = [
                 _hybrid_row_from_lamp_payload(row, 0.95 - index * 0.01, "lamp_filters")
@@ -3110,6 +3120,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
                 response_filters["search_strategy"] = "lamp_filters"
                 return _success(
                     "hybrid_search",
+                    applied_filter_fields=applied_filter_fields,
                     query=query,
                     filters=response_filters,
                     results=direct_filter_rows[:limit],
@@ -3204,6 +3215,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
             scoped_reason = fallback_strategy if primary_rows else "scoped_fallback_empty"
         return _success(
             "hybrid_search",
+            applied_filter_fields=applied_filter_fields,
             query=query,
             filters=_hybrid_response_filters(
                 profile_name=profile_name,
@@ -3228,6 +3240,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
     if primary_rows and not should_run_filter_fallback and not should_run_semantic and not should_run_token_fallback:
         return _success(
             "hybrid_search",
+            applied_filter_fields=applied_filter_fields,
             query=query,
             filters=_hybrid_response_filters(
                 profile_name=profile_name,
@@ -3295,6 +3308,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
         filter_req = _request_like(req, kind="lamp_filters", **filter_retry)
         async with _observe_search_phase(kind="hybrid_search", profile=profile_name, phase="lamp_filters"):
             filter_result = await _lamp_filters(conn, filter_req, limit, 0)
+        applied_filter_fields.update(filter_result[_EXECUTION_FILTER_EVIDENCE_KEY])
         if filter_result["results"]:
             fallback_groups.append(
                 (
@@ -3381,6 +3395,7 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
         )
     return _success(
         "hybrid_search",
+        applied_filter_fields=applied_filter_fields,
         query=query,
         filters=_hybrid_response_filters(
             profile_name=profile_name,
@@ -3431,6 +3446,7 @@ async def _lamp_exact(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit:
 
     return _success(
         "lamp_exact",
+        applied_filter_fields=(),
         query=name,
         results=[
             _serialize_lamp_row(
@@ -3466,6 +3482,7 @@ async def _sku_by_code(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit
     )
     return _success(
         "sku_by_code",
+        applied_filter_fields=(),
         query=etm or oracl,
         results=[
             {
@@ -3500,7 +3517,7 @@ async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, li
             ]
         )
         executable_req = _request_like(req, category=None)
-        rows = await _fetch_category_lamps_by_ids(
+        rows, sql_filters = await _fetch_category_lamps_by_ids(
             conn,
             category_ids=executable_category_ids,
             req=executable_req,
@@ -3509,6 +3526,7 @@ async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, li
         )
         return _success(
             "category_lamps",
+            applied_filter_fields=("category", *_filter_fields_from_sql_filters(sql_filters)),
             query=category,
             filters={
                 "category_query_semantics": "display_category_to_executable",
@@ -3536,6 +3554,7 @@ async def _category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRequest, li
     )
     return _success(
         "category_lamps",
+        applied_filter_fields=("category",),
         query=category,
         filters={"category_query_semantics": "executable_category_name"},
         results=[_serialize_lamp_row(row) for row in rows],
@@ -3557,7 +3576,7 @@ async def _showcase_category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRe
             ]
         )
         executable_req = _request_like(req, category=None)
-        rows = await _fetch_category_lamps_by_ids(
+        rows, sql_filters = await _fetch_category_lamps_by_ids(
             conn,
             category_ids=executable_category_ids,
             req=executable_req,
@@ -3566,6 +3585,7 @@ async def _showcase_category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRe
         )
         return _success(
             "showcase_category_lamps",
+            applied_filter_fields=("category", *_filter_fields_from_sql_filters(sql_filters)),
             query=category,
             filters={
                 "category_query_semantics": "display_category_to_executable",
@@ -3594,6 +3614,7 @@ async def _showcase_category_lamps(conn: asyncpg.Connection, req: CorpDbSearchRe
     )
     return _success(
         "showcase_category_lamps",
+        applied_filter_fields=("category",),
         query=category,
         filters={
             "category_query_semantics": "executable_category_name",
@@ -3666,6 +3687,7 @@ async def _lamp_documents_index(conn: asyncpg.Connection, req: CorpDbSearchReque
 
     return _success(
         "lamp_documents_index",
+        applied_filter_fields=(),
         query="; ".join(names),
         filters={
             "lookup_direction": "by_name",
@@ -3721,6 +3743,7 @@ async def _lamp_code_lookup(conn: asyncpg.Connection, req: CorpDbSearchRequest, 
             results.append(serialized)
         return _success(
             "lamp_code_lookup",
+            applied_filter_fields=(),
             query=code_query,
             filters={"lookup_direction": "by_code", "code_system": requested_code_system or "mixed"},
             results=results,
@@ -3754,6 +3777,7 @@ async def _lamp_code_lookup(conn: asyncpg.Connection, req: CorpDbSearchRequest, 
         results.append(payload)
     return _success(
         "lamp_code_lookup",
+        applied_filter_fields=(),
         query=name,
         filters={"lookup_direction": "by_name", "code_system": requested_code_system or "mixed"},
         results=results,
@@ -3801,6 +3825,7 @@ async def _portfolio_by_sphere(conn: asyncpg.Connection, req: CorpDbSearchReques
                     break
     return _success(
         "portfolio_by_sphere",
+        applied_filter_fields=(),
         query=sphere,
         results=[dict(row) for row in rows],
     )
@@ -3975,6 +4000,7 @@ async def _application_recommendation(
     portfolio_limit_raw = req.limit_portfolio if req.limit_portfolio is not None else 2
     portfolio_limit = max(0, min(int(portfolio_limit_raw), 10))
     profile_name = "application_recommendation"
+    applied_filter_fields: set[str] = {"query"}
 
     filters = {
         "limit_categories": category_limit,
@@ -4033,6 +4059,7 @@ async def _application_recommendation(
             query=query,
             status="empty",
             filters={**filters, "reason": "application_not_resolved"},
+            applied_filter_fields=applied_filter_fields,
             resolved_application=resolved_application,
             follow_up_question="Уточните, пожалуйста, объект применения: склад, офис, стадион, карьер, аэропорт или другая площадка?",
         )
@@ -4050,6 +4077,7 @@ async def _application_recommendation(
             query=query,
             status="needs_clarification",
             filters={**filters, "ambiguity": True},
+            applied_filter_fields=applied_filter_fields,
             resolved_application=resolved_application,
             follow_up_question=f"Уточните, пожалуйста: нужен подбор для {question_tail}?",
         )
@@ -4070,18 +4098,20 @@ async def _application_recommendation(
         span_name="corp_db.application.category_resolution",
         attributes={"corp_db.sphere_id": int(sphere_id) if sphere_id is not None else None},
     ):
-        categories = await _resolve_application_categories(
+        categories, category_probe_filter_fields = await _resolve_application_categories(
             conn,
             sphere_id=int(sphere_id) if sphere_id is not None else None,
             application_key=str(resolved_application.get("application_key") or "") or None,
             req=req,
         )
+        applied_filter_fields.update(category_probe_filter_fields)
 
     if not categories:
         response = _application_response(
             query=query,
             status="empty",
             filters={**filters, "reason": "categories_not_found"},
+            applied_filter_fields=applied_filter_fields,
             resolved_application=resolved_application,
             follow_up_question=str(APPLICATION_PROFILES[str(resolved_application["application_key"])]["follow_up_question"]),
         )
@@ -4116,12 +4146,13 @@ async def _application_recommendation(
         span_name="corp_db.application.lamp_ranking",
         attributes={"corp_db.category_count": len(category_ids)},
     ):
-        lamp_rows = await _fetch_application_lamps(
+        lamp_rows, lamp_filters = await _fetch_application_lamps(
             conn,
             category_ids=category_ids,
             req=req,
             fetch_limit=fetch_limit,
         )
+        applied_filter_fields.update(_filter_fields_from_sql_filters(lamp_filters))
         ranked: list[tuple[float, dict[str, Any]]] = []
         for row in lamp_rows:
             score, reasons = _application_score_lamp(
@@ -4199,6 +4230,7 @@ async def _application_recommendation(
             query=query,
             status=final_status,
             filters=final_filters,
+            applied_filter_fields=applied_filter_fields,
             resolved_application=resolved_application,
             categories=display_categories,
             recommended_lamps=recommended_lamps,
@@ -4270,6 +4302,7 @@ async def _sphere_curated_categories(conn: asyncpg.Connection, req: CorpDbSearch
 
     return _success(
         "sphere_curated_categories",
+        applied_filter_fields=(),
         query=sphere,
         filters={"category_query_semantics": "curated_display_categories"},
         results=rows,
@@ -4298,6 +4331,7 @@ async def _sphere_categories(conn: asyncpg.Connection, req: CorpDbSearchRequest,
     )
     return _success(
         "sphere_categories",
+        applied_filter_fields=(),
         query=sphere,
         results=[dict(row) for row in rows],
     )
@@ -4340,6 +4374,9 @@ async def _category_mountings(conn: asyncpg.Connection, req: CorpDbSearchRequest
     )
     return _success(
         "category_mountings",
+        applied_filter_fields=_filter_fields_from_sql_filters(
+            {field: value for field, value in (("category", category), ("series", series), ("mounting_type", mounting_type)) if value}
+        ),
         filters={"category": category, "series": series, "mounting_type": mounting_type},
         results=[dict(row) for row in rows],
     )
@@ -4410,7 +4447,12 @@ async def _lamp_filters(conn: asyncpg.Connection, req: CorpDbSearchRequest, limi
             filters = retry_filters
             filters.update(retry_flags)
 
-    return _success("lamp_filters", filters=filters, results=[_serialize_lamp_row(row) for row in rows])
+    return _success(
+        "lamp_filters",
+        applied_filter_fields=_filter_fields_from_sql_filters(filters),
+        filters=filters,
+        results=[_serialize_lamp_row(row) for row in rows],
+    )
 
 
 @router.post("/search")
