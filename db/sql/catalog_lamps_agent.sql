@@ -25,9 +25,11 @@ WITH RECURSIVE category_ancestry AS (
 category_series AS (
     SELECT DISTINCT ON (ca.descendant_category_id)
         ca.descendant_category_id AS category_id,
-        ca.ancestor_name AS series_name
+        family.canonical_series_name AS series_name
     FROM category_ancestry ca
-    ORDER BY ca.descendant_category_id, ca.depth DESC
+    JOIN corp.catalog_series_families family
+        ON family.category_family_name = ca.ancestor_name
+    ORDER BY ca.descendant_category_id, ca.depth ASC
 ),
 base AS (
     SELECT

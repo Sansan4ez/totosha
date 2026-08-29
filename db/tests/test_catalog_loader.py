@@ -9,6 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from catalog_loader import (
+    build_catalog_series_family_records,
     build_category_parent_records,
     build_sphere_curated_category_records,
     seed_json_sources,
@@ -41,6 +42,27 @@ class FakeConn:
 
 
 class CatalogLoaderTests(unittest.TestCase):
+    def test_build_catalog_series_family_records_adds_self_mapping_and_rejects_shared_families(self):
+        payload = {
+            "series": [
+                {"name": "Series A", "category_families": ["Family A", "Series A"]},
+                {"name": "Series B", "category_families": []},
+            ]
+        }
+
+        self.assertEqual(
+            build_catalog_series_family_records(payload, "series-hash"),
+            [
+                ("Series A", "Series A", 1, "series-hash"),
+                ("Series A", "Family A", 2, "series-hash"),
+                ("Series B", "Series B", 3, "series-hash"),
+            ],
+        )
+
+        payload["series"][1]["category_families"] = ["family a"]
+        with self.assertRaisesRegex(ValueError, "is shared by Series A and Series B"):
+            build_catalog_series_family_records(payload, "series-hash")
+
     def test_build_category_parent_records_preserves_only_resolvable_parent_ids(self):
         rows = [
             {"id": 18, "name": "LAD LED R320 Ex", "parent": None},
@@ -104,6 +126,17 @@ class CatalogLoaderTests(unittest.TestCase):
             (base / "lamp_mountings.json").write_text('{"lampMountings":[]}', encoding="utf-8")
             (base / "mounting_types.json").write_text('{"mountingTypes":[]}', encoding="utf-8")
             (base / "portfolio.json").write_text('{"portfolio":[]}', encoding="utf-8")
+            (base / "series_catalog.json").write_text(
+                json.dumps(
+                    {
+                        "series": [
+                            {"name": "Root", "category_families": ["Family"]},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
             (base / "spheres.json").write_text(
                 json.dumps(
                     {
@@ -132,6 +165,7 @@ class CatalogLoaderTests(unittest.TestCase):
 
         self.assertIn("corp.sphere_curated_categories", conn.execute_calls[0][0])
         self.assertEqual(stats["category_parent_links"], 1)
+        self.assertEqual(stats["catalog_series_families"], 2)
         self.assertEqual(stats["sphere_categories"], 1)
         self.assertEqual(stats["sphere_curated_categories"], 1)
 
@@ -141,8 +175,15 @@ class CatalogLoaderTests(unittest.TestCase):
         curated_calls = [
             args for sql, args in conn.executemany_calls if "INSERT INTO corp.sphere_curated_categories" in sql
         ]
+        family_calls = [
+            args for sql, args in conn.executemany_calls if "INSERT INTO corp.catalog_series_families" in sql
+        ]
 
         self.assertEqual(update_calls, [[(2, 1)]])
+        self.assertEqual(
+            [record[:3] for record in family_calls[0]],
+            [("Root", "Root", 1), ("Root", "Family", 2)],
+        )
         self.assertEqual(len(curated_calls), 1)
         self.assertEqual(curated_calls[0][0][:3], (1, 1, 1))
 

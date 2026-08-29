@@ -36,6 +36,21 @@ class FakeConn:
 
 
 class LiveMigrationTests(unittest.TestCase):
+    @staticmethod
+    def _write_series_catalog(base: Path) -> None:
+        (base / "series_catalog.json").write_text(
+            json.dumps(
+                {
+                    "series": [
+                        {"name": "Root", "category_families": ["Intermediate"]},
+                        {"name": "Other", "category_families": []},
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
     def test_ensure_rfc026_schema_backfills_parent_links_and_curated_edges(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             base = Path(tmpdir)
@@ -51,6 +66,7 @@ class LiveMigrationTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            self._write_series_catalog(base)
             (base / "spheres.json").write_text(
                 json.dumps(
                     {
@@ -74,19 +90,25 @@ class LiveMigrationTests(unittest.TestCase):
             stats = asyncio.run(ensure_rfc026_schema(conn, base))
 
         self.assertEqual(stats["parent_links"], 1)
+        self.assertEqual(stats["catalog_series_families"], 3)
         self.assertEqual(stats["spheres"], 1)
         self.assertEqual(stats["sphere_curated_categories"], 1)
 
         executed_sql = "\n".join(sql for sql, _ in conn.execute_calls)
         self.assertIn("ADD COLUMN IF NOT EXISTS parent_category_id", executed_sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS corp.catalog_series_families", executed_sql)
+        self.assertIn("TRUNCATE TABLE corp.catalog_series_families", executed_sql)
         self.assertIn("CREATE TABLE IF NOT EXISTS corp.sphere_curated_categories", executed_sql)
         self.assertIn("DELETE FROM corp.sphere_curated_categories", executed_sql)
         self.assertIn("CREATE OR REPLACE FUNCTION corp.corp_hybrid_search", executed_sql)
         self.assertIn("source_files text[] DEFAULT NULL", executed_sql)
         self.assertIn("CREATE OR REPLACE VIEW corp.v_catalog_lamps_agent", executed_sql)
         self.assertIn("WITH RECURSIVE category_ancestry", executed_sql)
-        self.assertIn("ca.ancestor_name AS series_name", executed_sql)
+        self.assertIn("family.canonical_series_name AS series_name", executed_sql)
 
+        family_inserts = [
+            args for sql, args in conn.executemany_calls if "INSERT INTO corp.catalog_series_families" in sql
+        ]
         sphere_upserts = [
             args for sql, args in conn.executemany_calls if "INSERT INTO corp.spheres" in sql
         ]
@@ -97,6 +119,14 @@ class LiveMigrationTests(unittest.TestCase):
             args for sql, args in conn.executemany_calls if "INSERT INTO corp.sphere_curated_categories" in sql
         ]
 
+        self.assertEqual(
+            [record[:3] for record in family_inserts[0]],
+            [
+                ("Root", "Root", 1),
+                ("Root", "Intermediate", 2),
+                ("Other", "Other", 3),
+            ],
+        )
         self.assertEqual(len(sphere_upserts), 1)
         self.assertEqual(sphere_upserts[0][0][:3], (7, "РЖД", "https://example.test/rzd"))
         self.assertEqual(parent_updates, [[(1, None), (2, 1)]])
@@ -119,6 +149,7 @@ class LiveMigrationTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            self._write_series_catalog(base)
             (base / "spheres.json").write_text(
                 json.dumps(
                     {
@@ -179,6 +210,7 @@ class LiveMigrationTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            self._write_series_catalog(base)
             (base / "spheres.json").write_text(
                 json.dumps({"spheres": []}, ensure_ascii=False),
                 encoding="utf-8",

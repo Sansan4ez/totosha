@@ -79,6 +79,16 @@ BEGIN
 END;
 $$;
 
+CREATE TABLE IF NOT EXISTS corp.catalog_series_families (
+    canonical_series_name text NOT NULL,
+    category_family_name text PRIMARY KEY,
+    position integer NOT NULL UNIQUE,
+    source_hash text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (position > 0)
+);
+
 CREATE TABLE IF NOT EXISTS corp.catalog_lamps (
     lamp_id bigint PRIMARY KEY,
     category_id bigint REFERENCES corp.categories(category_id) ON DELETE SET NULL,
@@ -265,6 +275,7 @@ CREATE TABLE IF NOT EXISTS corp.corp_search_docs (
     UNIQUE (entity_type, entity_id)
 );
 
+\ir /docker-entrypoint-initdb.d/24-catalog-series-families-seed.sql
 \ir /docker-entrypoint-initdb.d/25-catalog-lamps-agent.sql
 
 
@@ -272,6 +283,8 @@ CREATE INDEX IF NOT EXISTS idx_categories_name_trgm
     ON corp.categories USING gin (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_categories_parent_category_id
     ON corp.categories (parent_category_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_series_families_canonical_series_name
+    ON corp.catalog_series_families (canonical_series_name);
 CREATE INDEX IF NOT EXISTS idx_catalog_lamps_name_trgm
     ON corp.catalog_lamps USING gin (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_catalog_lamps_category_id

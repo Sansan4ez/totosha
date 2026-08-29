@@ -30,6 +30,7 @@ def _validate_series_catalog(payload: Any) -> dict[str, Any]:
     normalized: list[dict[str, Any]] = []
     seen_names: set[str] = set()
     seen_aliases: dict[str, str] = {}
+    seen_category_families: dict[str, str] = {}
     for index, item in enumerate(raw_series):
         if not isinstance(item, dict):
             raise ValueError(f"series[{index}] must be an object")
@@ -40,6 +41,10 @@ def _validate_series_catalog(payload: Any) -> dict[str, Any]:
         if key in seen_names:
             raise ValueError(f"duplicate canonical series name: {name}")
         seen_names.add(key)
+        family_owner = seen_category_families.get(key)
+        if family_owner is not None and family_owner != name:
+            raise ValueError(f"category family {name!r} is shared by {family_owner} and {name}")
+        seen_category_families[key] = name
         raw_aliases = item.get("aliases") or []
         if not isinstance(raw_aliases, list):
             raise ValueError(f"series[{index}].aliases must be a list")
@@ -58,15 +63,28 @@ def _validate_series_catalog(payload: Any) -> dict[str, Any]:
             local_aliases.add(alias_key)
             seen_aliases[alias_key] = name
             aliases.append(alias)
-        category_families = item.get("category_families") or []
-        if not isinstance(category_families, list):
+        raw_category_families = item.get("category_families") or []
+        if not isinstance(raw_category_families, list):
             raise ValueError(f"series[{index}].category_families must be a list")
+        category_families: list[str] = []
+        for raw_family in raw_category_families:
+            family = str(raw_family or "").strip()
+            if not family:
+                raise ValueError(f"series[{index}].category_families cannot contain empty values")
+            family_key = family.casefold()
+            owner = seen_category_families.get(family_key)
+            if owner is not None:
+                if owner != name:
+                    raise ValueError(f"category family {family!r} is shared by {owner} and {name}")
+                continue
+            seen_category_families[family_key] = name
+            category_families.append(family)
         normalized.append(
             {
                 "name": name,
                 "knowledge_base_label": str(item.get("knowledge_base_label") or name).strip(),
                 "aliases": aliases,
-                "category_families": [str(value).strip() for value in category_families if str(value).strip()],
+                "category_families": category_families,
             }
         )
     if len(normalized) != 7:

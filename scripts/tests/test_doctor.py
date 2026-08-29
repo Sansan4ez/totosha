@@ -109,9 +109,23 @@ class SecurityDoctorRfc026Tests(unittest.TestCase):
                 json.dumps({"spheres": []}, ensure_ascii=False),
                 encoding="utf-8",
             )
+            (root / "db" / "series_catalog.json").write_text(
+                json.dumps(
+                    {
+                        "series": [
+                            {"name": "Root", "category_families": ["Family", "Root"]},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
 
             doctor = SecurityDoctor(root)
-            self.assertEqual(doctor._expected_rfc026_counts(), {"parent_links": 1, "curated_rows": 0})
+            self.assertEqual(
+                doctor._expected_rfc026_counts(),
+                {"parent_links": 1, "curated_rows": 0, "series_family_rows": 2},
+            )
 
     def test_check_corp_db_rfc026_schema_reports_missing_objects(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -145,9 +159,19 @@ class SecurityDoctorRfc026Tests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (root / "db" / "series_catalog.json").write_text(
+                json.dumps(
+                    {"series": [{"name": "Root", "category_families": ["Child"]}]},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
 
             doctor = SecurityDoctor(root)
             payload = {
+                "catalog_series_families_table": True,
+                "idx_catalog_series_families_canonical_series_name": True,
+                "series_family_objects_valid": True,
                 "sphere_curated_categories_table": False,
                 "categories_parent_category_id_column": True,
                 "categories_parent_fk": True,
@@ -156,6 +180,7 @@ class SecurityDoctorRfc026Tests(unittest.TestCase):
                 "idx_sphere_curated_categories_sphere_position": True,
                 "catalog_lamps_agent_series_name_column": True,
                 "catalog_lamps_agent_series_consistent": True,
+                "series_family_rows": 2,
                 "curated_rows": 1,
                 "parent_links": 1,
             }
@@ -174,6 +199,7 @@ class SecurityDoctorRfc026Tests(unittest.TestCase):
         self.assertIn("corp_db_rfc026_schema_objects", results)
         self.assertFalse(results["corp_db_rfc026_schema_objects"].passed)
         self.assertIn("corp.sphere_curated_categories", results["corp_db_rfc026_schema_objects"].message)
+        self.assertTrue(results["corp_db_catalog_series_families_seed"].passed)
         self.assertTrue(results["corp_db_rfc026_curated_seed"].passed)
         self.assertTrue(results["corp_db_rfc026_parent_links"].passed)
 

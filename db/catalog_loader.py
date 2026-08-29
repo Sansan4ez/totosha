@@ -46,6 +46,41 @@ def build_category_records(category_rows: list[dict], source_hash: str) -> list[
     ]
 
 
+def build_catalog_series_family_records(series_payload: object, source_hash: str) -> list[tuple]:
+    if not isinstance(series_payload, dict) or not isinstance(series_payload.get("series"), list):
+        raise ValueError("series_catalog.json must contain a series list")
+
+    records: list[tuple] = []
+    family_owner_by_key: dict[str, str] = {}
+    position = 0
+    for index, row in enumerate(series_payload["series"]):
+        if not isinstance(row, dict):
+            raise ValueError(f"series[{index}] must be an object")
+        canonical_name = str(row.get("name") or "").strip()
+        if not canonical_name:
+            raise ValueError(f"series[{index}].name is required")
+        category_families = row.get("category_families") or []
+        if not isinstance(category_families, list):
+            raise ValueError(f"series[{index}].category_families must be a list")
+
+        for raw_family_name in [canonical_name, *category_families]:
+            category_family_name = str(raw_family_name or "").strip()
+            if not category_family_name:
+                raise ValueError(f"series[{index}].category_families cannot contain empty values")
+            family_key = category_family_name.casefold()
+            owner = family_owner_by_key.get(family_key)
+            if owner is not None:
+                if owner != canonical_name:
+                    raise ValueError(
+                        f"category family {category_family_name!r} is shared by {owner} and {canonical_name}"
+                    )
+                continue
+            family_owner_by_key[family_key] = canonical_name
+            position += 1
+            records.append((canonical_name, category_family_name, position, source_hash))
+    return records
+
+
 def build_category_parent_records(category_rows: list[dict]) -> list[tuple]:
     valid_category_ids = {
         row.get("id")
@@ -99,6 +134,7 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
     mounting_types_path = sources_dir / "mounting_types.json"
     portfolio_path = sources_dir / "portfolio.json"
     spheres_path = sources_dir / "spheres.json"
+    series_catalog_path = sources_dir / "series_catalog.json"
 
     category_rows = load_json_file(categories_path)["categories"]
     sku_rows = load_json_file(sku_path)
@@ -106,6 +142,7 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
     mounting_type_rows = load_json_file(mounting_types_path)["mountingTypes"]
     portfolio_rows = load_json_file(portfolio_path)["portfolio"]
     sphere_rows = load_json_file(spheres_path)["spheres"]
+    series_payload = load_json_file(series_catalog_path)
     catalog_rows = transform_catalog(catalog_path)
 
     category_hash = sha256_file(categories_path)
@@ -114,6 +151,7 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
     mounting_type_hash = sha256_file(mounting_types_path)
     portfolio_hash = sha256_file(portfolio_path)
     sphere_hash = sha256_file(spheres_path)
+    series_catalog_hash = sha256_file(series_catalog_path)
     catalog_hash = sha256_file(catalog_path)
     category_name_by_id = {row["id"]: row["name"] for row in category_rows}
     portfolio_records = build_portfolio_records(portfolio_rows, portfolio_hash)
@@ -121,6 +159,10 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
     category_parent_records = build_category_parent_records(category_rows)
     sphere_category_records = build_sphere_category_records(sphere_rows, sphere_hash)
     sphere_curated_category_records = build_sphere_curated_category_records(sphere_rows, sphere_hash)
+    catalog_series_family_records = build_catalog_series_family_records(
+        series_payload,
+        series_catalog_hash,
+    )
 
     async with conn.transaction():
         await conn.execute(
@@ -133,6 +175,7 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
                 corp.portfolio,
                 corp.sphere_curated_categories,
                 corp.sphere_categories,
+                corp.catalog_series_families,
                 corp.catalog_lamps,
                 corp.mounting_types,
                 corp.spheres,
@@ -158,6 +201,16 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
                 """,
                 category_parent_records,
             )
+
+        await conn.executemany(
+            """
+            INSERT INTO corp.catalog_series_families (
+                canonical_series_name, category_family_name, position, source_hash
+            )
+            VALUES ($1, $2, $3, $4)
+            """,
+            catalog_series_family_records,
+        )
 
         await conn.executemany(
             """
@@ -386,6 +439,7 @@ async def seed_json_sources(conn, sources_dir: Path) -> dict[str, int]:
     return {
         "categories": len(category_rows),
         "category_parent_links": len(category_parent_records),
+        "catalog_series_families": len(catalog_series_family_records),
         "mounting_types": len(mounting_type_rows),
         "spheres": len(sphere_rows),
         "sphere_categories": len(sphere_category_records),

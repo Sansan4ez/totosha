@@ -106,6 +106,14 @@ class RoutingCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "shared by"):
             _validate_series_catalog(catalog)
 
+    def test_series_catalog_rejects_category_family_shared_between_canonical_series(self):
+        catalog = json.loads(json.dumps(load_canonical_series_catalog()))
+        catalog["series"][0]["category_families"] = ["shared family"]
+        catalog["series"][1]["category_families"] = ["SHARED FAMILY"]
+
+        with self.assertRaisesRegex(ValueError, "category family .* is shared by"):
+            _validate_series_catalog(catalog)
+
     def _write_repo_manifest(self, repo_root: Path, payload: dict) -> None:
         route_dir = repo_root / "doc-corpus" / "manifests" / "routes"
         route_dir.mkdir(parents=True, exist_ok=True)

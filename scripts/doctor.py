@@ -534,7 +534,7 @@ Checking 5 layers of protection:
             self.check(
                 "corp_db_rfc026_sources",
                 False,
-                "db/categories.json or db/spheres.json missing",
+                "db/categories.json, db/spheres.json or db/series_catalog.json missing",
                 "high",
                 "Restore canonical corp-db source files in db/",
             )
@@ -573,6 +573,10 @@ Checking 5 layers of protection:
 
         query = """
         SELECT json_build_object(
+            'catalog_series_families_table',
+            to_regclass('corp.catalog_series_families') IS NOT NULL,
+            'idx_catalog_series_families_canonical_series_name',
+            to_regclass('corp.idx_catalog_series_families_canonical_series_name') IS NOT NULL,
             'sphere_curated_categories_table',
             to_regclass('corp.sphere_curated_categories') IS NOT NULL,
             'categories_parent_category_id_column',
@@ -606,31 +610,40 @@ Checking 5 layers of protection:
             ),
             'catalog_lamps_agent_series_consistent',
             CASE
-                WHEN EXISTS (
+                WHEN to_regclass('corp.catalog_series_families') IS NOT NULL
+                 AND EXISTS (
                     SELECT 1
                     FROM information_schema.columns
                     WHERE table_schema = 'corp'
                       AND table_name = 'v_catalog_lamps_agent'
                       AND column_name = 'series_name'
-                ) THEN (
-                    SELECT coalesce(
-                        bool_and(
-                            CASE
-                                WHEN row_data->>'name' ILIKE 'LAD LED R320-2-% Ex'
-                                    THEN row_data->>'series_name' = 'LAD LED R320 Ex'
-                                WHEN row_data->>'name' ILIKE 'LAD LED R500-% 2Ex'
-                                    THEN row_data->>'series_name' = 'LAD LED R500 2Ex'
-                                ELSE true
-                            END
-                        ),
-                        true
-                    )
-                    FROM (
-                        SELECT to_jsonb(lamp_row) AS row_data
-                        FROM corp.v_catalog_lamps_agent lamp_row
-                    ) rows
+                ) THEN NOT EXISTS (
+                    SELECT 1
+                    FROM corp.v_catalog_lamps_agent lamp_row
+                    WHERE lamp_row.series_name IS NULL
+                       OR NOT EXISTS (
+                            SELECT 1
+                            FROM corp.catalog_series_families family
+                            WHERE family.canonical_series_name = lamp_row.series_name
+                       )
                 )
                 ELSE false
+            END,
+            'series_family_rows',
+            CASE
+                WHEN to_regclass('corp.catalog_series_families') IS NULL THEN NULL
+                ELSE (SELECT count(*) FROM corp.catalog_series_families)
+            END,
+            'series_family_objects_valid',
+            CASE
+                WHEN to_regclass('corp.catalog_series_families') IS NULL THEN false
+                ELSE NOT EXISTS (
+                    SELECT 1
+                    FROM corp.catalog_series_families family
+                    WHERE nullif(trim(family.canonical_series_name), '') IS NULL
+                       OR nullif(trim(family.category_family_name), '') IS NULL
+                       OR family.position <= 0
+                )
             END,
             'curated_rows',
             CASE
@@ -688,6 +701,9 @@ Checking 5 layers of protection:
 
         missing_objects = []
         object_checks = {
+            "catalog_series_families_table": "corp.catalog_series_families",
+            "idx_catalog_series_families_canonical_series_name": "idx_catalog_series_families_canonical_series_name",
+            "series_family_objects_valid": "valid corp.catalog_series_families objects",
             "sphere_curated_categories_table": "corp.sphere_curated_categories",
             "categories_parent_category_id_column": "corp.categories.parent_category_id",
             "categories_parent_fk": "categories_parent_category_id_fkey",
@@ -709,6 +725,16 @@ Checking 5 layers of protection:
             else f"Missing RFC-026 schema objects: {', '.join(missing_objects)}",
             "critical" if missing_objects else "low",
             "Run `docker compose up -d --build corp-db corp-db-migrator tools-api` to apply the live migration",
+        )
+
+        series_family_rows = payload.get("series_family_rows")
+        expected_series_family_rows = expected_counts["series_family_rows"]
+        self.check(
+            "corp_db_catalog_series_families_seed",
+            series_family_rows == expected_series_family_rows,
+            f"catalog series family rows: {series_family_rows}/{expected_series_family_rows}",
+            "high" if series_family_rows != expected_series_family_rows else "low",
+            "Rerun `docker compose up -d --build corp-db-migrator` or inspect db/series_catalog.json drift",
         )
 
         curated_rows = payload.get("curated_rows")
@@ -734,14 +760,29 @@ Checking 5 layers of protection:
     def _expected_rfc026_counts(self) -> Optional[dict[str, int]]:
         categories_path = self.root / "db" / "categories.json"
         spheres_path = self.root / "db" / "spheres.json"
-        if not categories_path.exists() or not spheres_path.exists():
+        series_catalog_path = self.root / "db" / "series_catalog.json"
+        if not categories_path.exists() or not spheres_path.exists() or not series_catalog_path.exists():
             return None
 
         categories_payload = json.loads(categories_path.read_text(encoding="utf-8"))
         spheres_payload = json.loads(spheres_path.read_text(encoding="utf-8"))
+        series_payload = json.loads(series_catalog_path.read_text(encoding="utf-8"))
 
         category_rows = [row for row in categories_payload.get("categories", []) if isinstance(row, dict)]
         valid_category_ids = {row.get("id") for row in category_rows if row.get("id") is not None}
+        series_family_names: set[str] = set()
+        for row in series_payload.get("series", []):
+            if not isinstance(row, dict):
+                continue
+            canonical_name = str(row.get("name") or "").strip()
+            raw_families = row.get("category_families") or []
+            if not canonical_name or not isinstance(raw_families, list):
+                continue
+            series_family_names.update(
+                str(family_name).strip().casefold()
+                for family_name in [canonical_name, *raw_families]
+                if str(family_name).strip()
+            )
 
         return {
             "parent_links": sum(
@@ -756,6 +797,7 @@ Checking 5 layers of protection:
                 for row in spheres_payload.get("spheres", [])
                 if isinstance(row, dict)
             ),
+            "series_family_rows": len(series_family_names),
         }
 
     def _run_docker_compose(self, args: list[str]) -> subprocess.CompletedProcess[str]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from catalog_loader import (
+    build_catalog_series_family_records,
     build_category_parent_records,
     build_sphere_curated_category_records,
 )
@@ -40,6 +41,17 @@ RFC026_SCHEMA_STATEMENTS = (
     $$;
     """,
     """
+    CREATE TABLE IF NOT EXISTS corp.catalog_series_families (
+        canonical_series_name text NOT NULL,
+        category_family_name text PRIMARY KEY,
+        position integer NOT NULL UNIQUE,
+        source_hash text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CHECK (position > 0)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS corp.sphere_curated_categories (
         sphere_id bigint NOT NULL REFERENCES corp.spheres(sphere_id) ON DELETE CASCADE,
         category_id bigint NOT NULL REFERENCES corp.categories(category_id) ON DELETE CASCADE,
@@ -55,6 +67,10 @@ RFC026_SCHEMA_STATEMENTS = (
     """
     CREATE INDEX IF NOT EXISTS idx_categories_parent_category_id
         ON corp.categories (parent_category_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_catalog_series_families_canonical_series_name
+        ON corp.catalog_series_families (canonical_series_name)
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_sphere_curated_categories_category_id
@@ -121,15 +137,22 @@ async def ensure_hybrid_search_function(conn) -> None:
 async def ensure_rfc026_schema(conn, sources_dir: Path) -> dict[str, int]:
     categories_path = sources_dir / "categories.json"
     spheres_path = sources_dir / "spheres.json"
+    series_catalog_path = sources_dir / "series_catalog.json"
 
     category_rows = load_json_file(categories_path)["categories"]
     sphere_rows = load_json_file(spheres_path)["spheres"]
+    series_payload = load_json_file(series_catalog_path)
 
     sphere_hash = sha256_file(spheres_path)
+    series_catalog_hash = sha256_file(series_catalog_path)
     category_parent_records = build_category_parent_records(category_rows)
     category_parent_assignments = build_category_parent_assignments(category_rows)
     sphere_records = build_sphere_records(sphere_rows, sphere_hash)
     curated_records = build_sphere_curated_category_records(sphere_rows, sphere_hash)
+    catalog_series_family_records = build_catalog_series_family_records(
+        series_payload,
+        series_catalog_hash,
+    )
     source_sphere_ids = sorted({row["id"] for row in sphere_rows})
 
     async with conn.transaction():
@@ -137,6 +160,18 @@ async def ensure_rfc026_schema(conn, sources_dir: Path) -> dict[str, int]:
             await conn.execute(statement)
 
         await ensure_hybrid_search_function(conn)
+
+        await conn.execute("TRUNCATE TABLE corp.catalog_series_families")
+        if catalog_series_family_records:
+            await conn.executemany(
+                """
+                INSERT INTO corp.catalog_series_families (
+                    canonical_series_name, category_family_name, position, source_hash
+                )
+                VALUES ($1, $2, $3, $4)
+                """,
+                catalog_series_family_records,
+            )
 
         if sphere_records:
             await conn.executemany(
@@ -195,6 +230,7 @@ async def ensure_rfc026_schema(conn, sources_dir: Path) -> dict[str, int]:
     return {
         "schema_statements": len(RFC026_SCHEMA_STATEMENTS),
         "parent_links": len(category_parent_records),
+        "catalog_series_families": len(catalog_series_family_records),
         "spheres": len(sphere_records),
         "sphere_curated_categories": len(curated_records),
     }
