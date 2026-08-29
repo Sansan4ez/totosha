@@ -12,7 +12,7 @@ import tempfile
 import urllib.error
 import urllib.request
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -39,45 +39,58 @@ REQUIRED_DOCTOR_CHECKS = (
 class ChatReplayExpectation:
     slug: str
     message: str
-    expected_series: str | None
+    expected_route_id: str
+    expected_tool_args: dict[str, Any]
+    required_answer_tokens: tuple[str, ...] = ()
     forbidden_answer_tokens: tuple[str, ...] = ()
+    expected_result_fields: dict[str, Any] = field(default_factory=dict)
+    expected_result_prefixes: dict[str, str] = field(default_factory=dict)
 
 
 CHAT_REPLAYS = (
     ChatReplayExpectation(
         slug="compact_2ex",
         message="2ex световой поток не менее 11540 Лм",
-        expected_series="LAD LED R500 2Ex",
+        expected_route_id="corp_db.lamp_filters",
+        expected_tool_args={"kind": "lamp_filters", "series": "LAD LED R500 2Ex", "flux_lm_min": 11540},
         forbidden_answer_tokens=("LAD LED R320",),
     ),
     ChatReplayExpectation(
         slug="spaced_2ex",
         message="2 ex световой поток не менее 11540 Лм",
-        expected_series="LAD LED R500 2Ex",
+        expected_route_id="corp_db.lamp_filters",
+        expected_tool_args={"kind": "lamp_filters", "series": "LAD LED R500 2Ex", "flux_lm_min": 11540},
         forbidden_answer_tokens=("LAD LED R320",),
     ),
     ChatReplayExpectation(
         slug="canonical_r500_2ex",
         message="LAD LED R500 2Ex, поток от 11540 лм",
-        expected_series="LAD LED R500 2Ex",
+        expected_route_id="corp_db.lamp_filters",
+        expected_tool_args={"kind": "lamp_filters", "series": "LAD LED R500 2Ex", "flux_lm_min": 11540},
         forbidden_answer_tokens=("LAD LED R320",),
     ),
     ChatReplayExpectation(
         slug="canonical_r320_ex",
         message="LAD LED R320 Ex, поток от 11540 лм",
-        expected_series="LAD LED R320 Ex",
+        expected_route_id="corp_db.lamp_filters",
+        expected_tool_args={"kind": "lamp_filters", "series": "LAD LED R320 Ex", "flux_lm_min": 11540},
         forbidden_answer_tokens=("LAD LED R500", "2Ex"),
     ),
     ChatReplayExpectation(
         slug="generic_ex",
         message="взрывозащищенный светильник, поток от 11540 лм",
-        expected_series=None,
+        expected_route_id="corp_db.lamp_filters",
+        expected_tool_args={"kind": "lamp_filters", "explosion_protected": True, "flux_lm_min": 11540},
     ),
     ChatReplayExpectation(
         slug="r320_module_two_counterexample",
         message="LAD LED R320-2-10G-230AC-50K Ex",
-        expected_series="LAD LED R320 Ex",
-        forbidden_answer_tokens=("LAD LED R500", "2Ex"),
+        expected_route_id="corp_db.catalog_lookup",
+        expected_tool_args={"kind": "lamp_exact", "name": "LAD LED R320-2-10G-230AC-50K Ex"},
+        required_answer_tokens=("R320", "Ex"),
+        forbidden_answer_tokens=("R500", "2Ex"),
+        expected_result_fields={"series_name": "LAD LED R320 Ex"},
+        expected_result_prefixes={"explosion_protection_marking": "1Ex"},
     ),
 )
 
@@ -279,6 +292,21 @@ def run_bench_dataset(args: argparse.Namespace) -> tuple[dict[str, Any], list[st
         return summary, errors
 
 
+def _first_corp_db_result(meta: dict[str, Any]) -> dict[str, Any] | None:
+    artifacts = meta.get("bench_artifacts") if isinstance(meta.get("bench_artifacts"), list) else []
+    primary = meta.get("primary_artifact")
+    if isinstance(primary, dict):
+        artifacts = [primary, *artifacts]
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or artifact.get("tool") != "corp_db_search":
+            continue
+        artifact_payload = artifact.get("payload") if isinstance(artifact.get("payload"), dict) else {}
+        results = artifact_payload.get("results") if isinstance(artifact_payload.get("results"), list) else []
+        if results and isinstance(results[0], dict):
+            return results[0]
+    return None
+
+
 def validate_chat_replay_response(payload: dict[str, Any], expected: ChatReplayExpectation, request_id: str) -> list[str]:
     errors: list[str] = []
     meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
@@ -288,7 +316,7 @@ def validate_chat_replay_response(payload: dict[str, Any], expected: ChatReplayE
         errors.append(f"{expected.slug}:meta_status={meta.get('status')}")
     if meta.get("request_id") != request_id:
         errors.append(f"{expected.slug}:request_id={meta.get('request_id')}")
-    if meta.get("retrieval_route_id") != "corp_db.lamp_filters":
+    if meta.get("retrieval_route_id") != expected.expected_route_id:
         errors.append(f"{expected.slug}:route_id={meta.get('retrieval_route_id')}")
     if meta.get("retrieval_selected_route_kind") != "corp_table":
         errors.append(f"{expected.slug}:route_kind={meta.get('retrieval_selected_route_kind')}")
@@ -304,17 +332,32 @@ def validate_chat_replay_response(payload: dict[str, Any], expected: ChatReplayE
     if "corp_db_search" not in tools_used:
         errors.append(f"{expected.slug}:tools_used={tools_used}")
     selected_args = meta.get("retrieval_selected_tool_args") if isinstance(meta.get("retrieval_selected_tool_args"), dict) else {}
-    if selected_args.get("series") != expected.expected_series:
-        errors.append(f"{expected.slug}:series={selected_args.get('series')}")
-    if expected.expected_series is None and "series" in selected_args:
-        errors.append(f"{expected.slug}:unexpected_specific_series={selected_args.get('series')}")
+    for key, expected_value in expected.expected_tool_args.items():
+        if selected_args.get(key) != expected_value:
+            errors.append(f"{expected.slug}:tool_arg.{key}={selected_args.get(key)}")
+
     answer = str(payload.get("answer") or payload.get("response") or "")
     if not answer.strip():
         errors.append(f"{expected.slug}:empty_answer")
     answer_folded = answer.casefold()
+    for token in expected.required_answer_tokens:
+        if token.casefold() not in answer_folded:
+            errors.append(f"{expected.slug}:missing_answer_token={token}")
     for token in expected.forbidden_answer_tokens:
         if token.casefold() in answer_folded:
             errors.append(f"{expected.slug}:forbidden_answer_token={token}")
+
+    if expected.expected_result_fields or expected.expected_result_prefixes:
+        result = _first_corp_db_result(meta)
+        if result is None:
+            errors.append(f"{expected.slug}:missing_corp_db_result")
+        else:
+            for key, expected_value in expected.expected_result_fields.items():
+                if result.get(key) != expected_value:
+                    errors.append(f"{expected.slug}:result.{key}={result.get(key)}")
+            for key, expected_prefix in expected.expected_result_prefixes.items():
+                if not str(result.get(key) or "").startswith(expected_prefix):
+                    errors.append(f"{expected.slug}:result.{key}={result.get(key)}")
     return errors
 
 

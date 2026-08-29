@@ -147,7 +147,9 @@ def _arguments(tool_args: dict) -> dict:
 class RouteSelectorFakeTests(unittest.TestCase):
     def _run(self, query: str, fake: ScriptedRouteSelectorLLM):
         with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
-            os.environ, {"CORP_DOCS_ROOT": str(Path(docs_tmp))}, clear=False
+            os.environ,
+            {"CORP_DOCS_ROOT": str(Path(docs_tmp)), "DOC_REPO_ROOT": str(Path(docs_tmp))},
+            clear=False,
         ):
             return asyncio.run(_MODULE._select_route_with_llm(query, llm_caller=fake))
 
@@ -350,30 +352,57 @@ class RouteSelectorFakeTests(unittest.TestCase):
         self.assertEqual(len(fake.calls), 3)
         self.assertIn("route argument builder output rejected", str(ctx.exception))
 
-    def test_2026_08_27_incident_matrix_builds_series_arguments_without_guessing_bare_ex(self):
+    def test_2026_08_27_incident_matrix_uses_route_card_contracts(self):
         cases = (
-            ("2ex световой поток не менее 11540 Лм", {}, "LAD LED R500 2Ex"),
-            ("2 ex световой поток не менее 11540 Лм", {}, "LAD LED R500 2Ex"),
-            ("LAD LED R500 2Ex, поток от 11540 лм", {"series": "LAD LED R500 2Ex"}, "LAD LED R500 2Ex"),
-            ("LAD LED R320 Ex, поток от 11540 лм", {"series": "LAD LED R320 Ex"}, "LAD LED R320 Ex"),
-            ("взрывозащищенный светильник, поток от 11540 лм", {"explosion_protected": True}, None),
-            ("LAD LED R320-2-10G-230AC-50K Ex", {"series": "LAD LED R320 Ex"}, "LAD LED R320 Ex"),
+            (
+                "2ex световой поток не менее 11540 Лм",
+                "corp_db.lamp_filters",
+                {"flux_lm_min": 11540, "series": "LAD LED R500 2Ex"},
+            ),
+            (
+                "2 ex световой поток не менее 11540 Лм",
+                "corp_db.lamp_filters",
+                {"flux_lm_min": 11540, "series": "LAD LED R500 2Ex"},
+            ),
+            (
+                "LAD LED R500 2Ex, поток от 11540 лм",
+                "corp_db.lamp_filters",
+                {"flux_lm_min": 11540, "series": "LAD LED R500 2Ex"},
+            ),
+            (
+                "LAD LED R320 Ex, поток от 11540 лм",
+                "corp_db.lamp_filters",
+                {"flux_lm_min": 11540, "series": "LAD LED R320 Ex"},
+            ),
+            (
+                "взрывозащищенный светильник, поток от 11540 лм",
+                "corp_db.lamp_filters",
+                {"flux_lm_min": 11540, "explosion_protected": True},
+            ),
+            (
+                "LAD LED R320-2-10G-230AC-50K Ex",
+                "corp_db.catalog_lookup",
+                {"name": "LAD LED R320-2-10G-230AC-50K Ex"},
+            ),
         )
-        for query, extra_args, expected_series in cases:
+        for query, expected_route_id, expected_args in cases:
             with self.subTest(query=query):
                 fake = ScriptedRouteSelectorLLM(
                     [
-                        _choice("corp_db.lamp_filters"),
-                        _arguments({"flux_lm_min": 11540, **extra_args}),
+                        _choice(expected_route_id),
+                        _arguments(expected_args),
                     ]
                 )
 
                 route_selection, route_hint, _secondary = self._run(query, fake)
 
                 self.assertEqual(len(fake.calls), 2)
-                self.assertEqual(route_hint["route_id"], "corp_db.lamp_filters")
-                self.assertEqual(route_hint["tool_args"].get("series"), expected_series)
-                self.assertEqual(route_hint["tool_args"]["flux_lm_min"], 11540)
+                self.assertEqual(route_hint["route_id"], expected_route_id)
+                if expected_route_id == "corp_db.catalog_lookup":
+                    expected_execution_args = {**expected_args, "kind": "lamp_exact"}
+                else:
+                    expected_execution_args = {**expected_args, "kind": "lamp_filters", "fuzzy": True}
+                self.assertEqual(route_hint["tool_args"], expected_execution_args)
                 self.assertEqual(route_selection["selector"]["argument_builder_status"], "valid")
 
     def test_lamp_filter_explicit_alias_conflict_repairs_locally(self):

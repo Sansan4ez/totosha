@@ -2140,6 +2140,7 @@ def _compact_selector_route_card(route: dict[str, Any], *, sphere_context: dict[
                 "oracl",
                 "category",
                 "series",
+                "explosion_protected",
                 "sphere",
                 "mounting_type",
                 "limit_categories",
