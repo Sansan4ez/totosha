@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "core/**"
+      - ".github/workflows/core-route-catalog.yml"
   pull_request:
     branches: [main]
     paths:
       - "core/**"
+      - ".github/workflows/core-route-catalog.yml"
 
 jobs:
   route-catalog-check:
