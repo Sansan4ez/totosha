@@ -17,10 +17,10 @@ jobs:
       run:
         working-directory: core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -30,5 +30,8 @@ jobs:
       - name: Route catalog invariants (RFC-028)
         run: python -m documents.route_catalog_check
 
-      - name: Core test suite
-        run: python -m pytest tests/ -q
+      - name: Core unit test suite
+        # test_sandbox.py is a Docker integration suite: it creates nested containers,
+        # bind-mounts deployment host paths, and expects the production sandbox network.
+        # Run it in deployment/integration validation, not on a generic hosted runner.
+        run: python -m pytest tests/ -q --ignore=tests/test_sandbox.py
