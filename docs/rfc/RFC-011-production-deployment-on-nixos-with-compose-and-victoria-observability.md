@@ -479,13 +479,16 @@ Victoria stack включается в production baseline сразу.
 
 ### Retention
 
-Для первого production варианта observability retention может быть короткой:
+Для поддерживаемого production Compose observability retention фиксируется как:
 
-- metrics: 7-14 days
-- logs: 3-7 days
-- traces: 1-3 days
+- metrics: 14 days
+- logs: 7 days
+- traces: 7 days
 
-Это достаточно для triage и не усложняет storage budget.
+Logs и traces могут содержать restricted product-turn payloads по
+`docs/operations/product-observability-contract.md`; поэтому Victoria stack остаётся
+operator-only и не должен попадать в бессрочные backups. Более ранние диапазоны
+были заменены явным контрактом владельца от 2026-08-30.
 
 Security model
 --------------

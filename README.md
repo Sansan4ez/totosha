@@ -24,6 +24,12 @@ Unlike cloud-dependent solutions, LocalTopSH runs entirely on your infrastructur
 | **Sanctions/Restrictions** | Blocked in some regions | ✅ Works anywhere |
 | **Cost at Scale** | $0.01-0.03 per 1K tokens | ✅ Only electricity costs |
 
+### 🔎 Product Observability and Data Notice
+
+When the Victoria observability stack is enabled, LocalTopSH may retain user requests, processing evidence, and assistant responses for up to **7 days** for diagnostics, security, and product improvement. This telemetry is operator-only, bound to localhost, and intended to be accessed through Grafana or an SSH tunnel.
+
+Do not submit passwords, API tokens, private keys, cookies, or other credentials in chat. Metric labels never contain request or response text. See `docs/operations/product-observability-contract.md` for the complete contract. Sending queries or documents to an external LLM or embeddings provider is a separate deployment decision.
+
 ### 🤖 Supported LLM Backends
 
 | Backend | Example Models | Setup |
@@ -372,7 +378,7 @@ ssh -L 3000:localhost:3000 user@your-server
 
 ### 🏢 Enterprise
 
-- **Internal AI assistant** with full data privacy
+- **Internal AI assistant** with operator-controlled data handling and short-retention product telemetry
 - **Code review bot** that never leaks proprietary code
 - **Document analysis** without sending files to cloud
 

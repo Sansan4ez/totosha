@@ -51,6 +51,7 @@ Minimum Expectations
   - span/log attributes `corp_db.requested_filter_fields`, `corp_db.applied_filter_fields`, `corp_db.ignored_filter_fields`, `corp_db.filter_contract_status`, and `retrieval_constraint_evidence_status`
 - Every instrumented service adds `request_id`, `trace_id`, and `span_id` correlation to logs.
 - Catalog contract metric labels never contain raw query text, `user_id`, SKU, or a series value; those values remain payload data while telemetry uses fixed field names and statuses.
+- Internal product telemetry follows `docs/operations/product-observability-contract.md`: user requests, meaningful processing artifacts, and assistant responses may be retained in logs and traces, but never in metric labels.
 - Route-aware retrieval logs and spans also expose `selected_route_id`, `selected_route_family`, `selected_business_family_id`, `selected_leaf_route_id`, `route_stage`, `route_arg_validation_status`, `used_fallback_scope`, `selected_route_kind`, `selected_source`, `knowledge_route_id`, `document_id`, `tool_name`, and `tool_status`.
 - Traces and logs are exported through the shared OTEL collector by default from the base app compose. `docker-compose.observability.yml` only adds localhost port bindings for local smoke and triage.
 - Metrics are scraped by the OTEL collector from each service `/metrics` endpoint and forwarded to VictoriaMetrics.
@@ -66,7 +67,8 @@ Notes
 
 - The observability overlay and Victoria stack bind all host ports to `127.0.0.1` only, so smoke and local triage work without widening public exposure. Remote operators must use an SSH tunnel.
 - Grafana reads its admin password from `secrets/grafana_admin_password.txt`; no default Grafana password is embedded in compose, and the value is not shared with the admin panel or the core admin API.
-- VictoriaLogs is configured with a 7-day retention window.
+- VictoriaMetrics is configured with a 14-day retention window; VictoriaLogs and VictoriaTraces are each configured with a 7-day retention window.
+- The Victoria stack contains restricted product telemetry. It is operator-only, loopback-bound, and must not be exposed publicly or copied into indefinite backups.
 - Start the Victoria stack before the app stack so `otel-collector` is present on `agent-net`.
 - The default supported app startup path is `docker compose up -d --build`, because the base compose now carries the required `OTEL_*` wiring for the main request path.
 - Use `docker-compose.observability.yml` only when you need host-local access to app ports for smoke, curl-based triage, or local operator workflows.

@@ -17,6 +17,7 @@ Read by Intent
 - Run observability smoke -> `docs/operations/observability-runbook.md`
 - Review observability baseline -> `docs/operations/observability-baseline.md`
 - Review observability policy -> `docs/operations/observability-policy.md`
+- Review the request/processing/response data contract -> `docs/operations/product-observability-contract.md`
 - Diagnose ChatGPT-compatible voice `/transcribe` path and fork contract -> `docs/operations/chatgpt-transcribe-chain.md`
 - Upgrade existing corp-db volumes to RFC-026 schema/data -> `docs/operations/corp-db-rfc026-upgrade-runbook.md`
 - Capture canonical-series `lamp_filters` latency and EXPLAIN evidence -> `docs/operations/corp-db-lamp-filters-latency.md`

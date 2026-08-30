@@ -15,7 +15,7 @@ Startup
 docker compose -f victoriametrics/docker-compose.yml up -d
 ```
 
-All observability host ports are loopback-only. Use an SSH tunnel for remote operator access. VictoriaLogs is configured with a 7-day retention window.
+All observability host ports are loopback-only. Use an SSH tunnel for remote operator access. VictoriaMetrics retains 14 days; VictoriaLogs and VictoriaTraces retain 7 days. Logs and traces may contain restricted product-turn payloads under `docs/operations/product-observability-contract.md`.
 
 2. Start the application stack on the default supported path:
 
@@ -90,6 +90,20 @@ Quick Checks
 7. `curl -fsS http://127.0.0.1:3003/api/health`
 
 Note: `http://127.0.0.1:8428/api/v1/targets` may stay empty in this topology. Prometheus scraping is executed by the OTEL collector, and VictoriaMetrics receives the exported series rather than scraping app targets directly.
+
+Product Turn Triage
+-------------------
+
+The internal Victoria stack intentionally supports reconstruction of a product turn:
+
+1. Find a canonical request or product-turn log by `request_id` or distinctive user wording.
+2. Read its `trace_id`, then open the distributed trace.
+3. Inspect the user request and final response on the instrumented turn records/spans.
+4. Follow selector, argument-builder, route, tool, retrieval, fallback, and finalizer spans to explain the processing path.
+5. Return to VictoriaLogs and filter by the same `request_id` or `trace_id` to inspect correlated warnings and service transitions.
+6. Use VictoriaMetrics only for aggregate comparison: route traffic, statuses, latency, fallbacks, validation failures, and filter-contract outcomes.
+
+Request/response text, retry queries, user IDs, request IDs, trace IDs, and other arbitrary payload values must not appear in metric labels. Do not expect hidden reasoning, complete system prompts, credentials, or authorization headers in telemetry. See `docs/operations/product-observability-contract.md` for the full data contract and access boundary.
 
 Fixed Triage Order
 ------------------

@@ -6,6 +6,10 @@ Purpose
 
 Define the repository policy for sampling, retention, cardinality, and sensitive-data handling.
 
+The repo-specific decision for product-turn payloads is recorded in
+`docs/operations/product-observability-contract.md`. That contract is the explicit
+exception for internal, short-retention request/processing/response telemetry.
+
 Sampling
 --------
 
@@ -20,6 +24,9 @@ Retention
 - Local Compose stacks are ephemeral by default.
 - CI keeps smoke artifacts, not persistent Victoria volumes.
 - Persistent environments must document trace, log, and metric retention explicitly.
+- The supported persistent Compose defaults are metrics `14d`, logs `7d`, and traces `7d`.
+- Extending payload-bearing log or trace retention requires an explicit operator decision and documentation.
+- Backups must not silently preserve short-retention telemetry as a permanent archive.
 
 Cardinality
 -----------
@@ -33,12 +40,23 @@ Cardinality
 Sensitive Data
 --------------
 
-- Metrics, logs, and traces must not contain secrets, tokens, credentials, or raw private payloads.
-- Temporary debug logging with sensitive content must never become the committed default.
+- Metrics, logs, and traces must not contain secrets, tokens, credentials, authorization headers, private keys, environment dumps, complete system prompts, or hidden model reasoning/chain-of-thought.
+- Internal VictoriaLogs and VictoriaTraces may contain user requests, processing artifacts, retry queries, and assistant responses under `docs/operations/product-observability-contract.md`.
+- Product payloads may contain personal or commercially sensitive text and must be treated as restricted operator data.
+- Temporary high-volume raw model/debug logging must never become the committed default outside local development.
 - Generated inventories must stay free of secrets and local-only credentials.
-- `HTTP request completed` logs must stay payload-free: status, route template, duration, `request_id`, `trace_id`, `span_id`, and route/tool correlation ids are allowed; user prompts and raw request bodies are not.
+- `HTTP request completed` logs must stay payload-free: status, route template, duration, `request_id`, `trace_id`, `span_id`, and route/tool correlation ids are allowed; product payload belongs in product-turn logs, span attributes, or span events.
+- Product content and arbitrary identifiers remain forbidden in metric labels.
+
+Access
+------
+
+- Victoria and Grafana ports remain loopback-only; remote operators use an SSH tunnel.
+- Grafana uses a dedicated operator credential.
+- Victoria and OTEL endpoints must not be published as public APIs.
+- Payload access is limited to product-quality, incident-response, and security operators.
 
 Notes
 -----
 
-- Keep any repo-specific exceptions short and explicit.
+- The product-observability exception applies only to the internal Victoria stack. External model, embeddings, or observability providers require separate decisions.

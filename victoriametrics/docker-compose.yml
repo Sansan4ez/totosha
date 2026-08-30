@@ -7,6 +7,7 @@ services:
     container_name: victoriametrics
     command:
       - "--storageDataPath=/storage"
+      - "--retentionPeriod=14d"
       - "--opentelemetry.usePrometheusNaming=true"
     ports:
       - "127.0.0.1:${VICTORIAMETRICS_PORT:-8428}:8428"
@@ -35,6 +36,7 @@ services:
     container_name: victoriatraces
     command:
       - "--storageDataPath=/vtraces"
+      - "--retentionPeriod=7d"
     ports:
       - "127.0.0.1:${VICTORIATRACES_PORT:-10428}:10428"
     volumes:
