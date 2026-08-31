@@ -681,6 +681,28 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertNotIn("evidence_policy", messages[1]["content"])
         self.assertLess(sum(len(message.get("content") or "") for message in messages), 40000)
 
+    def test_series_knowledge_selector_cards_disambiguate_kb_from_catalog_routes(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                for query in (
+                    "На каких сериях светильников ЛАДзавод светотехники устанавливают закаленное стекло?",
+                    "Коротко: чем отличается серия LAD LED R500 от LAD LED R700?",
+                ):
+                    with self.subTest(query=query):
+                        payload = _MODULE.build_route_selector_payload(query)
+                        messages = _MODULE._build_route_selector_messages(payload)
+                        prompt = messages[1]["content"]
+
+                        self.assertEqual(payload["candidate_route_ids"][0], "corp_kb.series_description")
+                        self.assertIn("comparisons", prompt)
+                        self.assertIn("tempered-glass use", prompt)
+                        self.assertIn("Do not select for comparisons between series", prompt)
+                        self.assertIn("Do not select for series-wide knowledge facts", prompt)
+
     def test_selector_executes_scoped_route_and_finalizes_without_extra_tools(self):
         selector_response = {
             "choices": [

@@ -4,8 +4,10 @@ route_kind: corp_table
 authority: primary
 title: Lamp catalog lookup
 summary: Exact models, codes, series, categories, and structured catalog lookup.
-when_to_use: Select when the user names a concrete lamp model, series, or code and wants its catalog card,
-  characteristics, or structured lookup.
+when_to_use: >-
+  Select when the user names one concrete lamp model, series, or code and wants its exact catalog card,
+  structured characteristics, or identifier lookup. Do not select for comparisons between series or
+  series-wide knowledge facts; use the series-description route for those.
 schema_ref: catalog_lookup.schema.json
 topics:
 - catalog

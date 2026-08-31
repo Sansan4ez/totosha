@@ -6,8 +6,9 @@ title: Lamp structured filters
 summary: Structured catalog filtering by canonical business series, power, flux, CCT, IP, voltage,
   dimensions, protection class, category, and mounting type.
 when_to_use: >-
-  Select when the user filters the catalog by explicit structured parameters: canonical business series,
-  power, flux, CCT, IP, voltage, dimensions, protection class, category, or mounting type they actually stated.
+  Select when the user asks to find lamp models matching explicit structured catalog parameters: canonical
+  business series, power, flux, CCT, IP, voltage, dimensions, protection class, category, or mounting type.
+  Do not select for series-wide knowledge facts such as which series use a material or tempered glass.
 schema_ref: lamp_filters.schema.json
 topics:
 - catalog

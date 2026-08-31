@@ -3,10 +3,11 @@ route_family: corp_kb.company_common
 route_kind: corp_table
 authority: primary
 title: Series descriptions and lineup overview
-summary: Dedicated company-KB leaf route for broad series overviews and series-level descriptions.
+summary: Dedicated company-KB leaf route for series overviews, comparisons, and series-level facts.
 when_to_use: >-
-  Select for broad series-level overviews: what series exist, or describe a series or the lineup at
-  model-family level.
+  Select for knowledge questions about product series: what series exist, descriptions or comparisons
+  of one or more series, and series-wide facts such as materials or tempered-glass use. Do not use an
+  exact catalog lookup or structured lamp filters for these questions.
 schema_ref: series_description.schema.json
 topics:
 - series
@@ -29,6 +30,8 @@ patterns:
 - какие серии доступны
 - опиши серию
 - расскажи про серию
+- на каких сериях устанавливают закаленное стекло
+- чем отличается серия lad led r500 от lad led r700
 executor: corp_db_search
 executor_args_template:
   kind: hybrid_search

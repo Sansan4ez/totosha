@@ -853,6 +853,32 @@ class RoutingCatalogTests(unittest.TestCase):
                         self.assertIn("company_info", payload["candidate_family_ids"])
                         self.assertNotIn("corp_db.catalog_lookup", payload["candidate_route_ids"])
 
+    def test_select_route_prefers_series_description_for_series_knowledge_questions(self):
+        with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
+            with patch.dict(
+                os.environ,
+                {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
+                clear=False,
+            ):
+                cases = (
+                    "На каких сериях светильников ЛАДзавод светотехники устанавливают закаленное стекло?",
+                    "Коротко: чем отличается серия LAD LED R500 от LAD LED R700?",
+                )
+                for query in cases:
+                    with self.subTest(query=query):
+                        selection = select_route(query)
+                        payload = build_route_selector_payload(query, limit=5)
+
+                        self.assertEqual(selection["intent_family"], "catalog_lookup")
+                        self.assertEqual(selection["selected"]["route_id"], "corp_kb.series_description")
+                        self.assertEqual(selection["selected_family_id"], "company_info")
+                        self.assertEqual(selection["selected_leaf_route_id"], "series_description")
+                        self.assertEqual(selection["primary_candidate"]["route_id"], "corp_kb.series_description")
+                        self.assertEqual(payload["candidate_route_ids"][0], "corp_kb.series_description")
+                        self.assertIn("corp_kb.company_common", payload["candidate_route_ids"])
+                        self.assertNotIn("corp_db.catalog_lookup", payload["candidate_route_ids"])
+                        self.assertNotIn("corp_db.lamp_filters", payload["candidate_route_ids"])
+
     def test_select_route_prefers_curated_sphere_categories_for_broad_category_questions(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             with patch.dict(

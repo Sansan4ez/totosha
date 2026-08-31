@@ -191,6 +191,26 @@ BROAD_SERIES_QUERY_EXCLUSIONS = (
     "закал",
     "стекл",
 )
+SERIES_COMPARISON_QUERY_CUES = (
+    "чем отличается",
+    "чем отличаются",
+    "отличия между",
+    "разница между",
+    "сравни серии",
+    "сравнение серий",
+)
+SERIES_KNOWLEDGE_SCOPE_CUES = (
+    "на каких сериях",
+    "в каких сериях",
+    "какие серии",
+)
+SERIES_KNOWLEDGE_FACT_CUES = (
+    "закал",
+    "стекл",
+    "материал",
+    "рассеивател",
+    "особенност",
+)
 SPHERE_CATEGORY_QUERY_CUES = (
     "какие категории подходят",
     "какие категории есть",
@@ -1635,11 +1655,18 @@ def _is_mountings_family_query(query: str) -> bool:
 
 def _is_series_description_query(query: str) -> bool:
     query_text = _normalize(query)
+    if _is_explicit_document_request(query) or _is_mountings_family_query(query) or _is_codes_family_query(query):
+        return False
     if _is_broad_series_query(query):
         return True
     if any(marker in query_text for marker in ("опиши сери", "описание серии", "расскажи про сери", "что за серия")):
         return not any(marker in query_text for marker in BROAD_SERIES_QUERY_EXCLUSIONS)
-    return False
+    if any(marker in query_text for marker in SERIES_COMPARISON_QUERY_CUES):
+        return "сери" in query_text or _distinct_series_mentions(query) > 1
+    return (
+        any(marker in query_text for marker in SERIES_KNOWLEDGE_SCOPE_CUES)
+        and any(marker in query_text for marker in SERIES_KNOWLEDGE_FACT_CUES)
+    )
 
 
 def _detect_document_type(query: str) -> str | None:
