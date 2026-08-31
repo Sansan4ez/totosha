@@ -2361,8 +2361,10 @@ def build_route_selector_payload(
     intent_family = _infer_intent_family(query, explicit_document_request=explicit_document_request)
     max_routes = max(1, min(int(limit or SELECTOR_ROUTE_LIMIT), SELECTOR_ROUTE_LIMIT))
     if len(routes) <= max_routes:
-        candidates = list(routes)
-        candidate_mode = "all_visible_grouped_by_family"
+        # Catalog serialization order is not a relevance ranking: preserve the same
+        # intent-first ordering that degraded route selection uses.
+        candidates = _ordered_routes_for_intent(routes, query, intent_family)
+        candidate_mode = "all_visible_ranked_by_intent"
     else:
         candidates, selected_family_ids = _family_first_candidate_routes(
             routes,
