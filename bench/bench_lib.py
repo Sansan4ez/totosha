@@ -586,6 +586,14 @@ def check_contains_any(answer: str, expected: list[str]) -> tuple[bool, str]:
     return False, f"none_of={expected}"
 
 
+def check_not_contains_any(answer: str, forbidden: list[str]) -> tuple[bool, str]:
+    a = norm_text(answer)
+    matches = [item for item in forbidden if norm_text(item) in a]
+    if not matches:
+        return True, ""
+    return False, f"forbidden={matches}"
+
+
 def check_regex(answer: str, pattern: str) -> tuple[bool, str]:
     try:
         ok = re.search(pattern, answer or "", flags=re.IGNORECASE | re.MULTILINE) is not None
@@ -611,12 +619,17 @@ def eval_checks(answer: str, checks: list[dict[str, Any]]) -> tuple[bool, list[s
             errors.append("bad_check_format")
             continue
         ctype = str(check.get("type") or "")
-        if ctype in ("contains_all", "contains_any"):
+        if ctype in ("contains_all", "contains_any", "not_contains_any"):
             val = check.get("value")
             if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
                 errors.append(f"{ctype}:bad_value")
                 continue
-            ok, msg = (check_contains_all(answer, val) if ctype == "contains_all" else check_contains_any(answer, val))
+            if ctype == "contains_all":
+                ok, msg = check_contains_all(answer, val)
+            elif ctype == "contains_any":
+                ok, msg = check_contains_any(answer, val)
+            else:
+                ok, msg = check_not_contains_any(answer, val)
             if not ok:
                 errors.append(f"{ctype}:{msg}")
             continue
@@ -720,7 +733,12 @@ def routing_accuracy_summary(dataset: list[dict[str, Any]], by_case: dict[str, d
     }
 
 
-def eval_routing(meta: Optional[dict[str, Any]], routing: Optional[dict[str, Any]]) -> tuple[bool, list[str]]:
+def eval_routing(
+    meta: Optional[dict[str, Any]],
+    routing: Optional[dict[str, Any]],
+    *,
+    enforce_route_id: bool = False,
+) -> tuple[bool, list[str]]:
     if not isinstance(routing, dict) or not routing:
         return True, []
 
@@ -738,8 +756,29 @@ def eval_routing(meta: Optional[dict[str, Any]], routing: Optional[dict[str, Any
     expected_intent = routing.get("intent")
     if expected_intent:
         actual_intent = str(meta.get("retrieval_intent") or "")
-        if actual_intent and actual_intent != str(expected_intent):
-            errors.append(f"routing:intent expected={expected_intent} actual={actual_intent}")
+        if actual_intent != str(expected_intent):
+            errors.append(f"routing:intent expected={expected_intent} actual={actual_intent or '(missing)'}")
+
+    expected_route_id = str(routing.get("route_id") or "")
+    if enforce_route_id and expected_route_id:
+        actual_route_id = str(meta.get("retrieval_leaf_route_id") or meta.get("retrieval_route_id") or "")
+        if actual_route_id != expected_route_id:
+            errors.append(
+                f"routing:route_id expected={expected_route_id} actual={actual_route_id or '(missing)'}"
+            )
+
+    expected_tool_args = routing.get("tool_args")
+    if enforce_route_id and isinstance(expected_tool_args, dict):
+        actual_tool_args = meta.get("retrieval_selected_tool_args")
+        if not isinstance(actual_tool_args, dict):
+            errors.append("routing:tool_args actual=(missing)")
+        else:
+            for key, expected_value in expected_tool_args.items():
+                actual_value = actual_tool_args.get(key)
+                if actual_value != expected_value:
+                    errors.append(
+                        f"routing:tool_arg.{key} expected={expected_value!r} actual={actual_value!r}"
+                    )
 
     if "wiki_after_corp_db_success" in routing:
         expected = bool(routing.get("wiki_after_corp_db_success"))
@@ -798,7 +837,12 @@ def evaluate_case_result(case: dict[str, Any], row: Optional[dict[str, Any]]) ->
     status = str(row.get("status") or "ok")
     answer = str(row.get("answer") or "")
     meta = row.get("meta") if isinstance(row.get("meta"), dict) else None
-    routing_ok, routing_errors = eval_routing(meta, routing)
+    execution_mode = str(row.get("execution_mode") or get_execution(case).get("mode") or "agent_chat")
+    routing_ok, routing_errors = eval_routing(
+        meta,
+        routing,
+        enforce_route_id=execution_mode in {"agent_chat", "agent_chat_shadow"},
+    )
 
     if status != "ok":
         return {

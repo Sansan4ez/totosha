@@ -69,6 +69,53 @@ class BenchRoutingEvalTests(unittest.TestCase):
         self.assertTrue(any("guardrail_hits" in error for error in errors))
         self.assertTrue(any("forbid_tools_used" in error for error in errors))
 
+    def test_eval_routing_fails_when_expected_intent_is_missing(self):
+        ok, errors = eval_routing(
+            {
+                "retrieval_selected_source": "corp_db",
+                "retrieval_wiki_after_corp_db_success": False,
+            },
+            {"intent": "company_fact", "selected_source": "corp_db"},
+        )
+
+        self.assertFalse(ok)
+        self.assertIn("routing:intent expected=company_fact actual=(missing)", errors)
+
+    def test_eval_routing_can_enforce_expected_leaf_route(self):
+        ok, errors = eval_routing(
+            {"retrieval_leaf_route_id": "wrong_route"},
+            {"route_id": "company_general"},
+            enforce_route_id=True,
+        )
+
+        self.assertFalse(ok)
+        self.assertIn("routing:route_id expected=company_general actual=wrong_route", errors)
+
+    def test_eval_routing_can_enforce_expected_tool_argument_subset(self):
+        ok, errors = eval_routing(
+            {
+                "retrieval_selected_tool_args": {
+                    "kind": "lamp_filters",
+                    "series": "LAD LED R320 Ex",
+                    "flux_lm_min": 11540,
+                }
+            },
+            {
+                "tool_args": {
+                    "kind": "lamp_filters",
+                    "series": "LAD LED R500 2Ex",
+                    "flux_lm_min": 11540,
+                }
+            },
+            enforce_route_id=True,
+        )
+
+        self.assertFalse(ok)
+        self.assertIn(
+            "routing:tool_arg.series expected='LAD LED R500 2Ex' actual='LAD LED R320 Ex'",
+            errors,
+        )
+
     def test_eval_routing_fails_loudly_when_legacy_meta_field_is_missing(self):
         meta = {
             "retrieval_intent": "company_fact",

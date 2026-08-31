@@ -12,6 +12,25 @@ This document explains how to:
 - configure pricing (`bench/pricing.json`) so results include `estimated_cost_usd`;
 - correlate failures with observability using `request_id`.
 
+Test Layers
+-----------
+
+Do not interpret all bench modes as equivalent:
+
+1. **Fast code tests (no LLM):** unit and contract tests with scripted selectors, fakes, and mocks.
+   Run these on every code change.
+2. **Deterministic data-plane integration (no agent LLM):** `execution.mode=direct_tool` cases call
+   the real tools-api/database and validate structured payloads. They test retrieval and data
+   contracts, but bypass route selection, the ReAct loop, and final answer generation.
+3. **Production-LLM agent E2E:** every question goes through Core `/api/chat` with
+   `--force-agent-chat --chat-execution-mode runtime`. This tests the deployed route selector,
+   tools, loop, and final answer. Use expected-model flags so a proxy alias/remap cannot silently
+   change the model under test.
+
+At the time of writing, `bench/golden/v1.jsonl` is primarily a direct-tool dataset. Its default score
+must not be reported as a full-agent quality score. The routing baseline exercises `/api/chat`, but
+its `routing_only` validation does not score final-answer quality.
+
 Quick Start
 -----------
 
@@ -28,7 +47,14 @@ docker compose -f victoriametrics/docker-compose.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 ```
 
-2) Run a small subset (calls Core inside the container, no host port required):
+2) Run fast no-LLM code tests:
+
+```bash
+python3 -m unittest -q bench.tests.test_algorithmic_eval bench.tests.test_routing_eval bench.tests.test_run_modes
+docker exec core sh -lc 'cd /app && python -m unittest -q tests.test_route_selector_fake tests.test_routing_catalog tests.test_corp_db_tool'
+```
+
+3) Run a small dataset subset in its declared modes (calls Core/tools inside containers):
 
 ```bash
 python3 bench/bench_run.py --docker-exec --limit 5
@@ -36,7 +62,7 @@ python3 bench/bench_run.py --docker-exec --limit 5
 
 This writes `bench/results/<run_id>.jsonl`.
 
-3) Evaluate:
+4) Evaluate:
 
 ```bash
 python3 bench/bench_eval.py --results bench/results/<run_id>.jsonl
@@ -79,10 +105,35 @@ python3 bench/bench_run.py --docker-exec
 Useful flags:
 
 - `--limit N` to run only first N cases
+- `--force-agent-chat` to ignore per-case `direct_tool` execution and send every question to `/api/chat`
+- `--chat-execution-mode runtime` to exercise the production response path rather than benchmark artifacts
+- `--expected-configured-model NAME` to require exact `meta.model`
+- `--expected-llm-model NAME` to require exact provider-returned entries in `meta.llm_models`
 - `--sleep-ms 200` to add a pause between cases
 - `--timeout-s 180` to increase timeouts
 - `--dataset bench/golden/v1.jsonl` to pick dataset
 - `--out bench/results/my_run.jsonl` to choose output path
+
+### Full production-LLM E2E
+
+Use a dedicated answer/routing dataset where possible. To probe all current v1 questions through the
+agent while that dataset is being built:
+
+```bash
+python3 bench/bench_run.py \
+  --docker-exec \
+  --dataset bench/golden/prod-agent-v1.jsonl \
+  --chat-execution-mode runtime \
+  --expected-configured-model gpt-5.6-terra \
+  --expected-llm-model gpt-5.6-luna \
+  --timeout-s 180 \
+  --out bench/results/prod-agent.jsonl
+```
+
+`bench/golden/prod-agent-v1.jsonl` is the production-agent suite. It contains representative core
+business questions plus incident replays and validates final answer text and routing metadata.
+Maintain it separately from `v1.jsonl`: direct-tool structured checks should stay deterministic,
+while production-agent checks must tolerate wording variation without weakening factual assertions.
 
 ### Option B: call Core via HTTP
 

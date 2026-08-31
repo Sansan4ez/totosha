@@ -50,11 +50,18 @@ def _direct_tool_routing_meta(tool_name: str, tool_args: dict[str, Any]) -> tupl
     if tool_name != "corp_db_search":
         return "", "unknown"
     kind = str(tool_args.get("kind") or "")
-    if kind == "hybrid_search" and str(tool_args.get("profile") or "") == "kb_search":
+    if kind == "hybrid_search" and str(tool_args.get("profile") or "") in {"kb_search", "kb_route_lookup"}:
         return "company_fact", "corp_db"
-    if kind in {"application_recommendation", "portfolio_by_sphere"}:
+    if kind in {"application_recommendation", "portfolio_by_sphere", "sphere_curated_categories"}:
         return "application_recommendation", "corp_db"
-    if kind in {"lamp_exact", "lamp_filters", "sku_by_code"}:
+    if kind in {
+        "lamp_exact",
+        "lamp_filters",
+        "sku_by_code",
+        "lamp_documents_index",
+        "lamp_code_lookup",
+        "sphere_categories",
+    }:
         return "catalog_lookup", "corp_db"
     return "", "corp_db"
 
@@ -123,11 +130,11 @@ def docker_exec_json_post(path: str, payload: dict[str, Any], request_id: str, t
     raw = json.dumps(payload, ensure_ascii=False)
     raw = raw.replace("'", "'\"'\"'")  # shell-safe single quotes
     cmd = (
-        "curl -sS -X POST "
+        "curl -sS -o /tmp/bench-response.json -w '%{http_code}' -X POST "
         f"http://localhost:4000{path} "
         "-H 'Content-Type: application/json' "
         f"-H 'X-Request-Id: {request_id}' "
-        f"-d '{raw}'"
+        f"-d '{raw}' && printf '\\n' && cat /tmp/bench-response.json"
     )
     result = subprocess.run(
         ["docker", "exec", "core", "sh", "-lc", cmd],
@@ -136,10 +143,15 @@ def docker_exec_json_post(path: str, payload: dict[str, Any], request_id: str, t
         timeout=timeout_s,
     )
     text = (result.stdout or "") + (result.stderr or "")
+    first_line, separator, body = text.partition("\n")
     try:
-        return result.returncode, json.loads(text)
+        http_status = int(first_line.strip()) if result.returncode == 0 else 0
+    except ValueError:
+        http_status = 0
+    try:
+        return http_status, json.loads(body if separator else text)
     except Exception:
-        return result.returncode, {"error": text[:500]}
+        return http_status, {"error": (body if separator else text)[:500]}
 
 
 def docker_exec_json_post_url(url: str, payload: dict[str, Any], request_id: str, timeout_s: float, headers: Optional[dict[str, str]] = None) -> tuple[int, dict[str, Any]]:
@@ -230,6 +242,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sleep-ms", type=int, default=0, help="Sleep between cases")
     parser.add_argument("--timeout-s", type=float, default=180.0, help="Request timeout (seconds)")
     parser.add_argument("--docker-exec", action="store_true", help="Call core from inside container via docker exec")
+    parser.add_argument(
+        "--force-agent-chat",
+        action="store_true",
+        help="Send every dataset question through Core /api/chat, including cases declared as direct_tool",
+    )
+    parser.add_argument(
+        "--chat-execution-mode",
+        choices=("benchmark", "runtime"),
+        default="benchmark",
+        help="Core execution_mode for agent_chat requests; use runtime for production-path E2E",
+    )
+    parser.add_argument(
+        "--expected-configured-model",
+        default="",
+        help="Fail agent_chat cases unless meta.model exactly matches this configured model",
+    )
+    parser.add_argument(
+        "--expected-llm-model",
+        default="",
+        help="Fail agent_chat cases unless every provider-returned meta.llm_models entry exactly matches this model",
+    )
     return parser.parse_args()
 
 
@@ -309,6 +342,10 @@ def main() -> None:
                 f"user_id={user_id}",
                 f"chat_id={chat_id}",
                 f"docker_exec={args.docker_exec}",
+                f"force_agent_chat={bool(getattr(args, 'force_agent_chat', False))}",
+                f"chat_execution_mode={getattr(args, 'chat_execution_mode', 'benchmark')}",
+                f"expected_configured_model={getattr(args, 'expected_configured_model', '') or '-'}",
+                f"expected_llm_model={getattr(args, 'expected_llm_model', '') or '-'}",
             ]
         )
     )
@@ -320,6 +357,9 @@ def main() -> None:
             request_id = f"bench/{run_id}/{case_id}"
             execution = get_execution(case)
             validation = get_validation(case)
+            declared_execution_mode = str(execution.get("mode") or "agent_chat")
+            if bool(getattr(args, "force_agent_chat", False)):
+                execution = {**execution, "mode": "agent_chat", "forced_from": declared_execution_mode}
             execution_mode = str(execution.get("mode") or "agent_chat")
 
             started_at = utc_now_iso()
@@ -333,11 +373,10 @@ def main() -> None:
                 "chat_type": "private",
                 "source": "bot",
                 "return_meta": True,
-                # Core only appends to meta["bench_artifacts"] (run_meta_append_artifact) when
-                # the request opts in via execution_mode="benchmark" -- runtime/bot traffic never
-                # sets this, so without it agent_chat/agent_chat_shadow bench cases always see an
-                # empty bench_artifacts list regardless of which internal code path handled them.
-                "execution_mode": "benchmark",
+                # Core only appends to meta["bench_artifacts"] in benchmark mode. Production-path
+                # E2E intentionally uses runtime mode and therefore validates answer/routing metadata
+                # rather than benchmark-only artifacts.
+                "execution_mode": str(getattr(args, "chat_execution_mode", "benchmark")),
             }
 
             status = "ok"
@@ -362,8 +401,7 @@ def main() -> None:
                         )
 
                     if args.docker_exec:
-                        code, data = docker_exec_json_post("/api/chat", chat_payload, request_id=request_id, timeout_s=float(args.timeout_s))
-                        http_status = 200 if code == 0 else 500
+                        http_status, data = docker_exec_json_post("/api/chat", chat_payload, request_id=request_id, timeout_s=float(args.timeout_s))
                     else:
                         http_status, data, _headers = http_post_json(
                             f"{args.core_url.rstrip('/')}/api/chat",
@@ -381,6 +419,29 @@ def main() -> None:
                         answer = str(data.get("response") or "")
                         meta_val = data.get("meta")
                         meta = meta_val if isinstance(meta_val, dict) else None
+                        if status == "ok":
+                            expected_configured_model = str(getattr(args, "expected_configured_model", "") or "")
+                            expected_llm_model = str(getattr(args, "expected_llm_model", "") or "")
+                            actual_configured_model = str((meta or {}).get("model") or "")
+                            actual_llm_models = [
+                                str(item)
+                                for item in ((meta or {}).get("llm_models") or [])
+                                if str(item)
+                            ]
+                            if expected_configured_model and actual_configured_model != expected_configured_model:
+                                status = "error"
+                                error = (
+                                    "unexpected_configured_model:"
+                                    f"expected={expected_configured_model} actual={actual_configured_model or '(missing)'}"
+                                )
+                            elif expected_llm_model and (
+                                not actual_llm_models or any(item != expected_llm_model for item in actual_llm_models)
+                            ):
+                                status = "error"
+                                error = (
+                                    "unexpected_llm_model:"
+                                    f"expected={expected_llm_model} actual={actual_llm_models or ['(missing)']}"
+                                )
                     else:
                         status = "error"
                         error = "non_json_response"
@@ -486,6 +547,12 @@ def main() -> None:
                 "execution": execution,
                 "validation": validation,
                 "execution_mode": execution_mode,
+                "declared_execution_mode": declared_execution_mode,
+                "chat_execution_mode": (
+                    str(getattr(args, "chat_execution_mode", "benchmark"))
+                    if execution_mode in {"agent_chat", "agent_chat_shadow"}
+                    else None
+                ),
                 "validation_mode": str(validation.get("mode") or ""),
                 "estimated_cost_usd": None if estimated_cost is None else round(float(estimated_cost), 8),
             }

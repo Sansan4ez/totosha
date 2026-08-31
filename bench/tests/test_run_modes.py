@@ -113,6 +113,23 @@ class BenchRunModesTests(unittest.TestCase):
             self.assertEqual(row["meta"]["retrieval_selected_source"], "corp_db")
             self.assertEqual(row["meta"]["retrieval_intent"], "catalog_lookup")
 
+    def test_direct_tool_routing_meta_covers_current_corp_db_kinds(self):
+        self.assertEqual(
+            bench_run._direct_tool_routing_meta(
+                "corp_db_search",
+                {"kind": "hybrid_search", "profile": "kb_route_lookup"},
+            ),
+            ("company_fact", "corp_db"),
+        )
+        self.assertEqual(
+            bench_run._direct_tool_routing_meta("corp_db_search", {"kind": "lamp_documents_index"}),
+            ("catalog_lookup", "corp_db"),
+        )
+        self.assertEqual(
+            bench_run._direct_tool_routing_meta("corp_db_search", {"kind": "sphere_curated_categories"}),
+            ("application_recommendation", "corp_db"),
+        )
+
     def test_direct_tool_mode_supports_doc_search(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             dataset_path = Path(tmpdir) / "dataset.jsonl"
@@ -167,6 +184,103 @@ class BenchRunModesTests(unittest.TestCase):
             self.assertEqual(row["primary_artifact"]["tool"], "doc_search")
             self.assertEqual(row["meta"]["retrieval_selected_source"], "doc_search")
             self.assertEqual(row["meta"]["retrieval_intent"], "document_lookup")
+
+    def test_force_agent_chat_uses_runtime_path_and_checks_models(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_path = Path(tmpdir) / "dataset.jsonl"
+            out_path = Path(tmpdir) / "results.jsonl"
+            dataset_path.write_text(
+                json.dumps(
+                    {
+                        "id": "case-live",
+                        "question": "website?",
+                        "execution": {
+                            "mode": "direct_tool",
+                            "tool": "corp_db_search",
+                            "args": {"kind": "hybrid_search", "query": "website?"},
+                        },
+                        "validation": {"mode": "routing_only"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                dataset=str(dataset_path),
+                out=str(out_path),
+                pricing="bench/pricing.json",
+                core_url="http://127.0.0.1:4000",
+                tools_api_url="http://127.0.0.1:8100",
+                user_id=1,
+                chat_id=1,
+                limit=0,
+                sleep_ms=0,
+                timeout_s=30.0,
+                docker_exec=False,
+                force_agent_chat=True,
+                chat_execution_mode="runtime",
+                expected_configured_model="configured-model",
+                expected_llm_model="provider-model",
+            )
+            response = {
+                "response": "https://example.test",
+                "meta": {
+                    "model": "configured-model",
+                    "llm_models": ["provider-model"],
+                    "llm_usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            }
+            with patch.object(bench_run, "parse_args", return_value=args), patch.object(
+                bench_run, "http_post_json", side_effect=[(200, {}, {}), (200, response, {})]
+            ) as http_post:
+                bench_run.main()
+
+            chat_payload = http_post.call_args_list[1].args[1]
+            self.assertEqual(chat_payload["execution_mode"], "runtime")
+            row = json.loads(out_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(row["status"], "ok")
+            self.assertEqual(row["execution_mode"], "agent_chat")
+            self.assertEqual(row["declared_execution_mode"], "direct_tool")
+            self.assertEqual(row["chat_execution_mode"], "runtime")
+            self.assertEqual(row["execution"]["forced_from"], "direct_tool")
+
+    def test_agent_chat_model_mismatch_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_path = Path(tmpdir) / "dataset.jsonl"
+            out_path = Path(tmpdir) / "results.jsonl"
+            dataset_path.write_text(
+                json.dumps({"id": "case-live", "question": "website?", "validation": {"mode": "routing_only"}}) + "\n",
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                dataset=str(dataset_path),
+                out=str(out_path),
+                pricing="bench/pricing.json",
+                core_url="http://127.0.0.1:4000",
+                tools_api_url="http://127.0.0.1:8100",
+                user_id=1,
+                chat_id=1,
+                limit=0,
+                sleep_ms=0,
+                timeout_s=30.0,
+                docker_exec=False,
+                force_agent_chat=False,
+                chat_execution_mode="runtime",
+                expected_configured_model="configured-model",
+                expected_llm_model="provider-model",
+            )
+            response = {
+                "response": "ok",
+                "meta": {"model": "other-model", "llm_models": ["provider-model"]},
+            }
+            with patch.object(bench_run, "parse_args", return_value=args), patch.object(
+                bench_run, "http_post_json", side_effect=[(200, {}, {}), (200, response, {})]
+            ):
+                bench_run.main()
+
+            row = json.loads(out_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(row["status"], "error")
+            self.assertIn("unexpected_configured_model", row["error"])
 
 
 if __name__ == "__main__":

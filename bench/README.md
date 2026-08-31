@@ -8,7 +8,8 @@ This directory contains the complete bench module: dataset, runner, evaluator, d
 - `bench/bench_eval.py`: evaluates results against deterministic checks.
 - `bench/bench_dashboard_build.py`: builds static JSON reports for the dashboard.
 - `bench/bench_lib.py`: shared stdlib-only helpers.
-- `bench/golden/v1.jsonl`: golden dataset (product/company facts, tool-payload algorithmic checks).
+- `bench/golden/v1.jsonl`: deterministic data-plane dataset (product/company facts, mostly direct-tool structured checks).
+- `bench/golden/prod-agent-v1.jsonl`: representative production-agent E2E questions with final-answer/routing checks.
 - `bench/golden/rfc028-routing-baseline.jsonl`: routing-only smoke dataset, one case per RFC-028 leaf route.
 - `bench/golden/incident-pfit7.jsonl`: incident-replay regression cases.
 - `bench/pricing.json`: model pricing used for cost estimation.
@@ -37,9 +38,55 @@ Bench is deliberately not an LLM-answer-quality eval. Each case declares a `vali
 
 Default paths are resolved relative to the repository root, so the module works even if it is launched from another current working directory.
 
+## Two Test Layers
+
+### Fast deterministic layer (no LLM)
+
+Use unit/contract tests with fakes and mocks while editing code:
+
+```bash
+python3 -m unittest -q \
+  bench.tests.test_algorithmic_eval \
+  bench.tests.test_routing_eval \
+  bench.tests.test_run_modes
+
+docker exec core sh -lc \
+  'cd /app && python -m unittest -q tests.test_route_selector_fake tests.test_routing_catalog tests.test_corp_db_tool'
+```
+
+Use `direct_tool` datasets as a slightly slower data-plane integration layer. These call the real
+`tools-api`/database but do not call the route-selector or final-answer LLM:
+
+```bash
+python3 bench/bench_run.py --docker-exec --dataset bench/golden/v1.jsonl
+```
+
+Note: `bench/golden/v1.jsonl` currently contains mostly `direct_tool` cases. A green default run is
+therefore evidence for retrieval/data contracts, not proof that the complete agent works.
+
+### Full production-LLM agent layer
+
+Force every question through the real Core `/api/chat` path and use runtime behavior rather than
+benchmark-only output shaping:
+
+```bash
+python3 bench/bench_run.py \
+  --docker-exec \
+  --dataset bench/golden/prod-agent-v1.jsonl \
+  --chat-execution-mode runtime \
+  --expected-configured-model gpt-5.6-terra \
+  --expected-llm-model gpt-5.6-luna \
+  --out bench/results/prod-agent.jsonl
+```
+
+The configured model and provider-returned model can differ when the proxy maps aliases. Pin both
+flags to the values expected for the tested deployment; a mismatch makes the affected case fail.
+Runtime mode intentionally does not expose benchmark-only artifacts, so full-agent datasets use
+answer checks and routing metadata rather than depend on `validation.artifact_selector`.
+
 ## Usage
 
-Run a small subset:
+Run a small subset in its declared execution modes:
 
 ```bash
 python3 bench/bench_run.py --docker-exec --limit 5

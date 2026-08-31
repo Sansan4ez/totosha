@@ -2,6 +2,7 @@ import unittest
 
 from bench.bench_lib import (
     eval_algorithmic_payload,
+    eval_checks,
     evaluate_case_result,
     get_execution,
     get_validation,
@@ -114,6 +115,20 @@ class BenchAlgorithmicEvalTests(unittest.TestCase):
 
         self.assertFalse(passed)
         self.assertTrue(any(error.startswith("all_contains:") for error in errors))
+
+    def test_text_checks_support_forbidden_tokens(self):
+        passed, errors = eval_checks(
+            "Подходит LAD LED R320 Ex",
+            [{"type": "not_contains_any", "value": ["R500", "2Ex"]}],
+        )
+        self.assertTrue(passed, errors)
+
+        passed, errors = eval_checks(
+            "Подходит LAD LED R500 2Ex",
+            [{"type": "not_contains_any", "value": ["R500", "2Ex"]}],
+        )
+        self.assertFalse(passed)
+        self.assertTrue(any(error.startswith("not_contains_any:") for error in errors))
 
     def test_evaluate_case_result_runs_algorithmic_checks(self):
         case = {
