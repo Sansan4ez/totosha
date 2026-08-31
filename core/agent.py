@@ -808,6 +808,79 @@ def _finalizer_unavailable_response(
     return ROUTE_SELECTOR_UNAVAILABLE_MESSAGE
 
 
+def _normalize_document_series_name(value: Any) -> str:
+    return " ".join(str(value or "").casefold().split())
+
+
+def _certificate_direct_link_response(
+    *,
+    message: str,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    tool_result: ToolResult,
+    route_hint: dict[str, Any] | None,
+) -> str:
+    """Render a complete multi-series certificate-link answer without an LLM round trip.
+
+    ``catalog_lamp_documents`` intentionally exposes the catalogue's generic certificate
+    field rather than guessing a certificate subtype from a SKU.  For an explicit direct-link
+    request, that is nevertheless complete evidence: every requested series has a storage URL.
+    Rendering it directly prevents a finalizer from turning an already-complete answer into a
+    request for a particular SKU merely because the document title is just "Сертификат".
+    """
+    if tool_name != "corp_db_search":
+        return ""
+    if str((route_hint or {}).get("route_id") or "") != "corp_db.certificate_by_lamp_name":
+        return ""
+    if str(tool_args.get("kind") or "") != "lamp_documents_index" or str(tool_args.get("document_type") or "") != "certificate":
+        return ""
+    message_text = _normalize_document_series_name(message)
+    if "ссыл" not in message_text and "скач" not in message_text:
+        return ""
+    payload = _parse_json_object(tool_result.output or "")
+    if payload.get("status") != "success" or not isinstance(payload.get("results"), list):
+        return ""
+    names = tool_args.get("names")
+    if not isinstance(names, list):
+        names = (payload.get("filters") or {}).get("names")
+    requested_names = [str(name).strip() for name in names or [] if str(name).strip()]
+    if not requested_names:
+        return ""
+
+    rows = [row for row in payload["results"] if isinstance(row, dict)]
+    direct_links: list[tuple[str, str]] = []
+    for requested_name in requested_names:
+        normalized_name = _normalize_document_series_name(requested_name)
+        matched_url = ""
+        for row in rows:
+            row_name = _normalize_document_series_name(row.get("name"))
+            if not (row_name == normalized_name or row_name.startswith(f"{normalized_name}-") or row_name.startswith(f"{normalized_name} ")):
+                continue
+            primary = row.get("primary_document") if isinstance(row.get("primary_document"), dict) else {}
+            if str(primary.get("document_type") or "") != "certificate":
+                continue
+            matched_url = str(primary.get("url") or "").strip()
+            if matched_url:
+                break
+        # A partial response must retain normal evidence finalization, which can explain what
+        # was and was not found.  Deterministic rendering is reserved for complete requests.
+        if not matched_url:
+            return ""
+        direct_links.append((requested_name, matched_url))
+
+    lines = ["Прямые ссылки на сертификаты:"]
+    for requested_name, url in direct_links:
+        normalized_name = _normalize_document_series_name(requested_name)
+        if "ce" in message_text and "r500" in normalized_name:
+            label = "CE-сертификат"
+        elif "пожар" in message_text and ("line" in normalized_name or "r700" in normalized_name):
+            label = "Пожарный сертификат"
+        else:
+            label = "Сертификат"
+        lines.append(f"- {label} для {requested_name}: {url}")
+    return "\n".join(lines)
+
+
 async def _finalize_or_fail_closed(
     *,
     base_messages: list[dict[str, Any]],
@@ -817,6 +890,17 @@ async def _finalize_or_fail_closed(
     route_hint: dict[str, Any] | None,
     routing_state: dict[str, Any],
 ) -> str:
+    direct_link_response = _certificate_direct_link_response(
+        message=str(routing_state.get("user_message") or ""),
+        tool_name=tool_name,
+        tool_args=tool_args,
+        tool_result=tool_result,
+        route_hint=route_hint,
+    )
+    if direct_link_response:
+        routing_state["finalizer_mode"] = "deterministic_document_links"
+        return direct_link_response
+
     try:
         final_response = await _finalize_with_scoped_evidence(
             base_messages=base_messages,
@@ -3867,6 +3951,7 @@ async def _run_agent_impl(
         )
     routing_state = {
         "execution_mode": execution_mode,
+        "user_message": routing_message,
         "intent": intent_family,
         "selected_source": "unknown",
         "route_id": canonical_route_id,

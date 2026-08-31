@@ -806,6 +806,49 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_close_reason"], "finalizer_unavailable")
         self.assertEqual(meta["finalizer_mode"], "unavailable")
 
+    def test_certificate_direct_link_request_renders_all_requested_series_without_clarification(self):
+        certificate_urls = {
+            "LAD LED R500": "https://ladzavod.ru/storage/r500-ce.pdf",
+            "LAD LED LINE": "https://ladzavod.ru/storage/line-fire.pdf",
+            "LAD LED R700": "https://ladzavod.ru/storage/r700-fire.pdf",
+        }
+        payload = {
+            "status": "success",
+            "kind": "lamp_documents_index",
+            "filters": {"names": list(certificate_urls), "document_type": "certificate"},
+            "results": [
+                {
+                    "name": f"{series}-1",
+                    "primary_document": {
+                        "document_type": "certificate",
+                        "title": "Сертификат",
+                        "url": url,
+                    },
+                }
+                for series, url in certificate_urls.items()
+            ],
+        }
+        response = _MODULE._certificate_direct_link_response(
+            message=(
+                "Нужны ссылки на сертификаты: CE для LAD LED R500 и пожарные сертификаты "
+                "для LAD LED LINE и LAD LED R700. Дай прямые ссылки."
+            ),
+            tool_name="corp_db_search",
+            tool_args={
+                "kind": "lamp_documents_index",
+                "document_type": "certificate",
+                "names": list(certificate_urls),
+            },
+            tool_result=_ToolResult(True, output=json.dumps(payload, ensure_ascii=False)),
+            route_hint={"route_id": "corp_db.certificate_by_lamp_name"},
+        )
+
+        self.assertIn("CE-сертификат для LAD LED R500", response)
+        self.assertIn("Пожарный сертификат для LAD LED LINE", response)
+        self.assertIn("Пожарный сертификат для LAD LED R700", response)
+        for url in certificate_urls.values():
+            self.assertIn(url, response)
+
     def test_route_selector_documents_fallback_stays_inside_documents_family(self):
         selector_response = {
             "choices": [
