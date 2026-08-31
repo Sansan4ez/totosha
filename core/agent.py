@@ -812,6 +812,49 @@ def _normalize_document_series_name(value: Any) -> str:
     return " ".join(str(value or "").casefold().split())
 
 
+def _application_portfolio_response(
+    *,
+    message: str,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    tool_result: ToolResult,
+    route_hint: dict[str, Any] | None,
+) -> str:
+    """Render application evidence when the user explicitly requests a portfolio example.
+
+    The application executor deliberately returns a compound recommendation payload: ranked
+    lamps, a bounded set of portfolio examples, and a follow-up question.  The general LLM
+    finalizer may summarize only the lamp rows, which loses an explicitly requested portfolio
+    URL despite it being present in the full runtime payload.  Rendering this complete,
+    already-bounded response directly makes the requested evidence non-optional without
+    changing normal recommendation finalization.
+    """
+    if tool_name != "corp_db_search":
+        return ""
+    if str((route_hint or {}).get("route_id") or "") != "corp_db.application_recommendation":
+        return ""
+    if str(tool_args.get("kind") or "") != "application_recommendation":
+        return ""
+
+    message_text = _normalize_routing_text(message)
+    requests_portfolio = "портфол" in message_text or (
+        "пример" in message_text and any(token in message_text for token in ("проект", "объект", "реализ"))
+    )
+    if not requests_portfolio:
+        return ""
+
+    payload = _parse_json_object(tool_result.output or "")
+    if payload.get("status") != "success":
+        return ""
+    lamps = payload.get("recommended_lamps")
+    portfolio = payload.get("portfolio_examples")
+    if not isinstance(lamps, list) or not lamps or not isinstance(portfolio, list):
+        return ""
+    if not any(isinstance(row, dict) and str(row.get("url") or "").strip() for row in portfolio):
+        return ""
+    return _render_application_payload(payload)
+
+
 def _certificate_direct_link_response(
     *,
     message: str,
@@ -890,6 +933,18 @@ async def _finalize_or_fail_closed(
     route_hint: dict[str, Any] | None,
     routing_state: dict[str, Any],
 ) -> str:
+    application_portfolio_response = _application_portfolio_response(
+        message=str(routing_state.get("user_message") or ""),
+        tool_name=tool_name,
+        tool_args=tool_args,
+        tool_result=tool_result,
+        route_hint=route_hint,
+    )
+    if application_portfolio_response:
+        routing_state["finalizer_mode"] = "deterministic_application_portfolio"
+        _update_routing_observability(routing_state)
+        return application_portfolio_response
+
     direct_link_response = _certificate_direct_link_response(
         message=str(routing_state.get("user_message") or ""),
         tool_name=tool_name,
@@ -899,6 +954,7 @@ async def _finalize_or_fail_closed(
     )
     if direct_link_response:
         routing_state["finalizer_mode"] = "deterministic_document_links"
+        _update_routing_observability(routing_state)
         return direct_link_response
 
     try:

@@ -2432,6 +2432,62 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_selected_source"], "corp_db")
         self.assertEqual(meta["application_recovery_outcome"], "")
 
+    def test_application_recommendation_preserves_requested_portfolio_evidence(self):
+        portfolio_url = "https://ladzavod.ru/portfolio/sports/stadium"
+        response, exec_mock, meta = self._run_flow(
+            user_message=(
+                "Подбери освещение для спортивного стадиона. Покажи 2-3 мощные модели, "
+                "ссылки, пример портфолио и один уточняющий вопрос."
+            ),
+            corp_db_args={
+                "kind": "application_recommendation",
+                "query": "Подбери освещение для спортивного стадиона.",
+                "application_key": "sports_high_power",
+            },
+            corp_db_payload={
+                "status": "success",
+                "kind": "application_recommendation",
+                "resolved_application": {
+                    "application_key": "sports_high_power",
+                    "sphere_name": "Спортивное и освещение высокой мощности",
+                },
+                "recommended_lamps": [
+                    {
+                        "name": "LAD LED R500-9-30-6-650LZD",
+                        "url": "https://ladzavod.ru/catalog/r500-9-lzd/ladled-r500-9-30-6-650lzd",
+                        "recommendation_reason": "высокая мощность для стадионного освещения",
+                    },
+                    {
+                        "name": "LAD LED R500-12-30-6-850LZD",
+                        "url": "https://ladzavod.ru/catalog/r500-12-lzd/ladled-r500-12-30-6-850lzd",
+                        "recommendation_reason": "мощный прожектор для спортивного объекта",
+                    },
+                ],
+                "portfolio_examples": [
+                    {"name": "Освещение стадиона", "url": portfolio_url},
+                ],
+                "follow_up_question": "Уточните высоту установки.",
+                "results": [{"name": "LAD LED R500-9-30-6-650LZD"}],
+            },
+            llm_responses_override=[
+                self._tool_call_response(
+                    "corp_db_search",
+                    {
+                        "kind": "application_recommendation",
+                        "query": "Подбери освещение для спортивного стадиона.",
+                        "application_key": "sports_high_power",
+                    },
+                ),
+            ],
+        )
+
+        self.assertIn("LAD LED R500-9-30-6-650LZD", response)
+        self.assertIn(portfolio_url, response)
+        self.assertIn("Уточните высоту установки", response)
+        self.assertEqual(exec_mock.await_count, 1)
+        self.assertEqual(meta["retrieval_selected_source"], "corp_db")
+        self.assertEqual(meta["finalizer_mode"], "deterministic_application_portfolio")
+
     def test_application_replay_for_rzd_returns_healthy_recommendation(self):
         response, exec_mock, meta = self._run_flow(
             user_message="Что порекомендуешь для РЖД?",
