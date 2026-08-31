@@ -137,12 +137,13 @@ def check_corp_db_contract_parity(routes: list[dict[str, Any]]) -> list[str]:
         for group in contract["required_any_of"]:
             if any(field in fixed_fields for field in group):
                 continue
-            if not (set(group) & required) and not set(group).issubset(alternatives):
+            selector_group = set(group) & properties
+            if selector_group and not (selector_group & required) and not selector_group.issubset(alternatives):
                 waived = waiver_fields(route_id, "missing-required")
-                if not set(group).issubset(waived):
+                if not selector_group.issubset(waived):
                     errors.append(
                         f"{route_id}: executor requires one of ({', '.join(group)}) for kind {kind}, "
-                        "but schema does not enforce the alternatives"
+                        "but schema does not enforce its selector-visible alternatives"
                     )
     return errors
 

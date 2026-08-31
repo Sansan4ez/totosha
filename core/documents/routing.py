@@ -780,6 +780,19 @@ def _apply_runtime_argument_overrides(route: dict[str, Any], *, sphere_context: 
             kind=kind,
             fixed_args={**executor_args_template, **locked_args},
         )
+    if route_id == "corp_db.category_mountings":
+        route["argument_schema"]["properties"].pop("mounting_type", None)
+        route["argument_schema"]["required"] = []
+        route["argument_schema"]["anyOf"] = [
+            {"required": ["category"]},
+            {"required": ["series"]},
+        ]
+    elif route_id == "corp_db.lamp_mounting_compatibility":
+        route["argument_schema"]["required"] = ["mounting_type"]
+        route["argument_schema"]["anyOf"] = [
+            {"required": ["category"]},
+            {"required": ["series"]},
+        ]
     hints = dict(route.get("argument_hints") or {})
     if route_id in SPHERE_AWARE_ROUTE_IDS and "sphere" in route["argument_schema"]["properties"]:
         hints["sphere"] = "Choose one canonical application sphere when the user clearly asks by segment or environment."
@@ -1598,15 +1611,26 @@ def _is_series_or_category_mounting_query(query: str) -> bool:
     return any(marker in query_text for marker in ("сер", "категор", "линейк", "модел"))
 
 
+def _mentions_specific_mounting_type(query: str) -> bool:
+    query_text = _normalize(query)
+    return any(
+        _normalize(mounting_type) in query_text
+        for mounting_type in canonical_mounting_type_names()
+        if mounting_type
+    )
+
+
 def _is_mounting_compatibility_query(query: str) -> bool:
     query_text = _normalize(query)
-    if not _intent_contains(query_text, MOUNTING_QUERY_CUES):
-        return False
-    return any(marker in query_text for marker in ("совместим", "совместимость", "подходит", "подойдут", "подойдёт", "подойдет"))
+    compatibility_wording = any(
+        marker in query_text
+        for marker in ("совместим", "совместимость", "подходит", "подойдут", "подойдёт", "подойдет")
+    )
+    return compatibility_wording and _mentions_specific_mounting_type(query)
 
 
 def _is_mountings_family_query(query: str) -> bool:
-    return _intent_contains(_normalize(query), MOUNTING_QUERY_CUES)
+    return _intent_contains(_normalize(query), MOUNTING_QUERY_CUES) or _mentions_specific_mounting_type(query)
 
 
 def _is_series_description_query(query: str) -> bool:
@@ -1849,6 +1873,8 @@ def _infer_intent_family(query: str, *, explicit_document_request: bool) -> str:
         return "catalog_lookup"
     if _intent_contains(query_text, PORTFOLIO_LOOKUP_KEYWORDS):
         return "portfolio_lookup"
+    if _is_mountings_family_query(query):
+        return "catalog_lookup"
     if _intent_contains(query_text, APPLICATION_RECOMMENDATION_KEYWORDS) or _intent_contains(query_text, ORCHESTRATION_KEYWORDS):
         return "application_recommendation"
     if _intent_contains(query_text, CATALOG_LOOKUP_KEYWORDS):

@@ -65,6 +65,29 @@ class RouteCatalogCheckTests(unittest.TestCase):
         self.assertTrue(any("lamp_filters" in error and "query" in error for error in errors))
         self.assertTrue(any("catalog_lookup" in error and "name" in error for error in errors))
 
+    def test_contract_parity_accepts_narrower_selector_visible_required_any_of(self):
+        route = {
+            "route_id": "corp_db.category_mountings",
+            "executor": "corp_db_search",
+            "executor_args_template": {"kind": "category_mountings"},
+            "locked_args": {"kind": "category_mountings"},
+            "argument_schema": {
+                "properties": {
+                    "category": {"type": "string"},
+                    "series": {"type": "string"},
+                },
+                "required": [],
+                "anyOf": [
+                    {"required": ["category"]},
+                    {"required": ["series"]},
+                ],
+            },
+        }
+
+        errors = check_corp_db_contract_parity([route])
+
+        self.assertEqual(errors, [])
+
     def test_contract_parity_flags_locked_template_field_reexposed_to_selector(self):
         route = {
             "route_id": "corp_db.catalog_lookup",

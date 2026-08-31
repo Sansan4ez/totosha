@@ -877,19 +877,33 @@ class RoutingCatalogTests(unittest.TestCase):
                         self.assertEqual(payload["candidate_route_ids"][0], "corp_db.sphere_curated_categories")
                         self.assertIn("sphere_category_mapping", payload["candidate_family_ids"])
 
-    def test_select_route_prefers_category_mountings_for_series_mounting_questions(self):
+    def test_mounting_route_contract_separates_open_ended_options_from_named_compatibility(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
             with patch.dict(
                 os.environ,
                 {"DOC_REPO_ROOT": repo_tmp, "CORP_DOCS_ROOT": docs_tmp},
                 clear=False,
             ):
-                selection = select_route("Какие крепления доступны у серии NL Nova?")
-                payload = build_route_selector_payload("Какие крепления доступны у серии NL Nova?", limit=5)
+                available_query = "Какое крепление подходит для светильников серии NL Nova?"
+                available_selection = select_route(available_query)
+                available_payload = build_route_selector_payload(available_query, limit=5)
 
-        self.assertEqual(selection["intent_family"], "catalog_lookup")
-        self.assertEqual(selection["selected"]["route_id"], "corp_db.category_mountings")
-        self.assertEqual(payload["candidate_route_ids"][0], "corp_db.category_mountings")
+                compatibility_query = "Совместима ли серия NL Nova с креплением «накладной корпус»?"
+                compatibility_selection = select_route(compatibility_query)
+                compatibility_payload = build_route_selector_payload(compatibility_query, limit=5)
+
+        self.assertEqual(available_selection["intent_family"], "catalog_lookup")
+        self.assertEqual(available_selection["selected"]["route_id"], "corp_db.category_mountings")
+        self.assertEqual(available_payload["candidate_route_ids"][0], "corp_db.category_mountings")
+        self.assertEqual(compatibility_selection["intent_family"], "catalog_lookup")
+        self.assertEqual(
+            compatibility_selection["selected"]["route_id"],
+            "corp_db.lamp_mounting_compatibility",
+        )
+        self.assertEqual(
+            compatibility_payload["candidate_route_ids"][0],
+            "corp_db.lamp_mounting_compatibility",
+        )
 
     def test_select_route_prefers_documents_by_lamp_for_lamp_document_list_queries(self):
         with tempfile.TemporaryDirectory() as repo_tmp, tempfile.TemporaryDirectory() as docs_tmp:
@@ -1057,13 +1071,17 @@ class RoutingCatalogTests(unittest.TestCase):
             routes["corp_db.portfolio_by_sphere"]["argument_schema"]["properties"]["sphere"]["enum"],
             canonical_sphere_names(),
         )
-        self.assertEqual(
-            routes["corp_db.category_mountings"]["argument_schema"]["properties"]["mounting_type"]["enum"],
-            canonical_mounting_type_names(),
+        self.assertNotIn(
+            "mounting_type",
+            routes["corp_db.category_mountings"]["argument_schema"]["properties"],
         )
         self.assertEqual(
             routes["corp_db.lamp_mounting_compatibility"]["argument_schema"]["properties"]["mounting_type"]["enum"],
             canonical_mounting_type_names(),
+        )
+        self.assertEqual(
+            routes["corp_db.lamp_mounting_compatibility"]["argument_schema"]["required"],
+            ["mounting_type"],
         )
         self.assertEqual(
             routes["corp_db.lamp_filters"]["argument_schema"]["properties"]["mounting_type"]["enum"],
@@ -1203,8 +1221,12 @@ class RoutingCatalogTests(unittest.TestCase):
             routes["corp_db.portfolio_by_sphere"]["argument_schema"]["properties"]["sphere"]["enum"],
             canonical_sphere_names(),
         )
+        self.assertNotIn(
+            "mounting_type",
+            routes["corp_db.category_mountings"]["argument_schema"]["properties"],
+        )
         self.assertEqual(
-            routes["corp_db.category_mountings"]["argument_schema"]["properties"]["mounting_type"]["enum"],
+            routes["corp_db.lamp_mounting_compatibility"]["argument_schema"]["properties"]["mounting_type"]["enum"],
             canonical_mounting_type_names(),
         )
         self.assertEqual(

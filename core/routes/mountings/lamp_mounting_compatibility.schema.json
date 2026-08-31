@@ -10,11 +10,6 @@
       "required": [
         "series"
       ]
-    },
-    {
-      "required": [
-        "mounting_type"
-      ]
     }
   ],
   "properties": {
@@ -60,6 +55,8 @@
       "type": "string"
     }
   },
-  "required": [],
+  "required": [
+    "mounting_type"
+  ],
   "type": "object"
 }

@@ -3,8 +3,8 @@ route_family: corp_db.category_mountings
 route_kind: corp_table
 authority: primary
 title: Category mounting options
-summary: Structured route for mounting types available for a product category.
-when_to_use: Select when the user asks which mounting types are available for a product category or series.
+summary: Structured route for enumerating mounting types available for a product category or series.
+when_to_use: Select when the user asks which/what mounting types fit or are available for a product category or series, without naming a specific mounting type to validate. Questions such as "Какое крепление подходит для серии?" belong here.
 schema_ref: category_mountings.schema.json
 topics:
 - catalog
@@ -21,6 +21,7 @@ keywords:
 patterns:
 - какие крепления доступны
 - какие типы креплений
+- какое крепление подходит
 - крепления для категории
 executor: corp_db_search
 executor_args_template:

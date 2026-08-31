@@ -3,9 +3,8 @@ route_family: corp_db.lamp_mounting_compatibility
 route_kind: corp_table
 authority: primary
 title: Lamp and mounting compatibility
-summary: Structured route for checking compatibility between lamp categories/models and mounting types.
-when_to_use: Select when the user asks whether a lamp, series, or category is compatible with a specific mounting
-  type.
+summary: Structured route for validating a named mounting type against a lamp, series, or category.
+when_to_use: Select only when the user names a specific mounting type and asks whether it is compatible with a lamp, series, or category. Do not use for open-ended requests asking which mounting types are available.
 schema_ref: lamp_mounting_compatibility.schema.json
 topics:
 - catalog
@@ -14,14 +13,13 @@ topics:
 - mounting_type
 keywords:
 - совместимость креплений
-- совместимо с креплением
-- подходит крепление
-- крепление подходит
+- совместимо с конкретным креплением
+- подходит указанное крепление
 - lamp_mountings
 patterns:
-- какое крепление подходит
-- совместимость с креплением
-- подходит ли крепление
+- подходит ли указанное крепление
+- совместимость с конкретным креплением
+- можно ли установить на крепление
 executor: corp_db_search
 executor_args_template:
   kind: category_mountings
