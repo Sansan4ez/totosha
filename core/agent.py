@@ -1057,31 +1057,38 @@ async def _try_family_local_route_fallbacks(
         if tool_result.success:
             routing_state["selected_source"] = "doc_search" if fallback_tool_name == "doc_search" else "corp_db"
         if evidence_status == "sufficient":
-            routing_state["intent"] = str(current_route.get("route_intent_family") or routing_state.get("intent") or "")
-            routing_state["route_id"] = str(fallback_route_hint.get("route_id") or "")
-            routing_state["route_source"] = "doc_search" if fallback_tool_name == "doc_search" else "corp_db"
-            routing_state["retrieval_route_family"] = str(
-                fallback_route_hint.get("selected_route_family")
-                or fallback_route_hint.get("route_family")
-                or fallback_route_hint.get("route_id")
-                or ""
-            )
-            routing_state["retrieval_business_family_id"] = str(
-                fallback_route_hint.get("selected_family_id")
-                or fallback_route_hint.get("family_id")
-                or family_id
-            )
-            routing_state["retrieval_leaf_route_id"] = str(
-                fallback_route_hint.get("leaf_route_id")
-                or fallback_route_hint.get("route_id")
-                or ""
-            )
-            routing_state["retrieval_route_stage"] = str(fallback_route_hint.get("route_stage") or "")
-            routing_state["selected_route_kind"] = str(
-                fallback_route_hint.get("selected_route_kind")
-                or fallback_route_hint.get("route_kind")
-                or ""
-            )
+            if family_id == "documents":
+                # A document fallback is evidence recovery, not a second route-selection decision.
+                # Keep the selector's canonical document family/leaf in routing telemetry so a
+                # broad company-KB fallback cannot turn documents_by_lamp_name or
+                # passport_by_lamp_name into company_general in benchmarks and diagnostics.
+                routing_state["route_source"] = "doc_search" if fallback_tool_name == "doc_search" else "corp_db"
+            else:
+                routing_state["intent"] = str(current_route.get("route_intent_family") or routing_state.get("intent") or "")
+                routing_state["route_id"] = str(fallback_route_hint.get("route_id") or "")
+                routing_state["route_source"] = "doc_search" if fallback_tool_name == "doc_search" else "corp_db"
+                routing_state["retrieval_route_family"] = str(
+                    fallback_route_hint.get("selected_route_family")
+                    or fallback_route_hint.get("route_family")
+                    or fallback_route_hint.get("route_id")
+                    or ""
+                )
+                routing_state["retrieval_business_family_id"] = str(
+                    fallback_route_hint.get("selected_family_id")
+                    or fallback_route_hint.get("family_id")
+                    or family_id
+                )
+                routing_state["retrieval_leaf_route_id"] = str(
+                    fallback_route_hint.get("leaf_route_id")
+                    or fallback_route_hint.get("route_id")
+                    or ""
+                )
+                routing_state["retrieval_route_stage"] = str(fallback_route_hint.get("route_stage") or "")
+                routing_state["selected_route_kind"] = str(
+                    fallback_route_hint.get("selected_route_kind")
+                    or fallback_route_hint.get("route_kind")
+                    or ""
+                )
             routing_state["knowledge_route_id"] = str(fallback_args.get("knowledge_route_id") or "")
             routing_state["source_file_scope"] = list(fallback_args.get("source_files") or [])
             routing_state["topic_facets"] = list(fallback_args.get("topic_facets") or [])

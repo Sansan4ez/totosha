@@ -863,7 +863,88 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_used_fallback_route_id"], "corp_db.documents_by_lamp_name")
         self.assertEqual(meta["retrieval_used_fallback_scope"], "family_local")
         self.assertTrue(meta["retrieval_used_fallback_local"])
+        self.assertEqual(meta["retrieval_leaf_route_id"], "passport_by_lamp_name")
         self.assertEqual(meta["retrieval_close_reason"], "family_local_fallback_sufficient")
+
+    def test_document_route_identity_survives_cross_family_evidence_fallback(self):
+        cases = (
+            (
+                "Какие документы есть для NL Nova?",
+                "corp_db.documents_by_lamp_name",
+                "documents_by_lamp_name",
+                {},
+            ),
+            (
+                "Покажи паспорт на NL Nova",
+                "corp_db.passport_by_lamp_name",
+                "passport_by_lamp_name",
+                {"document_type": "passport"},
+            ),
+        )
+        for user_message, selected_route_id, expected_leaf_route_id, locked_args in cases:
+            with self.subTest(user_message=user_message):
+                selector_response = {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "selected_family_id": "documents",
+                                        "selected_route_id": selected_route_id,
+                                        "confidence": "high",
+                                        "reason": "named series document request",
+                                        "tool_args": {"names": ["NL Nova"]},
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+                corp_db_payloads = [
+                    {"status": "empty", "kind": "lamp_documents_index", "results": []},
+                ]
+                if selected_route_id == "corp_db.passport_by_lamp_name":
+                    corp_db_payloads.append(
+                        {"status": "empty", "kind": "lamp_documents_index", "results": []}
+                    )
+                corp_db_payloads.append(
+                    {
+                        "status": "success",
+                        "kind": "hybrid_search",
+                        "results": [{"heading": "NL Nova", "preview": "Общая информация о серии NL Nova."}],
+                    }
+                )
+                response, exec_mock, meta = self._run_flow(
+                    user_message=user_message,
+                    corp_db_payloads=corp_db_payloads,
+                    corp_db_payload={"status": "empty", "kind": "lamp_documents_index", "results": []},
+                    llm_responses_override=[
+                        selector_response,
+                        self._final_response("Данные о документах NL Nova уточняются."),
+                    ],
+                    route_selector_enabled=True,
+                )
+
+                self.assertIn("NL Nova", response)
+                expected_call_count = 3 if selected_route_id == "corp_db.passport_by_lamp_name" else 2
+                self.assertEqual(exec_mock.await_count, expected_call_count)
+                first_args = exec_mock.await_args_list[0].args[1]
+                fallback_args = exec_mock.await_args_list[-1].args[1]
+                self.assertEqual(first_args["kind"], "lamp_documents_index")
+                self.assertEqual(first_args["names"], ["NL Nova"])
+                for key, value in locked_args.items():
+                    self.assertEqual(first_args[key], value)
+                self.assertEqual(fallback_args["kind"], "hybrid_search")
+                self.assertEqual(fallback_args["knowledge_route_id"], "corp_kb.company_common")
+                self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
+                self.assertEqual(meta["retrieval_business_family_id"], "documents")
+                self.assertEqual(meta["retrieval_leaf_route_id"], expected_leaf_route_id)
+                self.assertEqual(meta["retrieval_used_fallback_route_id"], "corp_kb.company_common")
+                self.assertEqual(meta["retrieval_used_fallback_scope"], "cross_family")
+                self.assertFalse(meta["retrieval_used_fallback_local"])
+                self.assertEqual(meta["retrieval_close_reason"], "cross_family_fallback_sufficient")
 
     def test_route_selector_codes_fallback_stays_inside_codes_family(self):
         selector_response = {
