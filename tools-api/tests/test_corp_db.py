@@ -507,10 +507,12 @@ class SeriesPortfolioConn:
             self.project_args = args
             if not self.include_projects:
                 return []
-            return [
-                {"portfolio_id": 11, "name": "Проект", "sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"},
-                {"portfolio_id": 11, "name": "Проект", "sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"},
+            rows = [
+                {"portfolio_id": f"project-{index}", "name": f"Проект {index}", "sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"}
+                for index in range(5)
             ]
+            limit, offset = args[1:3]
+            return rows[offset:offset + limit]
         return []
 
 
@@ -1182,7 +1184,7 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "empty")
         self.assertEqual(response.json()["filters"]["entity_type"], "exact_model")
 
-    def test_portfolio_examples_by_lamp_resolves_series_deduplicates_and_reports_evidence(self):
+    def test_portfolio_examples_by_lamp_resolves_series_paginates_and_reports_evidence(self):
         conn = SeriesPortfolioConn()
         with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
             from app import app
