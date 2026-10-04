@@ -1352,8 +1352,22 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_fallback_route_count"], 2)
         self.assertEqual(meta["retrieval_family_local_fallback_count"], 2)
         self.assertEqual(meta["retrieval_cross_family_fallback_count"], 0)
-        self.assertEqual(meta["retrieval_close_reason"], "")
+        self.assertEqual(meta["retrieval_phase"], "closed")
+        self.assertEqual(meta["retrieval_evidence_status"], "empty")
+        self.assertEqual(meta["retrieval_close_reason"], "portfolio_entity_not_found")
         self.assertEqual(meta["retrieval_used_fallback_route_id"], "")
+
+    def test_portfolio_empty_search_fingerprint_ignores_limit_but_not_entity(self):
+        state = {"retrieval_attempt_signatures": [], "retrieval_business_empty_fingerprints": []}
+        initial = {"kind": "portfolio_by_sphere", "sphere": "РЖД", "limit": 3}
+        revised_limit = {"kind": "portfolio_by_sphere", "sphere": "РЖД", "limit": 10}
+        clarified_entity = {"kind": "portfolio_by_sphere", "sphere": "LAD LED R700", "limit": 3}
+        empty = _ToolResult(True, output=json.dumps({"status": "empty", "results": []}))
+        _MODULE._record_retrieval_attempt("corp_db_search", initial, state)
+        _MODULE._record_business_empty_fingerprint("corp_db_search", initial, empty, state)
+
+        self.assertTrue(_MODULE._is_duplicate_retrieval_attempt("corp_db_search", revised_limit, state))
+        self.assertFalse(_MODULE._is_duplicate_retrieval_attempt("corp_db_search", clarified_entity, state))
 
     def test_wrong_document_doc_search_output_is_weak(self):
         payload = {

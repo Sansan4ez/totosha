@@ -1327,6 +1327,10 @@ async def _try_controlled_portfolio_fallback(
     route_args = dict((route_hint or {}).get("tool_args") or {})
     selected_route_id = str((route_hint or {}).get("route_id") or routing_state.get("route_id") or "")
     if str(route_args.get("kind") or "") == "portfolio_by_sphere" or selected_route_id == "corp_db.portfolio_by_sphere":
+        routing_state["retrieval_phase"] = "closed"
+        routing_state["retrieval_close_reason"] = "portfolio_entity_not_found" if evidence_status == "empty" else "portfolio_evidence_insufficient"
+        routing_state["finalizer_mode"] = "bounded_failure"
+        _update_routing_observability(routing_state)
         return _portfolio_bounded_failure_response(route_args, message)
 
     name, args, fallback_route_hint = _portfolio_lookup_fallback_call(message)
@@ -1367,8 +1371,9 @@ async def _try_controlled_portfolio_fallback(
     routing_state["retrieval_evidence_status"] = fallback_status
     routing_state["selected_source"] = "corp_db" if tool_result.success else routing_state.get("selected_source", "")
     if fallback_status != "sufficient":
-        routing_state["retrieval_phase"] = "open"
-        routing_state["retrieval_close_reason"] = ""
+        routing_state["retrieval_phase"] = "closed"
+        routing_state["retrieval_close_reason"] = "portfolio_entity_not_found" if fallback_status == "empty" else "portfolio_evidence_insufficient"
+        routing_state["finalizer_mode"] = "bounded_failure"
         _update_routing_observability(routing_state)
         return _portfolio_bounded_failure_response(args, message)
 
@@ -1667,9 +1672,38 @@ def _tool_attempt_signature(name: str, args: dict) -> str:
     return f"{name}:{normalized_args}"
 
 
+def _portfolio_search_fingerprint(name: str, args: dict) -> str:
+    if name != "corp_db_search" or str(args.get("kind") or "") not in {
+        "portfolio_by_sphere", "portfolio_lookup", "portfolio_examples_by_lamp",
+    }:
+        return ""
+    normalized = {key: value for key, value in args.items() if key not in {"limit", "limit_portfolio"}}
+    return _tool_attempt_signature(name, normalized)
+
+
+def _is_business_empty_result(tool_result: ToolResult) -> bool:
+    if not tool_result.success:
+        return False
+    payload = _parse_json_object(tool_result.output or "")
+    return str(payload.get("status") or "").strip().lower() in {"empty", "entity_not_found"}
+
+
+def _record_business_empty_fingerprint(name: str, args: dict, result: ToolResult, state: dict[str, Any]) -> None:
+    fingerprint = _portfolio_search_fingerprint(name, args)
+    if not fingerprint or not _is_business_empty_result(result):
+        return
+    fingerprints = state.setdefault("retrieval_business_empty_fingerprints", [])
+    if isinstance(fingerprints, list) and fingerprint not in fingerprints:
+        fingerprints.append(fingerprint)
+
+
 def _is_duplicate_retrieval_attempt(name: str, args: dict, state: dict[str, Any]) -> bool:
     if not _is_retrieval_tool_attempt(name, args):
         return False
+    fingerprint = _portfolio_search_fingerprint(name, args)
+    empty_fingerprints = state.get("retrieval_business_empty_fingerprints")
+    if fingerprint and isinstance(empty_fingerprints, list) and fingerprint in empty_fingerprints:
+        return True
     signatures = state.get("retrieval_attempt_signatures")
     if not isinstance(signatures, list):
         return False
@@ -4561,6 +4595,7 @@ async def _run_agent_impl(
                     )
                     if sphere_context_update:
                         _set_session_sphere_context(session, sphere_context_update)
+                _record_business_empty_fingerprint(primary_tool_name, primary_args, primary_result, routing_state)
                 evidence_status = _route_evidence_status(
                     primary_tool_name,
                     primary_args,
@@ -4799,6 +4834,7 @@ async def _run_agent_impl(
 
                 if _is_retrieval_tool_attempt(name, args):
                     routing_state["retrieval_tool_used"] = True
+                _record_business_empty_fingerprint(name, args, tool_result, routing_state)
 
                 agent_logger.info(f"[iter {iteration}] TOOL RESULT: success={tool_result.success}, output={len(tool_result.output or '')} chars, error={tool_result.error or 'none'}")
 
