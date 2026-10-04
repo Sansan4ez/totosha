@@ -689,6 +689,17 @@ def _build_fallback_route_args(
             return args
 
     source_args = dict(source_route_hint.get("tool_args") or {})
+    if target_route_id == "corp_db.series_models":
+        canonical_series = resolve_explicit_series_alias(message) or resolve_explicit_series_alias(
+            f"LAD LED {message}"
+        )
+        if canonical_series:
+            source_args["name"] = canonical_series
+            normalized_message = _routing_message_text(message)
+            for subfamily in ("PROM", "ST", "HT"):
+                if re.search(rf"(?<![\w]){subfamily}(?![\w])", normalized_message, re.IGNORECASE):
+                    source_args["subfamily"] = subfamily
+                    break
     schema = target_route.get("argument_schema") if isinstance(target_route.get("argument_schema"), dict) else {}
     properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
     locked_args = target_route.get("locked_args") if isinstance(target_route.get("locked_args"), dict) else {}

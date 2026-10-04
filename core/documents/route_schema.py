@@ -240,6 +240,7 @@ def _corp_db_argument_properties() -> dict[str, dict[str, Any]]:
     kind_values = [
         "hybrid_search",
         "lamp_exact",
+        "series_models",
         "lamp_suggest",
         "sku_by_code",
         "lamp_code_lookup",

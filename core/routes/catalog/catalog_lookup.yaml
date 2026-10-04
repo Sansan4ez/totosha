@@ -30,3 +30,9 @@ patterns:
 executor: corp_db_search
 executor_args_template:
   kind: lamp_exact
+fallback_route_ids:
+- corp_db.series_models
+- corp_db.sku_lookup
+cross_family_fallback_route_ids:
+- corp_db.series_models
+- corp_db.sku_lookup
