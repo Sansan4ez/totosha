@@ -196,7 +196,26 @@
       ]
     },
     {
-      "id": 13,
+      "id": 14,
+      "type": "timeseries",
+      "title": "Retrieval Business Outcomes (HTTP 200 may be empty)",
+      "datasource": {"type": "victoriametrics-metrics-datasource", "uid": "victoriametrics"},
+      "targets": [
+        {"expr": "sum by (route, kind, status, reason) (increase(retrieval_business_outcomes_total{service_name=\"core\"}[15m]))", "legendFormat": "{{route}} {{kind}} {{status}} {{reason}}"}
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Selector A/B and Finalizer p95 (ms)",
+      "datasource": {"type": "victoriametrics-metrics-datasource", "uid": "victoriametrics"},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, route, stage) (rate(route_selector_stage_duration_milliseconds_bucket{service_name=\"core\"}[15m])))", "legendFormat": "selector {{route}} {{stage}}"},
+        {"expr": "histogram_quantile(0.95, sum by (le, route, mode) (rate(route_finalizer_duration_milliseconds_bucket{service_name=\"core\"}[15m])))", "legendFormat": "finalizer {{route}} {{mode}}"}
+      ]
+    },
+    {
+      "id": 16,
       "type": "timeseries",
       "title": "Catalog Constraint Contract (15m)",
       "datasource": {

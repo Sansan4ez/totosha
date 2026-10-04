@@ -48,6 +48,7 @@ from logger import agent_logger, log_agent_step
 from observability import (
     REQUEST_ID as OBS_REQUEST_ID,
     inject_trace_context,
+    observe_route_finalizer_duration,
     observe_route_selector_prompt_size,
     observe_route_selector_sanitization,
     record_span_event,
@@ -941,7 +942,15 @@ async def _finalize_with_scoped_evidence(
             ),
         }
     )
-    result = await call_llm(finalizer_messages, [], purpose="finalizer")
+    finalizer_started = perf_counter()
+    try:
+        result = await call_llm(finalizer_messages, [], purpose="finalizer")
+    finally:
+        observe_route_finalizer_duration(
+            (perf_counter() - finalizer_started) * 1000,
+            route=str(route_hint.get("route_id") or "none"),
+            mode=str(route_hint.get("finalizer_mode") or "llm"),
+        )
     if "error" in result:
         raise RuntimeError(str(result.get("error") or "finalizer LLM error"))
     choices = result.get("choices") or []
@@ -1926,6 +1935,17 @@ def _update_routing_observability(state: dict[str, Any], *, blocked_tool: str = 
         retrieval_phase=str(state.get("retrieval_phase") or ""),
         retrieval_evidence_status=str(state.get("retrieval_evidence_status") or ""),
         retrieval_close_reason=str(state.get("retrieval_close_reason") or ""),
+        retrieval_business_status=(
+            "success" if str(state.get("retrieval_evidence_status") or "") == "sufficient"
+            else "empty" if str(state.get("retrieval_evidence_status") or "") == "empty"
+            else "error" if str(state.get("retrieval_evidence_status") or "") == "error"
+            else "unknown"
+        ),
+        retrieval_output_status=str(state.get("retrieval_output_status") or "unknown"),
+        route_argument_builder_status=str(state.get("route_argument_builder_status") or "unknown"),
+        route_selector_a_latency_ms=float(state.get("route_selector_a_latency_ms") or 0.0),
+        route_selector_b_latency_ms=float(state.get("route_selector_b_latency_ms") or 0.0),
+        retrieval_fallback_attempted=str(len(state.get("retrieval_attempted_fallback_route_ids") or [])),
         application_recovery_outcome=str(state.get("application_recovery_outcome") or ""),
         route_selector_status=str(state.get("route_selector_status") or ""),
         routing_catalog_version=str(state.get("routing_catalog_version") or ""),

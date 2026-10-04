@@ -87,8 +87,32 @@ alerts:
     title: Catalog filter contract mismatch sustained
     severity: warning
     datasource: VictoriaMetrics
-    expr: sum(rate(corp_db_filter_contract_total{status="ignored"}[15m])) + sum(rate(retrieval_constraint_evidence_total{status="mismatch"}[15m])) > 0.01
+    expr: (sum(rate(corp_db_filter_contract_total{status="ignored"}[15m])) + sum(rate(retrieval_constraint_evidence_total{status="mismatch"}[15m]))) > 0.01 and (sum(increase(corp_db_filter_contract_total[15m])) + sum(increase(retrieval_constraint_evidence_total[15m]))) >= 10
     for: 15m
     summary: Catalog constraints are being ignored or contradicted at a sustained rate.
     impact: Tool calls can remain successful while requested series or Ex constraints do not reach SQL or do not match returned evidence.
+    runbook: docs/operations/observability-runbook.md
+
+  - id: OBS-ALERT-009
+    execution: vmalert
+    alert_name: RetrievalBusinessEmptyHigh
+    title: Retrieval business-empty high
+    severity: warning
+    datasource: VictoriaMetrics
+    expr: (sum by (route, kind) (increase(retrieval_business_outcomes_total{status="empty"}[15m])) / clamp_min(sum by (route, kind) (increase(retrieval_business_outcomes_total{status=~"success|empty"}[15m])), 1)) > 0.5 and on (route, kind) sum by (route, kind) (increase(retrieval_business_outcomes_total{status=~"success|empty"}[15m])) >= 10
+    for: 10m
+    summary: Business-empty exceeds 50% with at least 10 retrievals for {{ $labels.route }}.
+    impact: HTTP-successful retrieval calls can still be failing to resolve business evidence.
+    runbook: docs/operations/observability-runbook.md
+
+  - id: OBS-ALERT-010
+    execution: vmalert
+    alert_name: RetrievalFallbackExhaustedWithoutAttempts
+    title: Retrieval fallback exhausted without attempts
+    severity: warning
+    datasource: VictoriaMetrics
+    expr: sum by (route, kind) (increase(retrieval_fallback_outcomes_total{outcome="exhausted",attempted="no"}[15m])) >= 3
+    for: 5m
+    summary: Fallback exhausted repeatedly without any recorded attempts for {{ $labels.route }}.
+    impact: Retrieval may be closing without executing a declared fallback.
     runbook: docs/operations/observability-runbook.md

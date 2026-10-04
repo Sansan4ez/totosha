@@ -160,6 +160,101 @@ catalog:
       - path: proxy/observability.py
         contains:
           - api.request
+  - name: retrieval_business_outcomes_total
+    kind: metric
+    service: core
+    emitter:
+      path: core/observability.py
+      description: Bounded business status and reason by selected route/kind, distinct from HTTP status.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: alert
+        ref: OBS-ALERT-009
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: core/observability.py
+        contains:
+          - retrieval_business_outcomes_total
+          - entity_not_resolved
+          - evidence_mismatch
+          - evidence_ignored
+      - path: core/agent.py
+        contains:
+          - retrieval_business_status
+      - path: victoriametrics/alerts/vmalert-rules.yaml
+        contains:
+          - RetrievalBusinessEmptyHigh
+      - path: victoriametrics/grafana/provisioning/dashboards/files/harness-service-overview.json
+        contains:
+          - Retrieval Business Outcomes
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - increase(retrieval_business_outcomes_total
+  - name: retrieval_fallback_outcomes_total
+    kind: metric
+    service: core
+    emitter:
+      path: core/observability.py
+      description: Fallback exhaustion with a bounded attempted yes/no dimension.
+    consumers:
+      - kind: alert
+        ref: OBS-ALERT-010
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: core/observability.py
+        contains:
+          - retrieval_fallback_outcomes_total
+      - path: victoriametrics/alerts/vmalert-rules.yaml
+        contains:
+          - RetrievalFallbackExhaustedWithoutAttempts
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - increase(retrieval_fallback_outcomes_total
+  - name: route_selector_stage_duration_milliseconds
+    kind: metric
+    service: core
+    emitter:
+      path: core/observability.py
+      description: A/B selector latency per stage, reusing existing RFC-029 span measurements.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: core/observability.py
+        contains:
+          - route_selector_stage_duration_milliseconds
+      - path: victoriametrics/grafana/provisioning/dashboards/files/harness-service-overview.json
+        contains:
+          - Selector A/B and Finalizer p95
+      - path: docs/operations/observability-runbook.md
+        contains:
+          - route_selector_stage_duration_milliseconds_bucket
+  - name: route_finalizer_duration_milliseconds
+    kind: metric
+    service: core
+    emitter:
+      path: core/observability.py
+      description: Finalizer LLM latency histogram by bounded route/mode.
+    consumers:
+      - kind: dashboard
+        ref: Harness Service Overview
+      - kind: runbook
+        ref: docs/operations/observability-runbook.md
+    coverage_paths:
+      - path: core/observability.py
+        contains:
+          - route_finalizer_duration_milliseconds
+      - path: core/agent.py
+        contains:
+          - observe_route_finalizer_duration
+      - path: victoriametrics/grafana/provisioning/dashboards/files/harness-service-overview.json
+        contains:
+          - route_finalizer_duration_milliseconds_bucket
   - name: corp_db_search_duration_milliseconds
     kind: metric
     service: tools-api
