@@ -920,6 +920,22 @@ async def _finalize_with_scoped_evidence(
     tool_result: ToolResult,
     route_hint: dict[str, Any],
 ) -> str:
+    payload = _parse_json_object(tool_result.output or "")
+    kind = str(tool_args.get("kind") or "")
+    rows = [row for row in payload.get("results", []) if isinstance(row, dict)]
+    # Render bounded catalog/project identities directly: verbose product JSON can exceed
+    # the finalizer budget, and sphere examples must never become direct-use claims.
+    if kind == "series_models" and payload.get("status") == "success" and rows:
+        return "Модели серии «" + str(payload.get("series") or tool_args.get("name") or "") + "»:\n\n" + "\n".join(
+            f"{index}. [{row.get('name')}]({row.get('url')}) — {row.get('preview') or ''}"
+            for index, row in enumerate(rows, 1)
+        )
+    if kind == "portfolio_examples_by_lamp" and payload.get("evidence_type") == "category_sphere_example" and rows:
+        return (
+            "Примеры объектов из портфолио, связанных с запрошенной категорией/серией через сферу применения. "
+            "Эта связь не подтверждает применение конкретной модели или серии на этих объектах.\n\n"
+            + "\n".join(f"{index}. [{row.get('name')}]({row.get('url')})" for index, row in enumerate(rows, 1))
+        )
     evidence_payload = {
         "selected_route_id": str(route_hint.get("route_id") or ""),
         "selected_route_kind": str(route_hint.get("route_kind") or ""),
@@ -3523,6 +3539,9 @@ def _build_route_selector_messages(selector_payload: dict[str, Any]) -> list[dic
         "Return only valid JSON with selected_family_id, selected_route_id, confidence, reason, and optional fallback_route_ids. Do not return tool arguments; argument construction happens in a separate step. "
         "selected_family_id must match the chosen route family_id. Prefer fallback_route_ids that stay inside the selected family; the runtime will drop any it doesn't recognize. "
         "recent_dialog (if present) holds the latest user/assistant turns, oldest first. Use it only to resolve follow-up queries — pronouns and elliptical asks like 'а ещё варианты?' — to the right family. The query field is the current user message and stays authoritative. "
+        "A named series alone asks for its description; only explicit listing/models/lamps requests ask for series_models. "
+        "Objects/projects with a lamp series or PROM/ST/HT subfamily require portfolio_examples_by_lamp, not series_models. "
+        "For a follow-up such as 'тогда с LAD LED R700', retain the previous task (projects), but use the newly stated series scope. "
         "Do not invent routes, tools, SQL, shell commands, file paths, or evidence policy overrides."
     )
     user = (
@@ -4685,6 +4704,14 @@ async def _run_agent_impl(
                         routing_state=routing_state,
                     )
                 else:
+                    primary_payload = _parse_json_object(primary_result.output or "")
+                    if primary_args.get("kind") == "series_models" and primary_payload.get("status") in {"unknown_series", "ambiguous_series"}:
+                        routing_state["retrieval_phase"] = "closed"
+                        routing_state["retrieval_evidence_status"] = "empty"
+                        routing_state["retrieval_close_reason"] = "series_entity_unresolved"
+                        routing_state["finalizer_mode"] = "bounded_failure"
+                        _update_routing_observability(routing_state)
+                        return "Не удалось однозначно найти серию «" + str(primary_args.get("name") or "") + "» в каталоге. Уточните название серии."
                     fallback_response = await _try_controlled_portfolio_fallback(
                         base_messages=messages,
                         message=routing_message,
