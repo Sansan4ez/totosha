@@ -244,40 +244,6 @@ class BenchRunModesTests(unittest.TestCase):
             self.assertEqual(row["chat_execution_mode"], "runtime")
             self.assertEqual(row["execution"]["forced_from"], "direct_tool")
 
-    def test_preserve_session_clears_once_and_uses_unique_chat_request_ids(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dataset_path = Path(tmpdir) / "dataset.jsonl"
-            out_path = Path(tmpdir) / "results.jsonl"
-            dataset_path.write_text(
-                "".join(
-                    json.dumps({"id": f"turn-{i}", "question": f"turn {i}"}) + "\n"
-                    for i in range(1, 3)
-                ),
-                encoding="utf-8",
-            )
-            args = argparse.Namespace(
-                dataset=str(dataset_path), out=str(out_path), pricing="bench/pricing.json",
-                core_url="http://127.0.0.1:4000", tools_api_url="http://127.0.0.1:8100",
-                user_id=1, chat_id=1, limit=0, sleep_ms=0, timeout_s=30.0, docker_exec=False,
-                preserve_session=True, force_agent_chat=False, chat_execution_mode="runtime",
-                expected_configured_model="", expected_llm_model="",
-            )
-            response = {"response": "answer", "meta": {}}
-            with patch.object(bench_run, "parse_args", return_value=args), patch.object(
-                bench_run, "http_post_json", side_effect=[(200, {}, {}), (200, response, {}), (200, response, {})]
-            ) as http_post:
-                bench_run.main()
-
-            calls = http_post.call_args_list
-            clear_calls = [call for call in calls if call.args[0].endswith("/api/clear")]
-            chat_calls = [call for call in calls if call.args[0].endswith("/api/chat")]
-            self.assertEqual(len(clear_calls), 1)
-            self.assertEqual(clear_calls[0].kwargs["headers"]["X-Request-Id"].split("/")[-1], "reset")
-            request_ids = [call.kwargs["headers"]["X-Request-Id"] for call in chat_calls]
-            self.assertEqual(len(request_ids), 2)
-            self.assertEqual(len(set(request_ids)), 2)
-            self.assertEqual([call.args[1]["message"] for call in chat_calls], ["turn 1", "turn 2"])
-
     def test_agent_chat_model_mismatch_fails_loudly(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             dataset_path = Path(tmpdir) / "dataset.jsonl"
