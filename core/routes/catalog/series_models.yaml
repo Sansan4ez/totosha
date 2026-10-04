@@ -1,0 +1,27 @@
+route_id: corp_db.series_models
+route_family: corp_db.series_models
+authority: primary
+title: Models in a lamp series
+summary: List real catalog models belonging to a canonical lamp series or subfamily.
+when_to_use: >-
+  Select when the user asks to list/show models or lamps from a named series or subfamily.
+  Pass the canonical series/family label in name, an optional PROM/ST/HT family in subfamily,
+  and the requested count as limit. Exact product SKU/model queries belong to catalog_lookup.
+schema_ref: series_models.schema.json
+topics:
+- catalog
+- lamp
+- series
+keywords:
+- серия
+- серии
+- модели серии
+- светильники серии
+- светильнbков
+patterns:
+- покажи светильники из серии
+- покажи 5 светильнbков из серии
+- модели серии
+executor: corp_db_search
+executor_args_template:
+  kind: series_models

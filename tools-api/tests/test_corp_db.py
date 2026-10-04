@@ -28,6 +28,33 @@ class DummyPool:
         return DummyAcquire(self.conn)
 
 
+class SeriesModelsConn:
+    async def fetchrow(self, query, *args):
+        return {"total": 0, "with_embedding": 0}
+
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "FROM corp.catalog_series_families" in sql:
+            return [
+                {"canonical_series_name": "LAD LED R700", "category_family_name": "LAD LED R700 PROM"},
+                {"canonical_series_name": "LAD LED R700", "category_family_name": "LAD LED R700 ST"},
+            ]
+        if "FROM corp.v_catalog_lamps_agent" in sql:
+            series, subfamily, limit, offset = args
+            self.query_args = args
+            return [{"lamp_id": 1, "name": "LAD LED R700-PROM-1", "category_id": 7,
+                     "category_name": "LAD LED R700 PROM", "series_name": series,
+                     "agent_facts": {}, "preview": "R700 PROM"}] if subfamily else [
+                         {"lamp_id": 1, "name": "LAD LED R700-PROM-1", "category_id": 7,
+                          "category_name": "LAD LED R700 PROM", "series_name": series,
+                          "agent_facts": {}, "preview": "R700 PROM"},
+                         {"lamp_id": 2, "name": "LAD LED R700-ST-1", "category_id": 8,
+                          "category_name": "LAD LED R700 ST", "series_name": series,
+                          "agent_facts": {}, "preview": "R700 ST"},
+                     ][offset:offset + limit]
+        return []
+
+
 class DummyConn:
     def __init__(self, rows):
         self.rows = rows
@@ -903,6 +930,28 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "hybrid_search")
         self.assertEqual(payload["results"][0]["entity_type"], "lamp")
         self.assertEqual(payload["results"][0]["title"], "LAD LED LINE-OZ-25")
+
+    def test_series_models_resolves_canonical_series_and_prom_subfamily(self):
+        conn = SeriesModelsConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post("/corp-db/search", json={
+                "kind": "series_models", "name": "r700", "subfamily": "LAD LED R700 PROM", "limit": 5,
+            })
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["results"][0]["series_evidence"]["canonical_series_name"], "LAD LED R700")
+        self.assertEqual(payload["results"][0]["series_evidence"]["subfamily"], "LAD LED R700 PROM")
+        self.assertEqual(conn.query_args, ("LAD LED R700", "LAD LED R700 PROM", 5, 0))
+
+    def test_series_models_does_not_match_r7000(self):
+        conn = SeriesModelsConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post("/corp-db/search", json={"kind": "series_models", "name": "R7000"})
+        self.assertEqual(response.json()["status"], "unknown_series")
+        self.assertEqual(response.json()["results"], [])
 
     def test_lamp_exact_returns_weight(self):
         conn = LampExactConn()

@@ -1960,6 +1960,7 @@ def _route_intent_family(route: dict[str, Any]) -> str:
     if route_id in {
         "corp_kb.series_description",
         "corp_db.catalog_lookup",
+        "corp_db.series_models",
         "corp_db.sku_lookup",
         "corp_db.sku_codes_lookup",
         "corp_db.category_lamps",
@@ -2032,6 +2033,15 @@ def _visible_catalog_routes(catalog: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _is_series_models_query(query: str) -> bool:
+    query_text = _normalize(query)
+    return (
+        ("сер" in query_text or "модел" in query_text or "светильник" in query_text or "светильнbков" in query_text)
+        and bool(re.search(r"\br\s*\d{3,4}\b|lad\s+led\s+r\s*\d{3,4}", query_text))
+        and not _is_exact_lamp_model_query(query)
+    )
+
+
 def _route_matches_query(route: dict[str, Any], query: str) -> bool:
     query_text = _normalize(query)
     query_terms = {term for term in _terms(query) if term not in ROUTE_MATCH_STOPWORDS and len(term) > 1}
@@ -2046,6 +2056,8 @@ def _route_matches_query(route: dict[str, Any], query: str) -> bool:
             or ""
         ).strip()
         return _is_documents_by_lamp_query(query) and _detect_document_type(query) == document_type
+    if route_id == "corp_db.series_models":
+        return _is_series_models_query(query)
     if route_id == "corp_db.sku_codes_lookup":
         return _is_codes_for_lamp_query(query)
     if route_id == "corp_db.sku_lookup":
@@ -2087,6 +2099,8 @@ def _preferred_route_ids_for_intent(query: str, intent_family: str) -> list[str]
             return [DOCUMENT_SUBTYPE_ROUTE_IDS[document_type], "corp_db.documents_by_lamp_name"]
         return ["corp_db.documents_by_lamp_name"]
     if intent_family == "catalog_lookup":
+        if _is_series_models_query(query):
+            return ["corp_db.series_models", "corp_db.catalog_lookup", "corp_db.lamp_filters"]
         if _is_exact_lamp_model_query(query):
             return ["corp_db.catalog_lookup", "corp_db.sku_lookup", "corp_db.lamp_filters"]
         if _is_series_description_query(query):

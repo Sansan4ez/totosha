@@ -501,6 +501,7 @@ class CorpDbSearchRequest(BaseModel):
     kind: Literal[
         "hybrid_search",
         "lamp_exact",
+        "series_models",
         "lamp_suggest",
         "sku_by_code",
         "lamp_code_lookup",
@@ -528,6 +529,7 @@ class CorpDbSearchRequest(BaseModel):
     include_debug: bool = False
 
     name: Optional[str] = None
+    subfamily: Optional[str] = None
     # RFC-029 workstream 3: document lookups accept up to five lamp/model/series names per
     # request; `name` stays supported for single-name callers.
     names: Optional[list[str]] = Field(default=None, min_length=1, max_length=5)
@@ -3420,6 +3422,88 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
     )
 
 
+def _normalize_series_selector(value: str) -> str:
+    normalized = _normalize_lamp_exact_name(value).replace("ё", "е")
+    normalized = re.sub(r"^(?:lad\s+)?led\s+", "", normalized)
+    return _normalize_ws(normalized)
+
+
+async def _series_models(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
+    requested = _req_str(req.name, "name")
+    normalized = _normalize_series_selector(requested)
+    requested_subfamily = _normalize_series_selector(req.subfamily or "")
+    # Resolve only against the canonical series/family registry; never infer a series
+    # from arbitrary SKU prefixes (which would make exact model lookups ambiguous).
+    family_rows = await conn.fetch(
+        """
+        SELECT DISTINCT canonical_series_name, category_family_name
+        FROM corp.catalog_series_families
+        ORDER BY canonical_series_name, category_family_name
+        """
+    )
+    series_names = sorted({str(row["canonical_series_name"]) for row in family_rows})
+    matched_series = next((name for name in series_names if _normalize_series_selector(name) == normalized), None)
+    inferred_subfamily = None
+    if matched_series is None:
+        family_match = next((row for row in family_rows
+                             if _normalize_series_selector(str(row["category_family_name"])) == normalized), None)
+        if family_match is not None:
+            matched_series = str(family_match["canonical_series_name"])
+            inferred_subfamily = str(family_match["category_family_name"])
+    if matched_series is None:
+        suggestions = [name for name in series_names if normalized and normalized in _normalize_series_selector(name)]
+        return {
+            "status": "unknown_series", "kind": "series_models", "query": requested,
+            "results": [], "suggestions": suggestions[:5], _EXECUTION_FILTER_EVIDENCE_KEY: (),
+        }
+    family_names = sorted({str(row["category_family_name"]) for row in family_rows
+                           if str(row["canonical_series_name"]) == matched_series})
+    matched_subfamily = inferred_subfamily
+    if requested_subfamily:
+        subfamily_matches = [name for name in family_names
+                             if _normalize_series_selector(name) == requested_subfamily
+                             or _normalize_series_selector(name).endswith(f" {requested_subfamily}")]
+        matched_subfamily = subfamily_matches[0] if len(subfamily_matches) == 1 else None
+        if matched_subfamily is None:
+            return {"status": "ambiguous_series", "kind": "series_models", "query": requested,
+                    "results": [], "series": matched_series, "subfamilies": family_names,
+                    _EXECUTION_FILTER_EVIDENCE_KEY: ()}
+    rows = await conn.fetch(
+        """
+        WITH RECURSIVE ancestry AS (
+            SELECT c.category_id AS descendant_id, c.category_id AS ancestor_id, c.parent_category_id,
+                   c.name AS ancestor_name, ARRAY[c.category_id]::bigint[] AS path
+            FROM corp.categories c
+            UNION ALL
+            SELECT a.descendant_id, p.category_id, p.parent_category_id, p.name, a.path || p.category_id
+            FROM ancestry a JOIN corp.categories p ON p.category_id = a.parent_category_id
+            WHERE NOT p.category_id = ANY(a.path)
+        )
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
+        WHERE l.series_name = $1
+          AND ($2::text IS NULL OR EXISTS (
+              SELECT 1 FROM ancestry a
+              WHERE a.descendant_id = l.category_id AND a.ancestor_name = $2
+          ))
+        ORDER BY l.name, l.lamp_id
+        LIMIT $3 OFFSET $4
+        """,
+        matched_series, matched_subfamily, limit, offset,
+    )
+    results = []
+    for row in rows:
+        item = _serialize_lamp_row(row)
+        item["series_evidence"] = {"canonical_series_name": matched_series,
+                                   "subfamily": matched_subfamily,
+                                   "category_name": _row_get(row, "category_name")}
+        results.append(item)
+    return {"status": "success" if results else "empty", "kind": "series_models", "query": requested,
+            "series": matched_series, "subfamily": matched_subfamily, "results": results,
+            "filters": {"series": matched_series, "subfamily": matched_subfamily},
+            _EXECUTION_FILTER_EVIDENCE_KEY: ()}
+
+
 async def _lamp_exact(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     name = _req_str(req.name, "name")
     rows = await _fetch_lamp_exact_rows(conn, name=name, limit=limit, offset=offset)
@@ -4488,6 +4572,8 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
                 result = await _hybrid_search(conn, req, limit)
             elif req.kind == "lamp_exact":
                 result = await _lamp_exact(conn, req, limit, offset)
+            elif req.kind == "series_models":
+                result = await _series_models(conn, req, limit, offset)
             elif req.kind == "lamp_suggest":
                 if hasattr(req, "model_copy"):
                     suggest_req = req.model_copy(update={"kind": "hybrid_search", "profile": "entity_resolver", "entity_types": ["lamp", "sku"]})
