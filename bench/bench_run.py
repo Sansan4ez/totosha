@@ -239,6 +239,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--user-id", type=int, default=None, help="user_id for /api/chat (default: auto)")
     parser.add_argument("--chat-id", type=int, default=None, help="chat_id for /api/chat (default: auto)")
     parser.add_argument("--limit", type=int, default=0, help="Only run first N cases")
+    parser.add_argument(
+        "--preserve-session",
+        action="store_true",
+        help="Clear the chat once before the run, then preserve context across agent_chat cases",
+    )
     parser.add_argument("--sleep-ms", type=int, default=0, help="Sleep between cases")
     parser.add_argument("--timeout-s", type=float, default=180.0, help="Request timeout (seconds)")
     parser.add_argument("--docker-exec", action="store_true", help="Call core from inside container via docker exec")
@@ -333,6 +338,12 @@ def main() -> None:
     if user_id is None or chat_id is None:
         raise SystemExit("Provide --user-id/--chat-id or set ADMIN_USER_ID (or use --docker-exec for auto-detect).")
 
+    if getattr(args, "preserve_session", False) and any(
+        get_execution(case).get("mode", "agent_chat") not in {"agent_chat", "agent_chat_shadow"}
+        for case in cases
+    ):
+        raise SystemExit("--preserve-session supports agent_chat cases only")
+
     print(
         " ".join(
             [
@@ -389,16 +400,19 @@ def main() -> None:
 
             try:
                 if execution_mode in {"agent_chat", "agent_chat_shadow"}:
-                    clear_payload = {"user_id": user_id, "chat_id": chat_id}
-                    if args.docker_exec:
-                        docker_exec_json_post("/api/clear", clear_payload, request_id=request_id, timeout_s=float(args.timeout_s))
-                    else:
-                        http_post_json(
-                            f"{args.core_url.rstrip('/')}/api/clear",
-                            clear_payload,
-                            headers={"X-Request-Id": request_id},
-                            timeout_s=float(args.timeout_s),
-                        )
+                    clear_session = not bool(getattr(args, "preserve_session", False)) or case is cases[0]
+                    if clear_session:
+                        clear_payload = {"user_id": user_id, "chat_id": chat_id}
+                        clear_request_id = f"bench/{run_id}/reset" if getattr(args, "preserve_session", False) else request_id
+                        if args.docker_exec:
+                            docker_exec_json_post("/api/clear", clear_payload, request_id=clear_request_id, timeout_s=float(args.timeout_s))
+                        else:
+                            http_post_json(
+                                f"{args.core_url.rstrip('/')}/api/clear",
+                                clear_payload,
+                                headers={"X-Request-Id": clear_request_id},
+                                timeout_s=float(args.timeout_s),
+                            )
 
                     if args.docker_exec:
                         http_status, data = docker_exec_json_post("/api/chat", chat_payload, request_id=request_id, timeout_s=float(args.timeout_s))

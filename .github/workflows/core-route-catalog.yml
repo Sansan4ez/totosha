@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - "core/**"
+      - "bench/**"
       - ".github/workflows/core-route-catalog.yml"
   pull_request:
     branches: [main]
     paths:
       - "core/**"
+      - "bench/**"
       - ".github/workflows/core-route-catalog.yml"
 
 jobs:
@@ -31,6 +33,10 @@ jobs:
 
       - name: Route catalog invariants (RFC-028)
         run: python -m documents.route_catalog_check
+
+      - name: R700 chain dataset and bench contract tests
+        working-directory: .
+        run: python -m unittest -q bench.tests.test_run_modes bench.tests.test_r700_chain
 
       - name: Route catalog test suite
         # Keep this workflow scoped to the route catalog. The full core suite includes

@@ -82,15 +82,49 @@ running production container. Bench contract unit tests passed (24 tests). These
 establish CI, repeated-run LLM quality, source-aligned production deployment, or a five-turn
 production smoke.
 
-For LLM routing stability, use the existing RFC-030/repeated-run evaluation harness and freeze
-provider/model, prompt/config revision, dataset version, temperature/sampling parameters, and
-container build SHA. Run the held-out chain and negative cases repeatedly (minimum 10 runs per
-case); report selection accuracy, argument validity/constraint preservation, evidence quality,
-answer factuality, business-empty/attempts, p50/p95 latency, and failure rate separately. Gate on
-zero PROM/ST/HT/R7000 or provenance violations and zero unsupported direct-application claims;
-require all deterministic expected routes/arguments on every run. Attach machine-readable raw
-results and a summary. Do not claim a repeated-run pass without the pinned configuration and
-artifacts.
+For the LLM routing stability gate, freeze provider/model, prompt/config revision, dataset version,
+temperature/sampling parameters, and container build SHA. `bench/r700_repeated_run.py` runs the
+whole chain sequentially in one isolated chat, resets between trials, enforces the expected
+configured/provider-returned model, and writes one raw JSONL and evaluator summary per trial plus
+`pinned-config.json` and `run-manifest.json`. Example (use a dedicated test account/chat and private
+artifact storage):
+
+```bash
+python3 bench/r700_repeated_run.py --runs 10 \\
+  --provider <provider-id> --model <exact-model-id> --config-revision <prompt-config-sha> \\
+  --build-sha <deployed-image-sha> --sampling-config '<temperature/top-p/etc>' \\
+  --user-id <authorized-test-user> --chat-id <isolated-test-chat> \\
+  --out-dir /private/r700-artifacts/<release-sha>
+```
+
+The harness records the source SHA, deployed build SHA, and exact operator-supplied sampling config
+in the pinned config; verify these match the running deployment before interpreting results.
+Report selection accuracy, argument validity/constraint preservation, evidence quality, answer
+factuality, business-empty/attempts, p50/p95 latency, and failure rate separately. Gate on zero
+PROM/ST/HT/R7000 or provenance violations and zero unsupported direct-application claims; require
+all deterministic expected routes/arguments on every run. Do not claim a repeated-run pass without
+pinned configuration and raw/summary artifacts. No repeated LLM trials are claimed by the source
+change alone.
+
+## Executable local/CI contract
+
+`bench/tests/test_r700_chain.py` guards the golden dataset's five-turn order and required negative
+controls. `bench/tests/test_run_modes.py` verifies the optional `--preserve-session` mode clears
+exactly once per chain, keeps subsequent turns in that chat, and uses distinct request IDs. The core
+route catalog workflow executes these deterministic contract tests; no live LLM/API keys are
+needed. Run locally:
+
+```bash
+python3 -m unittest -q bench.tests.test_run_modes bench.tests.test_r700_chain
+```
+
+Run a live chain with `bench/bench_run.py --dataset bench/golden/r700-chain-regression.jsonl
+--preserve-session --force-agent-chat --chat-execution-mode runtime --expected-configured-model
+<model> --expected-llm-model <model> --user-id <authorized-test-user> --chat-id
+<isolated-test-chat> --out <private-raw.jsonl>`. Evaluation (`bench/bench_eval.py`) is separate;
+HTTP 200 does not make a case pass. The gold file's routing-only entries are not substitutes for
+row/provenance/truthfulness assertions. Production deployment, end-to-end evidence, and acceptance
+remain unclaimed until those explicit gates are performed.
 
 ## Safe production rollout, smoke, and rollback
 
