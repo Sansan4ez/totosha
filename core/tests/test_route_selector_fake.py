@@ -153,7 +153,7 @@ class RouteSelectorFakeTests(unittest.TestCase):
         def finalize(kind, payload):
             return asyncio.run(_MODULE._finalize_with_scoped_evidence(
                 base_messages=[], tool_name="corp_db_search", tool_args={"kind": kind, "name": "R700"},
-                tool_result=SimpleNamespace(output=json.dumps(payload)), route_hint={}, routing_state={},
+                tool_result=SimpleNamespace(output=json.dumps(payload)), route_hint={},
             ))
 
         answer = finalize("series_models", {"status": "success", "results": rows})

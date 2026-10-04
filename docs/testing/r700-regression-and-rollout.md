@@ -124,3 +124,61 @@ No production request was sent as part of this report: the locally running servi
 source-aligned, and the checked-in selector test failure means the preconditions for safe rollout
 are unmet. Production trace evidence, fixed-vs-baseline latency, and the RFC-030 repeated-run
 artifact remain release/acceptance blockers rather than fabricated results.
+
+
+## Production rollout 2026-10-05 (manual API acceptance)
+
+По явному поручению пользователя развернуты только `core` и `tools-api` из
+`fix/r700-search-incident`; `main` не менялся. Исходные образы сохранены как
+`totosha-core:r700-rollback-20261005` и `totosha-tools-api:r700-rollback-20261005`.
+Первый smoke SHA `809eb83` обнаружил неверный маршрут объектов PROM, недоказанные
+утверждения о применении и потерю количества моделей. Выполнен откат обоих сервисов.
+
+Исправления `907864d`, `24eb147`: разграничение описания/списка/объектов в selector,
+bounded rendering всех возвращенных series rows и кодов, обязательная оговорка
+для `category_sphere_example`, остановка поиска при unknown/ambiguous series.
+Первопричина потери строк: five-row JSON занимает 43441 символ при бюджете finalizer
+24000; прямой API возвращал пять строк, а LLM получал обрезанный JSON.
+
+Финально работающие образы собраны с `BUILD_GIT_SHA=24eb147b37f68a95944ff8d22339b14257a974b2`,
+`BUILD_TIME=2026-10-04T23:35:17Z`; `/health` подтверждает SHA и валидный routing catalog.
+Оба сервиса healthy. Финальная проверка началась после готовности core: прежняя
+попытка сразу после recreate получила connection failures и не считается acceptance.
+
+Первые пять запросов выполнены последовательно в новой отдельной web-сессии;
+остальные — в отдельных сессиях. `execution_mode=runtime`, `return_meta=true`.
+Модель фактического production ответа — `gpt-5.6-terra`, не модель worker.
+
+| Request ID suffix (`r700-prod-final-20261005-`) | Проверка | Результат | Latency, s | Trace ID |
+|---|---|---|---:|---|
+| 01 | 5 R700 моделей | 5 реальных строк | 5.28 | f9fe8d8f82b4a050ae1117b8b3dac97a |
+| 02 | Описание серии | Описание, не lamp_not_found | 8.51 | 599e5d8d5c8d1acd74182f5eb9ced523 |
+| 03 | PROM-only модели | 5 PROM строк | 7.57 | 9b63c0c225f7c7671da291ab90f714aa |
+| 04 | Объекты PROM | 5 проектов с косвенной provenance | 10.28 | 7065aee0ae7bc18d265e99acf83e404a |
+| 05 | Контекст: тогда R700 | Portfolio task сохранён, scope R700 | 7.19 | b583c4549938f1c2f3fe32fee03fc031 |
+| 06 | R500/R700 сравнение | Описание обеих серий | 8.7 | 68f6f472ac774a1c05f1818229d323df |
+| 07 | R7000 | Неизвестная серия, без подмены | 4.2 | d3c98e50e181b6a5119abd1cc919d504 |
+| 08 | Unknown series | Неизвестная серия, без подмены | 4.13 | ea233e7c195a1d60ecb38d5bb6d4faca |
+| 09 | Exact SKU | Карточка точной модели | 10.86 | 0f8bf0a53a3552f4bf997b075fb16c16 |
+| 10 | Коды заказа | ETM/ORACL/article/SKU присутствуют | 6.55 | e24d8c54d0b77ebd03b2f072e52790af |
+
+Во всех 10 ответах `tool_errors=0`; вывод и meta проверены, HTTP success сам по себе
+не использовался как критерий. Конфликт exact R700 SKU + series R500 через прямой
+tools-api отклонён: `empty`, `reason=selector_conflict`, без результатов.
+Оговорки объектов явно запрещают считать их доказанным применением серии/модели.
+
+Локальные тесты запускались отдельными процессами: routing catalog 46, corp_db tool 23,
+selector fake 25 (включая новую bounded-output регрессию), routing guardrail 75
+(3 skipped), tools-api 68. Общий запуск сначала выявил stale observability stub;
+он исправлен. Bench discovery ранее прошёл 31 тест. Это не live repeated-run CI gate.
+
+Raw API/meta и docker logs сохранены локально в `.git/r700-production/`
+(`chat-final-summary.jsonl`, `chat-01.json`–`chat-10.json`, `core-final.log`,
+`tools-final.log`, `conflict-api.json`). Не добавлены в git из-за account/session data.
+Trace IDs выше позволяют найти запросы в telemetry. Отдельная агрегация метрик и
+длительный soak не проводились; acceptance ограничен перечисленными сценариями.
+Отменённый специализированный gate `.11` не восстановлен.
+
+Откат: `docker tag totosha-core:r700-rollback-20261005 totosha-core:latest`,
+аналогично tools-api, затем `docker compose up -d --no-deps core tools-api`.
+Текущий prod оставлен на проверенных исправленных образах, rollback tags сохранены.
