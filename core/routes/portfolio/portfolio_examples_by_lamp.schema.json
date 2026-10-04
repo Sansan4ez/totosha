@@ -10,14 +10,28 @@
       "maxLength": 240,
       "type": "string"
     },
+    "series": {
+      "maxLength": 200,
+      "type": "string"
+    },
+    "subfamily": {
+      "maxLength": 200,
+      "type": "string"
+    },
+    "category": {
+      "maxLength": 200,
+      "type": "string"
+    },
     "offset": {
       "maximum": 10000,
       "minimum": 0,
       "type": "integer"
     }
   },
-  "required": [
-    "name"
+  "anyOf": [
+    {"required": ["name"]},
+    {"required": ["series"]},
+    {"required": ["category"]}
   ],
   "type": "object"
 }

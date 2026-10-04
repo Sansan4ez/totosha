@@ -461,6 +461,41 @@ class EmptyLampPortfolioConn:
         return []
 
 
+class SeriesPortfolioConn:
+    def __init__(self, *, include_projects=True):
+        self.include_projects = include_projects
+        self.project_args = None
+
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "FROM corp.v_catalog_lamps_agent" in sql:
+            return []
+        if "FROM corp.catalog_series_families" in sql:
+            return [
+                {"canonical_series_name": "LAD LED R700", "category_family_name": "LAD LED R700 PROM"},
+                {"canonical_series_name": "LAD LED R700", "category_family_name": "LAD LED R700 ST"},
+            ]
+        if "FROM corp.categories" in sql:
+            families = args[0]
+            return [
+                {"category_id": 17, "category_name": "LAD LED R700 PROM"},
+            ] if any("PROM" in family for family in families) else [
+                {"category_id": 17, "category_name": "LAD LED R700 PROM"},
+                {"category_id": 18, "category_name": "LAD LED R700 ST"},
+            ]
+        if "FROM corp.sphere_categories sc" in sql:
+            return [{"sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"}]
+        if "FROM corp.portfolio p" in sql:
+            self.project_args = args
+            if not self.include_projects:
+                return []
+            return [
+                {"portfolio_id": 11, "name": "Проект", "sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"},
+                {"portfolio_id": 11, "name": "Проект", "sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"},
+            ]
+        return []
+
+
 class ApplicationRecommendationConn:
     def __init__(self):
         self.last_executable_roots: list[int] = []
@@ -1071,7 +1106,34 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["results"], payload["portfolio_examples"])
         self.assertEqual(payload["filters"]["lamp_match"], "exact")
         self.assertEqual(payload["filters"]["portfolio_count"], 2)
+        self.assertEqual(payload["evidence_type"], "category_sphere_example")
         self.assertEqual(payload["portfolio_examples"][0]["sphere_name"], "Нефтегазовый комплекс")
+
+    def test_portfolio_examples_by_lamp_resolves_series_deduplicates_and_reports_evidence(self):
+        conn = SeriesPortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "series": "R700", "limit": 1, "offset": 2},
+            )
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["evidence_type"], "category_sphere_example")
+        self.assertEqual(payload["filters"]["category_ids"], [17, 18])
+        self.assertEqual(len(payload["portfolio_examples"]), 1)
+        self.assertEqual(conn.project_args[1:], (1, 2))
+
+    def test_portfolio_examples_by_lamp_resolves_only_requested_subfamily(self):
+        conn = SeriesPortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "series": "R700", "subfamily": "PROM"},
+            )
+        payload = response.json()
+        self.assertEqual(payload["filters"]["category_ids"], [17])
 
     def test_portfolio_examples_by_lamp_reports_portfolio_not_found(self):
         conn = PortfolioExamplesConn(include_portfolio=False)
@@ -1107,7 +1169,8 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "empty")
-        self.assertEqual(payload["filters"]["reason"], "lamp_not_found")
+        self.assertEqual(payload["filters"]["reason"], "entity_not_resolved")
+        self.assertEqual(payload["evidence_type"], "category_sphere_example")
         self.assertEqual(payload["results"], [])
 
     def test_application_recommendation_resolves_stadium_and_returns_payload(self):

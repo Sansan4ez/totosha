@@ -25,9 +25,10 @@ patterns:
 executor: corp_db_search
 executor_args_template:
   kind: portfolio_examples_by_lamp
-  fuzzy: true
 argument_hints:
-  name: Extract lamp/model name as a free string.
-  category: Extract category when the request is category-level.
+  name: Use only for an exact, fully named lamp model; the executor checks exact identity first.
+  series: Use the canonical model series when the user asks about a family, e.g. R700.
+  subfamily: Use a specific PROM/ST/HT category family only when explicitly requested.
+  category: Use an explicit category-level request. Series and subfamilies are resolved by the typed registry.
 observability_labels:
   scope: portfolio_examples_by_lamp
