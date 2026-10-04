@@ -247,6 +247,36 @@ def _row_value(row: dict, key: str) -> object:
     return metadata.get(key) if isinstance(metadata, dict) else None
 
 
+def _kb_series_evidence(row: dict, requested: str = "") -> str:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    evidence = row.get("series_evidence") or metadata.get("series_evidence")
+    if isinstance(evidence, dict):
+        for key in ("canonical_series_name", "series_name", "series_scope"):
+            value = str(evidence.get(key) or "").strip()
+            if value:
+                return value
+    for source in (row, metadata):
+        for key in ("series_name", "canonical_series_name", "series_scope"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+    if requested:
+        searchable = " ".join(
+            str(row.get(key) or "")
+            for key in ("title", "document_title", "heading", "content", "preview", "snippet")
+        ).casefold()
+        # Require a token boundary after the series code so R700 cannot match R7000.
+        import re
+        code = re.search(r"(?:r|р)\s*[- ]?\s*\d+", requested, re.IGNORECASE)
+        if code:
+            found = re.search(r"(?<![\w])((?:r|р)\s*[- ]?\s*\d+)(?!\w)", searchable, re.IGNORECASE)
+            if found:
+                return found.group(1)
+        if requested.casefold() in searchable:
+            return requested
+    return ""
+
+
 def _constraint_evidence_status(args: dict, data: object) -> str:
     if not isinstance(data, dict):
         return "unknown"
@@ -257,9 +287,27 @@ def _constraint_evidence_status(args: dict, data: object) -> str:
     rows = _result_rows(data)
     if not rows:
         return "unknown"
+    kind = str(args.get("kind") or data.get("kind") or "")
+    is_kb = kind == "hybrid_search" and str(args.get("profile") or "") in {"kb_search", "kb_route_lookup"}
     if requested_series:
         expected = requested_series.casefold()
-        if any(str(_row_value(row, "series_name") or "").strip().casefold() != expected for row in rows):
+        if is_kb:
+            evidence_values = [_kb_series_evidence(row, requested_series) for row in rows]
+            # KB chunks need not carry catalog fields. Missing scope is unknown, not proof
+            # that a correctly scoped passage describes another series.
+            known_values = [value.casefold() for value in evidence_values if value]
+            if not known_values:
+                return "unknown"
+            import re
+            expected_code = re.search(r"(?:r|р)\s*[- ]?\s*\d+", expected, re.IGNORECASE)
+            def matches_series(value: str) -> bool:
+                if value == expected:
+                    return True
+                actual_code = re.search(r"(?:r|р)\s*[- ]?\s*\d+", value, re.IGNORECASE)
+                return bool(expected_code and actual_code and expected_code.group(0).replace(" ", "").replace("-", "").casefold() == actual_code.group(0).replace(" ", "").replace("-", "").casefold())
+            if any(not matches_series(value) for value in known_values):
+                return "mismatch"
+        elif any(str(_row_value(row, "series_name") or "").strip().casefold() != expected for row in rows):
             return "mismatch"
     if requested_ex is True:
         if any(_row_value(row, "is_explosion_protected") is not True for row in rows):

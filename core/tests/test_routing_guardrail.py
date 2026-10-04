@@ -240,6 +240,19 @@ class RoutingGuardrailTests(unittest.TestCase):
             with self.subTest(message=message, payload=payload):
                 self.assertEqual(_MODULE._company_fact_payload_is_relevant(payload, message), expected)
 
+    def test_ignored_explicit_kb_constraint_blocks_sufficiency_without_series_evidence(self):
+        result = _ToolResult(
+            True,
+            output=json.dumps({"status": "success", "results": [{"entity_type": "kb_chunk"}]}),
+            metadata={"filter_contract": {"ignored_filter_fields": ["series"]}, "retrieval_constraint_evidence_status": "unknown"},
+        )
+        args = {"kind": "hybrid_search", "profile": "kb_route_lookup", "series": "LAD LED R700"}
+        self.assertFalse(_MODULE._constraint_contract_allows_sufficiency(args, result))
+        result.metadata["retrieval_constraint_evidence_status"] = "mismatch"
+        self.assertFalse(_MODULE._constraint_contract_allows_sufficiency(args, result))
+        result.metadata["retrieval_constraint_evidence_status"] = "matched"
+        self.assertTrue(_MODULE._constraint_contract_allows_sufficiency(args, result))
+
     def test_broad_series_question_uses_series_description_leaf_route(self):
         response, exec_mock, meta = self._run_flow(
             user_message="Какие у вас есть серии светильников?",

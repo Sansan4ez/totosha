@@ -268,6 +268,27 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(result.metadata["retrieval_constraint_evidence_status"], "matched")
         self.assertEqual(result.metadata["filter_contract"]["status"], "ok")
 
+    def test_kb_series_evidence_uses_text_and_distinguishes_missing_or_other_series(self):
+        r700 = {"entity_type": "kb_chunk", "heading": "LAD LED R700", "preview": "Описание серии R700"}
+        r500 = {"entity_type": "kb_chunk", "heading": "LAD LED R500", "preview": "Описание серии R500"}
+        missing = {"entity_type": "kb_chunk", "heading": "Обзор светильников", "preview": "Общий обзор"}
+        self.assertEqual(_MODULE._constraint_evidence_status(
+            {"kind": "hybrid_search", "profile": "kb_route_lookup", "series": "LAD LED R700"},
+            {"kind": "hybrid_search", "results": [r700]},
+        ), "matched")
+        self.assertEqual(_MODULE._constraint_evidence_status(
+            {"kind": "hybrid_search", "profile": "kb_route_lookup", "series": "LAD LED R700"},
+            {"kind": "hybrid_search", "results": [r500]},
+        ), "mismatch")
+        self.assertEqual(_MODULE._constraint_evidence_status(
+            {"kind": "hybrid_search", "profile": "kb_route_lookup", "series": "LAD LED R700"},
+            {"kind": "hybrid_search", "results": [missing]},
+        ), "unknown")
+        self.assertEqual(_MODULE._constraint_evidence_status(
+            {"kind": "hybrid_search", "profile": "kb_route_lookup"},
+            {"kind": "hybrid_search", "results": [r700, r500]},
+        ), "unknown")
+
     def test_tool_marks_constraint_mismatch_without_exposing_values_as_metric_labels(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
         payload = {

@@ -332,6 +332,27 @@ def _payload_matches_kb_route_scope(payload: dict[str, Any], source_files: list[
     return False
 
 
+def _constraint_contract_allows_sufficiency(args: dict[str, Any], tool_result: ToolResult) -> bool:
+    metadata = tool_result.metadata if isinstance(tool_result.metadata, dict) else {}
+    evidence = str(metadata.get("retrieval_constraint_evidence_status") or "unknown")
+    if evidence == "mismatch":
+        return False
+    contract = metadata.get("filter_contract")
+    if not isinstance(contract, dict):
+        return True
+    ignored = set(contract.get("ignored_filter_fields") or [])
+    if not ignored:
+        return True
+    is_series_kb = (
+        str(args.get("kind") or "") == "hybrid_search"
+        and str(args.get("profile") or "") in {"kb_search", "kb_route_lookup"}
+        and bool(str(args.get("series") or "").strip())
+        and ignored <= {"series"}
+        and evidence == "matched"
+    )
+    return is_series_kb
+
+
 def _authoritative_kb_evidence_status(args: dict[str, Any], tool_result: ToolResult, message: str, routing_state: dict[str, Any]) -> str:
     # RFC-028 workstream 3.4: one rule for every corp_kb.* route -- a successful, non-empty
     # payload is sufficient. The executor already scopes the search to the route's locked
@@ -345,6 +366,8 @@ def _authoritative_kb_evidence_status(args: dict[str, Any], tool_result: ToolRes
     # replay of "Какие у вас есть серии светильников?").
     if not tool_result.success:
         return "error"
+    if not _constraint_contract_allows_sufficiency(args, tool_result):
+        return "weak"
     payload = _parse_json_object(tool_result.output or "")
     if payload.get("status") == "empty":
         return "empty"
@@ -541,6 +564,8 @@ def _route_evidence_status(
     if name == "doc_search":
         return _doc_domain_evidence_status(tool_result, args=args, state=state)
     if name != "corp_db_search":
+        return "weak"
+    if tool_result.success and not _constraint_contract_allows_sufficiency(args, tool_result):
         return "weak"
     # Company-fact requests are semantic contracts, even though the common and series leaves
     # share one physical KB source.  A non-empty row from that source is not enough: a series
