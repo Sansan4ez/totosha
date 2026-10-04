@@ -479,7 +479,7 @@ class SeriesPortfolioConn:
             families = args[0]
             return [
                 {"category_id": 17, "category_name": "LAD LED R700 PROM"},
-            ] if any("PROM" in family for family in families) else [
+            ] if len(families) == 1 and "PROM" in families[0] else [
                 {"category_id": 17, "category_name": "LAD LED R700 PROM"},
                 {"category_id": 18, "category_name": "LAD LED R700 ST"},
             ]

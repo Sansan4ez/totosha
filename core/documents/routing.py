@@ -2039,6 +2039,7 @@ def _is_series_models_query(query: str) -> bool:
         ("сер" in query_text or "модел" in query_text or "светильник" in query_text or "светильнbков" in query_text)
         and bool(re.search(r"\br\s*\d{3,4}\b|lad\s+led\s+r\s*\d{3,4}", query_text))
         and not _is_exact_lamp_model_query(query)
+        and not _is_series_description_query(query)
     )
 
 

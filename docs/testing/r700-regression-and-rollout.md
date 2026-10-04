@@ -71,15 +71,16 @@ python3 -m unittest -q \
   bench.tests.test_run_modes
 ```
 
-The inspection run for this report found 2 failures in
-`core.tests.test_routing_catalog`: comparison question
-`Коротко: чем отличается серия LAD LED R500 от LAD LED R700?` selected
-`corp_db.series_models` instead of `corp_kb.series_description`. The host cannot import
-`tools-api/tests/test_corp_db.py` (`fastapi` is not installed); the running tools-api image has no
-mounted source or tests, so that is not a substitute for a source-aligned CI run. Bench contract
-unit tests passed (24 tests). Core's route catalog + corp-db tool suite passed in the running
-container (68 tests), but this is stale-image smoke only and does not override the source test
-failures.
+Source-aligned verification on 2026-10-04 (feature branch, before deployment):
+`python3 -m unittest -q tests.test_routing_catalog tests.test_corp_db_tool` in `core/`
+passed 69 tests after correcting the comparison-vs-model selector boundary in
+`core/documents/routing.py`. `docker run --rm -v "$PWD/tools-api:/app" -w /app
+--entrypoint python totosha-tools-api -m unittest discover -s tests -p test_corp_db.py -q`
+passed 64 tests after restoring `category_id` in the empty portfolio response and fixing the
+PROM-only fake connection. This uses the current mounted source with image dependencies, NOT the
+running production container. Bench contract unit tests passed (24 tests). These results do not
+establish CI, repeated-run LLM quality, source-aligned production deployment, or a five-turn
+production smoke.
 
 For LLM routing stability, use the existing RFC-030/repeated-run evaluation harness and freeze
 provider/model, prompt/config revision, dataset version, temperature/sampling parameters, and

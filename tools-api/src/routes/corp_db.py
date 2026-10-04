@@ -4092,6 +4092,7 @@ async def _portfolio_examples_by_lamp(
             filters={
                 "reason": "portfolio_not_found",
                 "lamp_id": lamp_id,
+                "category_id": category_id,
                 "category_ids": category_ids,
                 "category_names": category_names,
                 "sphere_count": len(spheres),
