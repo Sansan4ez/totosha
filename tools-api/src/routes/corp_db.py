@@ -3952,6 +3952,42 @@ async def _portfolio_examples_by_lamp(
                 category_ids = [int(category_id)]
                 category_names = [str(category_name or "")]
 
+            # Exact-model resolution is authoritative. Any additional selector must
+            # agree with that model; never ignore it or broaden to a series fallback.
+            lamp_series = str(_row_get(lamp_row, "series_name") or "")
+            lamp_category = str(category_name or "")
+            requested_series = _normalize_series_selector(req.series or "")
+            requested_category = _normalize_series_selector(req.category or "")
+            requested_subfamily = _normalize_series_selector(req.subfamily or "")
+            conflicts = (
+                (requested_series and requested_series != _normalize_series_selector(lamp_series))
+                or (requested_category and requested_category != _normalize_series_selector(lamp_category))
+                or (requested_subfamily and not (
+                    _normalize_series_selector(lamp_category) == requested_subfamily
+                    or _normalize_series_selector(lamp_category).endswith(f" {requested_subfamily}")
+                ))
+            )
+            if conflicts:
+                response = _portfolio_examples_response(
+                    query=query, status="empty", filters={
+                        "reason": "selector_conflict", "resolved_as": "exact_model",
+                        "lamp_id": lamp_id, "series": lamp_series,
+                        "category_name": lamp_category,
+                    }, lamp=lamp_payload, evidence_type="category_sphere_example",
+                )
+                _log_portfolio_examples_result(status="empty", lamp_id=lamp_id, category_id=category_id)
+                return response
+
+    # A name supplied with other constraints cannot silently fall through to a
+    # broader series/category when it fails exact model resolution.
+    if req.name and lamp_payload is None and (req.series or req.subfamily or req.category):
+        response = _portfolio_examples_response(
+            query=query, status="empty", filters={"reason": "entity_not_resolved", "entity_type": "exact_model"},
+            evidence_type="category_sphere_example",
+        )
+        _log_portfolio_examples_result(status="empty")
+        return response
+
     if req.name and lamp_payload is not None and category_id is None:
         response = _portfolio_examples_response(
             query=query, status="empty", filters={"reason": "category_missing", "lamp_id": lamp_id},
@@ -3980,16 +4016,17 @@ async def _portfolio_examples_by_lamp(
             families = sorted({str(r["category_family_name"]) for r in family_rows
                                if str(r["canonical_series_name"]) == matched_series})
             subfamily = req.subfamily
-            if subfamily:
-                subfamily_key = _normalize_series_selector(subfamily)
-                families = [f for f in families
-                            if _normalize_series_selector(f) == subfamily_key
-                            or _normalize_series_selector(f).endswith(f" {subfamily_key}")]
+            for constraint in (subfamily, req.category):
+                if constraint:
+                    constraint_key = _normalize_series_selector(constraint)
+                    families = [f for f in families
+                                if _normalize_series_selector(f) == constraint_key
+                                or _normalize_series_selector(f).endswith(f" {constraint_key}")]
             resolved_as = "series"
         elif len(family_matches) == 1:
             families = [str(family_matches[0]["category_family_name"])]
             resolved_as = "subfamily"
-        elif req.category:
+        elif req.category and not req.series:
             families = [str(req.category)]
             resolved_as = "category"
         else:

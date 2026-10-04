@@ -456,6 +456,20 @@ class PortfolioExamplesConn:
         return []
 
 
+class ExactR700PortfolioConn(PortfolioExamplesConn):
+    @staticmethod
+    def _lamp_row() -> dict:
+        row = PortfolioExamplesConn._lamp_row()
+        row.update({
+            "lamp_id": 7001,
+            "name": "LAD LED R700-1 ST",
+            "series_name": "LAD LED R700",
+            "category_id": 87,
+            "category_name": "LAD LED R700 ST",
+        })
+        return row
+
+
 class EmptyLampPortfolioConn:
     async def fetch(self, query, *args):
         return []
@@ -1108,6 +1122,42 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["filters"]["portfolio_count"], 2)
         self.assertEqual(payload["evidence_type"], "category_sphere_example")
         self.assertEqual(payload["portfolio_examples"][0]["sphere_name"], "Нефтегазовый комплекс")
+
+    def test_portfolio_exact_model_rejects_conflicting_subfamily_and_series(self):
+        for extra in ({"subfamily": "PROM"}, {"subfamily": "HT"}, {"series": "R500"}):
+            conn = ExactR700PortfolioConn()
+            with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+                from app import app
+                response = TestClient(app).post(
+                    "/corp-db/search",
+                    json={"kind": "portfolio_examples_by_lamp", "name": "R700-1-ST", **extra},
+                )
+            payload = response.json()
+            self.assertEqual(payload["status"], "empty")
+            self.assertEqual(payload["filters"]["reason"], "selector_conflict")
+            self.assertEqual(payload["filters"]["resolved_as"], "exact_model")
+
+    def test_portfolio_exact_model_accepts_matching_subfamily(self):
+        conn = ExactR700PortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "R700-1-ST", "subfamily": "ST"},
+            )
+        self.assertEqual(response.json()["status"], "success")
+        self.assertEqual(response.json()["filters"]["resolved_as"], "exact_model")
+
+    def test_portfolio_unknown_name_with_constraints_does_not_fall_back(self):
+        conn = EmptyLampPortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "UNKNOWN-MODEL", "series": "R700"},
+            )
+        self.assertEqual(response.json()["status"], "empty")
+        self.assertEqual(response.json()["filters"]["entity_type"], "exact_model")
 
     def test_portfolio_examples_by_lamp_resolves_series_deduplicates_and_reports_evidence(self):
         conn = SeriesPortfolioConn()
