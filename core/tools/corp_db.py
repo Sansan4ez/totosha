@@ -260,20 +260,8 @@ def _kb_series_evidence(row: dict, requested: str = "") -> str:
             value = str(source.get(key) or "").strip()
             if value:
                 return value
-    if requested:
-        searchable = " ".join(
-            str(row.get(key) or "")
-            for key in ("title", "document_title", "heading", "content", "preview", "snippet")
-        ).casefold()
-        # Require a token boundary after the series code so R700 cannot match R7000.
-        import re
-        code = re.search(r"(?:r|р)\s*[- ]?\s*\d+", requested, re.IGNORECASE)
-        if code:
-            found = re.search(r"(?<![\w])((?:r|р)\s*[- ]?\s*\d+)(?!\w)", searchable, re.IGNORECASE)
-            if found:
-                return found.group(1)
-        if requested.casefold() in searchable:
-            return requested
+    # Titles and prose can mention a series incidentally; they do not attest to
+    # the scope of a KB chunk. Only explicit structured evidence is authoritative.
     return ""
 
 
@@ -293,19 +281,21 @@ def _constraint_evidence_status(args: dict, data: object) -> str:
         expected = requested_series.casefold()
         if is_kb:
             evidence_values = [_kb_series_evidence(row, requested_series) for row in rows]
-            # KB chunks need not carry catalog fields. Missing scope is unknown, not proof
-            # that a correctly scoped passage describes another series.
-            known_values = [value.casefold() for value in evidence_values if value]
-            if not known_values:
+            # A single-series answer is confirmed only when every used chunk has
+            # explicit, unambiguous scope evidence. Prose/title mentions are not
+            # attestations, and partial knowledge cannot promote the whole answer.
+            if any(not value for value in evidence_values):
                 return "unknown"
             import re
-            expected_code = re.search(r"(?:r|р)\s*[- ]?\s*\d+", expected, re.IGNORECASE)
+            def series_code(value: str) -> str:
+                codes = re.findall(r"(?<![\w])(?:r|р)\s*[- ]?\s*(\d+)(?!\w)", value, re.IGNORECASE)
+                return codes[0].casefold() if len(codes) == 1 else ""
+            expected_code = series_code(expected)
             def matches_series(value: str) -> bool:
-                if value == expected:
-                    return True
-                actual_code = re.search(r"(?:r|р)\s*[- ]?\s*\d+", value, re.IGNORECASE)
-                return bool(expected_code and actual_code and expected_code.group(0).replace(" ", "").replace("-", "").casefold() == actual_code.group(0).replace(" ", "").replace("-", "").casefold())
-            if any(not matches_series(value) for value in known_values):
+                normalized = value.casefold().strip()
+                actual_code = series_code(normalized)
+                return normalized == expected or bool(expected_code and actual_code and expected_code == actual_code)
+            if any(not matches_series(value) for value in evidence_values):
                 return "mismatch"
         elif any(str(_row_value(row, "series_name") or "").strip().casefold() != expected for row in rows):
             return "mismatch"

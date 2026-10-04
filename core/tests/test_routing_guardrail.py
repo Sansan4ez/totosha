@@ -85,6 +85,7 @@ _stub_modules = {
     "observability": types.SimpleNamespace(
         REQUEST_ID=ContextVar("request_id", default="-"),
         inject_trace_context=lambda *args, **kwargs: {},
+        observe_route_finalizer_duration=lambda *args, **kwargs: None,
         observe_route_selector_prompt_size=lambda *args, **kwargs: None,
         observe_route_selector_sanitization=lambda *args, **kwargs: None,
         record_span_event=lambda *args, **kwargs: None,
@@ -252,6 +253,9 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertFalse(_MODULE._constraint_contract_allows_sufficiency(args, result))
         result.metadata["retrieval_constraint_evidence_status"] = "matched"
         self.assertTrue(_MODULE._constraint_contract_allows_sufficiency(args, result))
+        result.metadata["filter_contract"]["ignored_filter_fields"] = []
+        result.metadata["retrieval_constraint_evidence_status"] = "unknown"
+        self.assertFalse(_MODULE._constraint_contract_allows_sufficiency(args, result))
 
     def test_broad_series_question_uses_series_description_leaf_route(self):
         response, exec_mock, meta = self._run_flow(

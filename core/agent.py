@@ -338,19 +338,20 @@ def _constraint_contract_allows_sufficiency(args: dict[str, Any], tool_result: T
     evidence = str(metadata.get("retrieval_constraint_evidence_status") or "unknown")
     if evidence == "mismatch":
         return False
+    is_series_kb = (
+        str(args.get("kind") or "") == "hybrid_search"
+        and str(args.get("profile") or "") in {"kb_search", "kb_route_lookup"}
+        and bool(str(args.get("series") or "").strip())
+    )
+    if is_series_kb and evidence != "matched":
+        return False
     contract = metadata.get("filter_contract")
     if not isinstance(contract, dict):
         return True
     ignored = set(contract.get("ignored_filter_fields") or [])
     if not ignored:
         return True
-    is_series_kb = (
-        str(args.get("kind") or "") == "hybrid_search"
-        and str(args.get("profile") or "") in {"kb_search", "kb_route_lookup"}
-        and bool(str(args.get("series") or "").strip())
-        and ignored <= {"series"}
-        and evidence == "matched"
-    )
+    is_series_kb = is_series_kb and ignored <= {"series"} and evidence == "matched"
     return is_series_kb
 
 
