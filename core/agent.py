@@ -930,6 +930,15 @@ async def _finalize_with_scoped_evidence(
             f"{index}. [{row.get('name')}]({row.get('url')}) — {row.get('preview') or ''}"
             for index, row in enumerate(rows, 1)
         )
+    if kind == "lamp_code_lookup" and payload.get("status") == "success" and rows:
+        lines = []
+        for row in rows:
+            codes = row.get("primary_codes") or {}
+            lines.append(str(row.get("name") or row.get("lamp_name") or "Модель"))
+            lines.extend(f"- {system}: {value}" for system, value in codes.items() if value)
+            if not codes:
+                lines.append("Коды заказа для этой модели не найдены.")
+        return "Коды заказа:\n\n" + "\n".join(lines)
     if kind == "portfolio_examples_by_lamp" and payload.get("evidence_type") == "category_sphere_example" and rows:
         return (
             "Примеры объектов из портфолио, связанных с запрошенной категорией/серией через сферу применения. "

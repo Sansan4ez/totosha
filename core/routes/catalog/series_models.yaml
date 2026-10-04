@@ -7,8 +7,7 @@ when_to_use: >-
   Select when the user asks to list/show models or lamps from a named series or subfamily.
   Pass the canonical series/family label in name, an optional PROM/ST/HT family in subfamily,
   and the requested count as limit. Exact product SKU/model queries belong to catalog_lookup.
-  Do not select for descriptions (including a bare series name) or objects/projects using a series;
-  those belong to series_description and portfolio_examples_by_lamp respectively.
+  Do not select for comparisons between series, descriptions, or objects/projects using a series.
 schema_ref: series_models.schema.json
 topics:
 - catalog
