@@ -397,6 +397,7 @@ class PortfolioExamplesConn:
         self.include_portfolio = include_portfolio
         self.include_spheres = include_spheres
         self.include_category = include_category
+        self.portfolio_args = None
 
     @staticmethod
     def _lamp_row() -> dict:
@@ -433,9 +434,10 @@ class PortfolioExamplesConn:
         if "FROM corp.portfolio p" in sql:
             if not self.include_portfolio:
                 return []
-            return [
+            self.portfolio_args = args
+            rows = [
                 {
-                    "portfolio_id": 102,
+                    "portfolio_id": "project-reservoir",
                     "name": "Освещение резервуарного парка",
                     "url": "https://ladzavod.ru/portfolio/reservoir",
                     "group_name": "Нефтегаз",
@@ -444,7 +446,7 @@ class PortfolioExamplesConn:
                     "sphere_name": "Нефтегазовый комплекс",
                 },
                 {
-                    "portfolio_id": 205,
+                    "portfolio_id": "project-logistics",
                     "name": "Освещение логистического комплекса",
                     "url": "https://ladzavod.ru/portfolio/logistics",
                     "group_name": "Логистика",
@@ -453,6 +455,8 @@ class PortfolioExamplesConn:
                     "sphere_name": "Промышленность и склады",
                 },
             ]
+            limit, offset = args[1:3]
+            return rows[offset:offset + limit]
         return []
 
 
@@ -1122,6 +1126,25 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["filters"]["portfolio_count"], 2)
         self.assertEqual(payload["evidence_type"], "category_sphere_example")
         self.assertEqual(payload["portfolio_examples"][0]["sphere_name"], "Нефтегазовый комплекс")
+        self.assertEqual(
+            [row["portfolio_id"] for row in payload["portfolio_examples"]],
+            ["project-reservoir", "project-logistics"],
+        )
+
+    def test_portfolio_examples_preserves_text_ids_and_limit_offset(self):
+        conn = PortfolioExamplesConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "R500-9-30-6-650LZD", "limit": 1, "offset": 1},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual([row["portfolio_id"] for row in payload["portfolio_examples"]], ["project-logistics"])
+        self.assertEqual(conn.portfolio_args[1:], (1, 1))
 
     def test_portfolio_exact_model_rejects_conflicting_subfamily_and_series(self):
         for extra in ({"subfamily": "PROM"}, {"subfamily": "HT"}, {"series": "R500"}):

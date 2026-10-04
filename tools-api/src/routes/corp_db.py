@@ -4120,8 +4120,10 @@ async def _portfolio_examples_by_lamp(
             offset,
         )
 
-    portfolio_by_id = {int(row["portfolio_id"]): dict(row) for row in portfolio_rows}
-    portfolio_examples = list(portfolio_by_id.values())
+    # portfolio_id is a text primary key and the portfolio→sphere join is many-to-one,
+    # so each row is already unique. Keep the query's stable order and apply pagination
+    # before returning; do not coerce text IDs or deduplicate after LIMIT/OFFSET.
+    portfolio_examples = [dict(row) for row in portfolio_rows]
     if not portfolio_examples:
         response = _portfolio_examples_response(
             query=query,
