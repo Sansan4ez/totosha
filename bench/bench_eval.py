@@ -223,8 +223,15 @@ def main() -> None:
             lines.append(f"- Scored cases (golden entries with an expected `routing.route_id`): {routing_accuracy['scored_cases']}")
             lines.append("")
             lines.append("### By route")
+            lines.append("| Route | Routing accuracy | Argument validity (valid / scored) |")
+            lines.append("| --- | --- | --- |")
             for route_id, s in routing_accuracy["by_route"].items():
-                lines.append(f"- `{route_id}`: {s['correct']}/{s['total']} (accuracy={s['accuracy']})")
+                validity = s["argument_validity_rate"]
+                validity_text = "N/A" if validity is None else f"{validity:.2%}"
+                lines.append(
+                    f"| `{route_id}` | {s['correct']}/{s['total']} ({s['accuracy']}) | "
+                    f"{validity_text} ({s['argument_valid']}/{s['argument_scored']}) |"
+                )
             if routing_accuracy["by_family"]:
                 lines.append("")
                 lines.append("### By family")

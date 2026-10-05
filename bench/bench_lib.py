@@ -755,6 +755,8 @@ def routing_accuracy_summary(dataset: list[dict[str, Any]], by_case: dict[str, d
     """
     route_totals: dict[str, int] = {}
     route_correct: dict[str, int] = {}
+    argument_valid: dict[str, int] = {}
+    argument_scored: dict[str, int] = {}
     family_totals: dict[str, int] = {}
     family_correct: dict[str, int] = {}
     mismatches: list[dict[str, Any]] = []
@@ -773,6 +775,13 @@ def routing_accuracy_summary(dataset: list[dict[str, Any]], by_case: dict[str, d
         # choice and is what golden routing.route_id values are expressed in.
         actual_route_id = str(meta.get("retrieval_leaf_route_id") or meta.get("retrieval_route_id") or "")
         route_match = actual_route_id == expected_route_id
+
+        # Older runs and routes without Call B are not argument-validity samples.
+        builder_status = str(meta.get("route_argument_builder_status") or "")
+        if builder_status in {"valid", "repaired", "failed"}:
+            argument_scored[expected_route_id] = argument_scored.get(expected_route_id, 0) + 1
+            if builder_status in {"valid", "repaired"}:
+                argument_valid[expected_route_id] = argument_valid.get(expected_route_id, 0) + 1
 
         route_totals[expected_route_id] = route_totals.get(expected_route_id, 0) + 1
         if route_match:
@@ -799,6 +808,12 @@ def routing_accuracy_summary(dataset: list[dict[str, Any]], by_case: dict[str, d
                 "correct": route_correct.get(route_id, 0),
                 "total": route_totals[route_id],
                 "accuracy": round(route_correct.get(route_id, 0) / route_totals[route_id], 4),
+                "argument_valid": argument_valid.get(route_id, 0),
+                "argument_scored": argument_scored.get(route_id, 0),
+                "argument_validity_rate": (
+                    round(argument_valid.get(route_id, 0) / argument_scored[route_id], 4)
+                    if argument_scored.get(route_id) else None
+                ),
             }
             for route_id in sorted(route_totals.keys())
         },

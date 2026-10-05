@@ -325,6 +325,12 @@ ROUTE_SELECTOR_STAGE_DURATION_MS = Histogram(
     registry=REGISTRY,
     buckets=LATENCY_BUCKETS_MS,
 )
+ROUTE_ARGUMENT_BUILDER_STATUS_TOTAL = Counter(
+    "route_argument_builder_status_total",
+    "Argument builder outcomes per request, with bounded status labels.",
+    labelnames=("service", "route", "status"),
+    registry=REGISTRY,
+)
 ROUTE_FINALIZER_DURATION_MS = Histogram(
     "route_finalizer_duration_milliseconds",
     "Route finalizer latency by bounded selected route and mode.",
@@ -721,6 +727,12 @@ def observe_request_correlation(duration_ms: float, status: str) -> None:
         RETRIEVAL_FALLBACK_OUTCOMES_TOTAL.labels(
             ACTIVE_SERVICE_NAME, route, kind, "exhausted", attempted
         ).inc()
+    builder_status = context.get("route_argument_builder_status", "unknown")
+    if builder_status not in {"valid", "repaired", "skipped", "failed"}:
+        builder_status = "unknown"
+    ROUTE_ARGUMENT_BUILDER_STATUS_TOTAL.labels(
+        ACTIVE_SERVICE_NAME, route, builder_status
+    ).inc()
     for stage in ("a", "b"):
         try:
             stage_ms = float(context.get(f"route_selector_{stage}_latency_ms", "0"))

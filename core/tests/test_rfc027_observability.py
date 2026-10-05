@@ -82,6 +82,25 @@ finally:
 
 
 class Rfc027ObservabilityTests(unittest.TestCase):
+    def test_rfc029_stage_metrics_builder_counter_and_log_fields(self):
+        with observability.correlation_scope(
+            route_argument_builder_status="repaired",
+            route_selector_a_latency_ms=12700,
+            route_selector_b_latency_ms=4200,
+        ), patch.object(observability.ROUTE_SELECTOR_STAGE_DURATION_MS, "observe") as observe, patch.object(
+            observability.ROUTE_ARGUMENT_BUILDER_STATUS_TOTAL, "inc"
+        ) as inc:
+            observability.observe_request_correlation(17000, "ok")
+            self.assertEqual([call.args[0] for call in observe.call_args_list], [12700, 4200])
+            inc.assert_called_once()
+            self.assertEqual(observability.ROUTE_ARGUMENT_BUILDER_STATUS_TOTAL.label_calls[-1][-1], "repaired")
+            record = logging.LogRecord("test", logging.INFO, __file__, 1, "hello", (), None)
+            observability._RequestContextFilter().filter(record)
+            self.assertEqual(record.route_argument_builder_status, "repaired")
+        with observability.correlation_scope(route_argument_builder_status="unbounded-value"):
+            observability.observe_request_correlation(1, "ok")
+            self.assertEqual(observability.ROUTE_ARGUMENT_BUILDER_STATUS_TOTAL.label_calls[-1][-1], "unknown")
+
     def test_request_context_filter_populates_rfc027_route_identity_fields(self):
         observability.update_correlation_context(
             request_source="bot",

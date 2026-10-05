@@ -3,6 +3,18 @@ import unittest
 from bench.bench_lib import routing_accuracy_summary
 
 
+def test_argument_validity_excludes_missing_and_skipped():
+    statuses = ["valid", "repaired", "failed", "skipped", "", "unexpected"]
+    dataset = [{"id": str(i), "routing": {"route_id": "r"}} for i in range(len(statuses))]
+    rows = {str(i): {"meta": {"route_argument_builder_status": status}} for i, status in enumerate(statuses)}
+    route = routing_accuracy_summary(dataset, rows)["by_route"]["r"]
+    assert route["argument_valid"] == 2
+    assert route["argument_scored"] == 3
+    assert route["argument_validity_rate"] == 0.6667
+    assert routing_accuracy_summary(dataset, {})["by_route"]["r"]["argument_validity_rate"] is None
+
+
+
 class RoutingAccuracySummaryTests(unittest.TestCase):
     def test_cases_without_expected_route_id_are_skipped(self):
         dataset = [{"id": "c1", "routing": {"intent": "company_fact"}}]
@@ -20,7 +32,7 @@ class RoutingAccuracySummaryTests(unittest.TestCase):
         summary = routing_accuracy_summary(dataset, by_case)
 
         self.assertEqual(summary["scored_cases"], 1)
-        self.assertEqual(summary["by_route"]["corp_kb.company_common"], {"correct": 1, "total": 1, "accuracy": 1.0})
+        self.assertEqual(summary["by_route"]["corp_kb.company_common"], {"correct": 1, "total": 1, "accuracy": 1.0, "argument_valid": 0, "argument_scored": 0, "argument_validity_rate": None})
         self.assertEqual(summary["by_family"]["company_info"], {"correct": 1, "total": 1, "accuracy": 1.0})
         self.assertEqual(summary["mismatches"], [])
 
@@ -30,7 +42,7 @@ class RoutingAccuracySummaryTests(unittest.TestCase):
 
         summary = routing_accuracy_summary(dataset, by_case)
 
-        self.assertEqual(summary["by_route"]["corp_kb.series_description"], {"correct": 0, "total": 1, "accuracy": 0.0})
+        self.assertEqual(summary["by_route"]["corp_kb.series_description"], {"correct": 0, "total": 1, "accuracy": 0.0, "argument_valid": 0, "argument_scored": 0, "argument_validity_rate": None})
         self.assertEqual(summary["by_family"]["company_info"], {"correct": 0, "total": 1, "accuracy": 0.0})
         self.assertEqual(
             summary["mismatches"],
@@ -61,7 +73,7 @@ class RoutingAccuracySummaryTests(unittest.TestCase):
 
         summary = routing_accuracy_summary(dataset, by_case)
 
-        self.assertEqual(summary["by_route"]["corp_kb.series_description"], {"correct": 1, "total": 1, "accuracy": 1.0})
+        self.assertEqual(summary["by_route"]["corp_kb.series_description"], {"correct": 1, "total": 1, "accuracy": 1.0, "argument_valid": 0, "argument_scored": 0, "argument_validity_rate": None})
         self.assertEqual(summary["mismatches"], [])
 
     def test_aggregates_across_multiple_cases_for_the_same_route(self):
@@ -76,7 +88,7 @@ class RoutingAccuracySummaryTests(unittest.TestCase):
 
         summary = routing_accuracy_summary(dataset, by_case)
 
-        self.assertEqual(summary["by_route"]["corp_kb.company_common"], {"correct": 1, "total": 2, "accuracy": 0.5})
+        self.assertEqual(summary["by_route"]["corp_kb.company_common"], {"correct": 1, "total": 2, "accuracy": 0.5, "argument_valid": 0, "argument_scored": 0, "argument_validity_rate": None})
 
 
 if __name__ == "__main__":
