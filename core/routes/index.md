@@ -61,6 +61,23 @@ shared a KB scope but neither declared the other as a fallback. The selector cor
 the fallback anyway; the runtime rejected the whole response and the user saw a bounded
 "service unavailable" answer. See `docs/rfc/RFC-028-declarative-route-catalog-and-sanitizing-selector-contract.md`.
 
+Catalog fallback review (totosha-i7z5)
+--------------------------------------
+
+`corp_db.catalog_lookup` explicitly permits cross-family `corp_db.series_models` and
+`corp_db.sku_lookup` (restored by totosha-0vpy.2). A selector-proposed SKU fallback must survive
+Call A sanitization; the real-catalog regression lives in `tests/test_route_schema_files.py`.
+Recovery still uses the runtime's bounded fallback policy, not arbitrary selector hints.
+
+The incident's `dropped_undeclared_fallback` observations also covered
+`corp_db.application_recommendation` and `corp_db.sku_lookup`. Their lack of fallbacks is
+intentional in this review: an exact catalog lookup is not a substitute for an application
+recommendation, and a failed reverse-code lookup must not silently become a name-based lookup.
+Likewise, `lamp_filters` is not an exact-SKU fallback: broad filter results could be mistaken
+for the requested product. Keep these proposals sanitized rather than widening the allowlist
+just to suppress the metric. Adding recovery for them requires a reviewed input/constraint
+contract, not merely a route declaration.
+
 Adding a route
 --------------
 

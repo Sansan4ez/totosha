@@ -18,7 +18,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import yaml
 
 from documents import routing
-from documents.route_schema import normalize_argument_schema
+from documents.route_schema import (
+    normalize_argument_schema,
+    normalize_route_card_contract,
+    validate_route_choice_output,
+)
 
 
 class RouteSchemaFilesTests(unittest.TestCase):
@@ -63,6 +67,39 @@ class RouteSchemaFilesTests(unittest.TestCase):
             with self.subTest(route=route.get("route_id")):
                 self.assertEqual(route.get("argument_schema_origin"), "schema_file")
                 self.assertIsInstance(route.get("argument_schema"), dict)
+
+    def test_catalog_selector_preserves_declared_cross_family_fallbacks(self):
+        routes = routing.bootstrap_route_cards()
+        routes_by_id = {route["route_id"]: route for route in routes}
+        fallback_ids = ["corp_db.series_models", "corp_db.sku_lookup"]
+        catalog = normalize_route_card_contract(routes_by_id["corp_db.catalog_lookup"])
+        self.assertEqual(catalog["fallback_policy"]["cross_family_route_ids"], fallback_ids)
+        result = validate_route_choice_output(
+            {
+                "selected_route_id": "corp_db.catalog_lookup",
+                "fallback_route_ids": fallback_ids,
+            },
+            routes,
+        )
+        self.assertTrue(result.valid, result.error)
+        self.assertEqual(result.fallback_route_ids, fallback_ids)
+        self.assertEqual(result.sanitization_actions, [])
+
+    def test_catalog_fallback_review_keeps_undeclared_routes_blocked(self):
+        routes = routing.bootstrap_route_cards()
+        for selected, proposed in (
+            ("corp_db.catalog_lookup", "corp_db.lamp_filters"),
+            ("corp_db.application_recommendation", "corp_db.catalog_lookup"),
+            ("corp_db.sku_lookup", "corp_db.catalog_lookup"),
+        ):
+            with self.subTest(selected=selected, proposed=proposed):
+                result = validate_route_choice_output(
+                    {"selected_route_id": selected, "fallback_route_ids": [proposed]},
+                    routes,
+                )
+                self.assertTrue(result.valid, result.error)
+                self.assertEqual(result.fallback_route_ids, [])
+                self.assertIn("dropped_undeclared_fallback", result.sanitization_actions)
 
     def test_document_routes_accept_bounded_names_array(self):
         routing._load_static_route_cards_from_disk.cache_clear()
