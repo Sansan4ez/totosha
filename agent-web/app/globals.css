@@ -24,6 +24,15 @@
 html,
 body {
   height: 100%;
+  /* The widget is not a browsing surface: contain history-swipe/scroll chaining. */
+  overscroll-behavior: none;
+}
+
+/* Apply at actual scroll containers too; table/code horizontal scrolling stays usable. */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto {
+  overscroll-behavior: contain;
 }
 
 body {

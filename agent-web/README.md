@@ -19,6 +19,12 @@ Out of scope in this scaffold:
 
 ## Embedding
 
+The widget contains overscroll at its document and scroll containers to reduce accidental
+browser history swipes, while keeping vertical messages and horizontal tables scrollable.
+Browser back/forward buttons and mouse side buttons are not intercepted. The embedding
+site may also need `overscroll-behavior-x: none` on its own document: an iframe cannot
+control the parent page's browser gestures. Verify on the actual browser/device.
+
 Use the widget in an iframe:
 
 ```html
