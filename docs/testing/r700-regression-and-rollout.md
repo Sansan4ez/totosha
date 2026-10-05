@@ -182,3 +182,43 @@ Trace IDs выше позволяют найти запросы в telemetry. О
 Откат: `docker tag totosha-core:r700-rollback-20261005 totosha-core:latest`,
 аналогично tools-api, затем `docker compose up -d --no-deps core tools-api`.
 Текущий prod оставлен на проверенных исправленных образах, rollback tags сохранены.
+
+
+## Merge to main and production redeploy — 2026-10-06 MSK
+
+По поручению пользователя ветка влита в `main` merge-коммитом
+`3ad8c4e60162de5b4ad7cfb55147ca9a99c36bc3` и отправлена в `origin/main`.
+Из этого SHA пересобраны и пересозданы только `core`, `tools-api`, `agent-web`.
+`/health` core подтверждает SHA, selector enabled и routing catalog ok;
+все три контейнера healthy, web health возвращает ok. БД и остальные сервисы
+не перезапускались. Проверки ссылок и мыши ранее подтверждены пользователем.
+
+Сохранены непосредственно предшествующие образы для отката:
+`totosha-core:pre-main-20261005`, `totosha-tools-api:pre-main-20261005`,
+`totosha-agent-web:pre-main-20261005`. Чтобы откатить сервис, перетегировать
+его rollback image в `totosha-<service>:latest` и выполнить
+`docker compose up -d --no-deps core tools-api agent-web`.
+
+После health readiness повторены 10 API-сценариев в новой сессии
+(первые пять — одна последовательная цепочка). Все ответы без tool errors.
+Assertions: ровно пять R700 строк, пять PROM-only строк, portfolio route на
+обоих запросах объектов и обязательное предупреждение о косвенной связи,
+unknown series без подмены, ETM/ORACL коды присутствуют. Дополнительно вручную
+проверены описание, сравнение R500/R700 и точный SKU. Latency 4.75–19.51 s.
+
+| Request ID | Trace ID | Latency, s |
+|---|---|---:|
+| r700-main-20261005-01 | b5c41031a53691e86f5a439e8d718e8a | 7.03 |
+| r700-main-20261005-02 | 8b9f636356e87100b3201638378f3da4 | 19.51 |
+| r700-main-20261005-03 | d81ddafdcd14628089f626e5de80eb5a | 6.66 |
+| r700-main-20261005-04 | 431586b444280fb2da5110026f2701ac | 9.47 |
+| r700-main-20261005-05 | f996ef671dacecbfee30fdbc3228ab7d | 12.33 |
+| r700-main-20261005-06 | 84dfa87ec9d5566dd7333c2648a69392 | 12.1 |
+| r700-main-20261005-07 | b787781657a206fa6f5af1deb5eebb28 | 6.86 |
+| r700-main-20261005-08 | 1b2f9f54e3030cbc4de5a2aea973cef6 | 4.75 |
+| r700-main-20261005-09 | cb5793d7e623bad1c99b16cc1e0d7a7a | 15.68 |
+| r700-main-20261005-10 | 89544169a963b7ea85e96900a5b70b5a | 6.28 |
+
+Локальные raw artifacts/logs/build/health: `.git/r700-main-rollout/`; не публикуются
+из-за session/account data. Документационный коммит после merge не меняет runtime code;
+работающие образы намеренно маркированы SHA merge-коммита.
