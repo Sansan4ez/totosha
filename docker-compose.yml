@@ -256,6 +256,7 @@ services:
 
   # ============ MCP TEST SERVER ============
   mcp-test:
+    profiles: ["test"]
     build: ./mcp-test
     container_name: mcp-test
     restart: unless-stopped
