@@ -17,6 +17,26 @@ Out of scope in this scaffold:
 - persisted browser history;
 - full structured UI schema and component registry.
 
+## Dependency maintenance
+
+Next.js and `eslint-config-next` are pinned together at 15.5.27. React 18 remains
+supported; the Node 22 Docker image satisfies Next.js 15's Node >=18.18 requirement.
+The app has no synchronous `cookies()`, `headers()`, or dynamic route parameters
+requiring migration to Next.js 15's async request APIs. GET route handlers are no
+longer cached by default; the health endpoint intentionally returns a fresh response.
+Next.js updated the TypeScript target to ES2017 and generated route type references.
+
+PostCSS is pinned to 8.5.29 with an npm override referencing the direct dependency.
+Keep this override: Next.js 15 otherwise installs a vulnerable nested PostCSS even
+when the direct dependency is patched. Revalidate the build when changing it.
+
+Verification for this upgrade: `npm ci`, `npm test` (9 passing tests), `npm run build`,
+and a local production standalone-server smoke (health, homepage, security headers,
+and static JavaScript). `npm audit --omit=dev` reports zero vulnerabilities.
+The full audit still reports development-tool findings in the Tailwind/ESLint glob
+chain (braces) and esbuild; resolving those requires separate tooling maintenance.
+This smoke does not exercise the live reverse proxy or the core chat backend.
+
 ## Embedding
 
 The widget contains overscroll at its document and scroll containers to reduce accidental
