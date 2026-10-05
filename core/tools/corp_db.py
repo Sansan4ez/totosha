@@ -391,25 +391,26 @@ async def tool_corp_db_search(args: dict, ctx: ToolContext) -> ToolResult:
 
                     try:
                         data = json.loads(text)
-                        span.set_attribute("corp_db.status", str(data.get("status", "success")) if isinstance(data, dict) else "success")
-                        bench_payload_format = "compact_company_fact_v1" if _is_company_fact_kb_search(args, data) else "compact_bench_value_v1"
-                        span.set_attribute("corp_db.runtime_payload_format", RUNTIME_PAYLOAD_FORMAT_FULL_JSON)
-                        span.set_attribute("corp_db.bench_payload_format", bench_payload_format)
-                        metadata = build_output_contract_metadata(
-                            bench_artifact=_build_bench_artifact(args, data),
-                            runtime_payload_format=RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
-                            bench_payload_format=bench_payload_format,
-                        )
-                        constraint_status = _apply_constraint_evidence(span, args=args, data=data)
-                        metadata["retrieval_constraint_evidence_status"] = constraint_status
-                        if isinstance(data, dict) and isinstance(data.get("filter_contract"), dict):
-                            metadata["filter_contract"] = dict(data["filter_contract"])
-                        if isinstance(data, dict) and str(data.get("status") or "").lower() == "error":
-                            return ToolResult(False, error=_payload_error_message(data), output=_serialize_runtime_payload(data), metadata=metadata)
-                        return ToolResult(True, output=_serialize_runtime_payload(data), metadata=metadata)
-                    except Exception:
+                    except json.JSONDecodeError:
                         span.set_attribute("corp_db.status", "success")
                         return ToolResult(True, output=text)
+
+                    span.set_attribute("corp_db.status", str(data.get("status", "success")) if isinstance(data, dict) else "success")
+                    bench_payload_format = "compact_company_fact_v1" if _is_company_fact_kb_search(args, data) else "compact_bench_value_v1"
+                    span.set_attribute("corp_db.runtime_payload_format", RUNTIME_PAYLOAD_FORMAT_FULL_JSON)
+                    span.set_attribute("corp_db.bench_payload_format", bench_payload_format)
+                    metadata = build_output_contract_metadata(
+                        bench_artifact=_build_bench_artifact(args, data),
+                        runtime_payload_format=RUNTIME_PAYLOAD_FORMAT_FULL_JSON,
+                        bench_payload_format=bench_payload_format,
+                    )
+                    constraint_status = _apply_constraint_evidence(span, args=args, data=data)
+                    metadata["retrieval_constraint_evidence_status"] = constraint_status
+                    if isinstance(data, dict) and isinstance(data.get("filter_contract"), dict):
+                        metadata["filter_contract"] = dict(data["filter_contract"])
+                    if isinstance(data, dict) and str(data.get("status") or "").lower() == "error":
+                        return ToolResult(False, error=_payload_error_message(data), output=_serialize_runtime_payload(data), metadata=metadata)
+                    return ToolResult(True, output=_serialize_runtime_payload(data), metadata=metadata)
         except Exception as exc:
             duration_ms = (perf_counter() - started_at) * 1000
             error = _format_corp_db_exception(exc, budget)

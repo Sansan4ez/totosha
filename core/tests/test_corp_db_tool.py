@@ -140,6 +140,39 @@ def _aiohttp_stub_for_payload(payload: object, *, status: int = 200):
 
 
 class CorpDbToolFormattingTests(unittest.TestCase):
+    def test_invalid_json_preserves_plain_text_fallback(self):
+        body = "not a JSON response"
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        tracer = _DummyTracer()
+        stub = types.SimpleNamespace(
+            ClientTimeout=_FakeTimeout,
+            ClientSession=lambda timeout: _FakeSession(timeout, _FakeResponse(200, body)),
+        )
+        with patch.object(_MODULE, "aiohttp", stub), patch.object(_MODULE, "_get_tracer", return_value=tracer):
+            result = asyncio.run(tool_corp_db_search({"kind": "hybrid_search"}, ctx))
+        self.assertTrue(result.success)
+        self.assertEqual(result.output, body)
+        self.assertEqual(tracer.last_span.attributes["corp_db.status"], "success")
+
+    def test_metadata_building_errors_do_not_silently_succeed(self):
+        ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
+        for helper in ("_build_bench_artifact", "build_output_contract_metadata"):
+            with self.subTest(helper=helper):
+                tracer = _DummyTracer()
+                stub = _aiohttp_stub_for_payload({"status": "success", "results": []})
+                # Even a JSONDecodeError raised by a builder is not a parse fallback.
+                error = json.JSONDecodeError("metadata builder failed", "", 0)
+                with patch.object(_MODULE, "aiohttp", stub), patch.object(
+                    _MODULE, "_get_tracer", return_value=tracer
+                ), patch.object(_MODULE, helper, side_effect=error), self.assertLogs(
+                    _MODULE.logger, level="WARNING"
+                ) as logs:
+                    result = asyncio.run(tool_corp_db_search({"kind": "hybrid_search"}, ctx))
+                self.assertFalse(result.success)
+                self.assertIn("metadata builder failed", result.error)
+                self.assertIn("metadata builder failed", " ".join(logs.output))
+                self.assertEqual(tracer.last_span.attributes["corp_db.status"], "transport_error")
+
     def test_runtime_payload_preserves_all_rows_and_fields(self):
         data = {
             "status": "success",
