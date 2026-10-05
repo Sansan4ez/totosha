@@ -53,6 +53,8 @@ cd topsha
 - `secrets/base_url.txt`
 - `secrets/api_key.txt`
 - `secrets/model_name.txt`
+- `secrets/embeddings_base_url.txt` (файл обязателен для Compose; пустой = URL LLM upstream)
+- `secrets/embeddings_api_key.txt` (файл обязателен для Compose; пустой = API key LLM upstream)
 - `secrets/admin_password.txt` (сменить дефолт) — basic auth админ-панели
 - `secrets/admin_api_token.txt` — сервисный токен core admin API, `openssl rand -hex 32`
 - `secrets/grafana_admin_password.txt` — пароль администратора Grafana, `openssl rand -base64 24`
@@ -63,6 +65,12 @@ cd topsha
 Рекомендуемо/опционально:
 
 - `secrets/zai_api_key.txt` (web search)
+
+Для отдельного embeddings upstream заполните `embeddings_base_url.txt` и
+`embeddings_api_key.txt`. Значение `local` в `embeddings_base_url.txt` отключает
+внешние embeddings-запросы и включает локальные hash embeddings (не семантическую
+модель); ключ в этом режиме не используется. Пустые файлы не отключают внешние
+запросы: они переиспользуют LLM upstream.
 
 Для `userbot` (раз включаем сразу):
 

@@ -28,6 +28,16 @@ if [ ! -f secrets/base_url.txt ]; then
   echo "📝 Created secrets/base_url.txt with default OpenAI URL"
 fi
 
+# Embeddings override files are required by Compose, but values are optional.
+# Empty values reuse the LLM upstream URL/key; base URL "local" skips upstream
+# requests and uses local hash embeddings (not a semantic embedding model).
+for secret in embeddings_base_url embeddings_api_key; do
+  if [ ! -f "secrets/${secret}.txt" ]; then
+    touch "secrets/${secret}.txt"
+    echo "📝 Created empty secrets/${secret}.txt (reuses LLM upstream)"
+  fi
+done
+
 # Optional secrets (empty = feature disabled)
 if [ ! -f secrets/zai_api_key.txt ]; then
   touch secrets/zai_api_key.txt

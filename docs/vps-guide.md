@@ -265,7 +265,23 @@ sudo chmod 755 /opt/totosha
 sudo chmod 700 /opt/totosha/secrets
 ```
 
-Примеры secret env-файлов:
+Если используется штатный `docker-compose.yml` из этого репозитория, запустите
+`bash setup.sh` из каталога checkout для создания базовых file secrets
+(см. [инструкцию установки](install-topsha.md)). В частности, Compose требует
+наличия обоих файлов:
+
+- `secrets/embeddings_base_url.txt` — пустой = URL LLM upstream;
+- `secrets/embeddings_api_key.txt` — пустой = API key LLM upstream.
+
+Для отдельного embeddings upstream заполните оба файла. Sentinel `local` в
+`embeddings_base_url.txt` отключает внешние embeddings-запросы и использует
+локальные hash embeddings (не семантическую модель); ключ не используется.
+Пустые значения не отключают внешние запросы, а переиспользуют LLM upstream.
+При materialization секретов средствами инфраструктуры создавайте эти файлы
+даже при пустых значениях.
+
+Примеры secret env-файлов для упрощённого Compose ниже (не замена `.txt` secrets
+штатного `docker-compose.yml`):
 
 ```bash
 sudo nano /opt/totosha/secrets/tgbot.env

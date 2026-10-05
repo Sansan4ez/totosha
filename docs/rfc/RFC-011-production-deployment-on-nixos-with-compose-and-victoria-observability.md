@@ -389,6 +389,8 @@ Runtime contract for `totosha`:
 - `telegram_token.txt`
 - `base_url.txt`
 - `api_key.txt`
+- `embeddings_base_url.txt` (обязательный файл; пустой = URL LLM upstream)
+- `embeddings_api_key.txt` (обязательный файл; пустой = API key LLM upstream)
 - `model_name.txt`
 - `admin_password.txt`
 - `admin_api_token.txt`
@@ -396,6 +398,13 @@ Runtime contract for `totosha`:
 - `postgres_password.txt`
 - `corp_db_rw_dsn.txt`
 - `corp_db_ro_dsn.txt`
+
+Для отдельного embeddings upstream задаются `embeddings_base_url.txt` и
+`embeddings_api_key.txt`. Sentinel `local` в `embeddings_base_url.txt` отключает
+внешние embeddings-запросы и использует локальные hash embeddings (не семантическую
+модель); ключ не используется. Пустые значения переиспользуют LLM upstream,
+а не отключают embeddings-запросы. Оба файла необходимо материализовать даже
+при пустых значениях.
 
 Дополнительно:
 
