@@ -140,8 +140,8 @@ CORP_DB_KIND_CONTRACTS: dict[str, dict[str, Any]] = {
         "passthrough": _PAGINATION,
     },
     "portfolio_examples_by_lamp": {
-        "required": ("name",),
-        "consumed": ("name",),
+        "required_any_of": (("name", "series", "category"),),
+        "consumed": ("name", "series", "subfamily", "category"),
         "passthrough": _PAGINATION,
     },
     "sphere_curated_categories": {

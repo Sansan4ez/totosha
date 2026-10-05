@@ -1,6 +1,27 @@
 {
   "additionalProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "name"
+      ]
+    },
+    {
+      "required": [
+        "series"
+      ]
+    },
+    {
+      "required": [
+        "category"
+      ]
+    }
+  ],
   "properties": {
+    "category": {
+      "maxLength": 240,
+      "type": "string"
+    },
     "limit": {
       "maximum": 50,
       "minimum": 1,
@@ -10,28 +31,20 @@
       "maxLength": 240,
       "type": "string"
     },
+    "offset": {
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "integer"
+    },
     "series": {
       "maxLength": 200,
       "type": "string"
     },
     "subfamily": {
-      "maxLength": 200,
+      "maxLength": 240,
       "type": "string"
-    },
-    "category": {
-      "maxLength": 200,
-      "type": "string"
-    },
-    "offset": {
-      "maximum": 10000,
-      "minimum": 0,
-      "type": "integer"
     }
   },
-  "anyOf": [
-    {"required": ["name"]},
-    {"required": ["series"]},
-    {"required": ["category"]}
-  ],
+  "required": [],
   "type": "object"
 }

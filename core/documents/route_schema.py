@@ -292,6 +292,7 @@ def _corp_db_argument_properties() -> dict[str, dict[str, Any]]:
         "oracl": _string_property(80),
         "category": _string_property(240),
         "series": _string_property(200),
+        "subfamily": _string_property(240),
         "sphere": _string_property(240),
         "mounting_type": _string_property(160),
         "beam_pattern": _string_property(160),

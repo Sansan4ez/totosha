@@ -59,6 +59,30 @@ class RouteSchemaFilesTests(unittest.TestCase):
                     f"{schema_path.name} is stale; re-run scripts/generate_route_argument_schemas.py",
                 )
 
+    def test_generated_schemas_preserve_typed_series_and_portfolio_selectors(self):
+        routes = {route["route_id"]: route for route in routing.load_static_route_cards()}
+        for route_id, fields in (
+            ("corp_db.series_models", {"name", "subfamily"}),
+            ("corp_db.portfolio_examples_by_lamp", {"name", "series", "subfamily", "category"}),
+        ):
+            with self.subTest(route=route_id):
+                route = dict(routes[route_id])
+                route.pop("argument_schema", None)
+                route.pop("argument_schema_origin", None)
+                routing._apply_runtime_argument_overrides(route)
+                schema = route["argument_schema"]
+                self.assertTrue(fields.issubset(schema["properties"]))
+                self.assertTrue(fields.issubset(route["execution_argument_schema"]["properties"]))
+                if route_id == "corp_db.portfolio_examples_by_lamp":
+                    self.assertEqual(schema["required"], [])
+                    self.assertEqual(schema["anyOf"], [
+                        {"required": ["name"]},
+                        {"required": ["series"]},
+                        {"required": ["category"]},
+                    ])
+                else:
+                    self.assertEqual(schema["required"], ["name"])
+
     def test_loaded_catalog_uses_schema_files(self):
         routing._load_static_route_cards_from_disk.cache_clear()
         routes = routing.load_static_route_cards()
