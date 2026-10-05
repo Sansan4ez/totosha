@@ -82,6 +82,13 @@ CORRELATION_FIELDS = (
     "retrieval_evidence_status",
     "retrieval_constraint_evidence_status",
     "retrieval_close_reason",
+    "retrieval_business_status",
+    "retrieval_output_status",
+    "route_argument_builder_status",
+    "route_selector_a_latency_ms",
+    "route_selector_b_latency_ms",
+    "retrieval_fallback_attempted",
+    "route_selector_sanitization_actions",
     "route_arg_validation_status",
     "route_selector_validation_error_code",
     "route_selector_confidence",
@@ -115,6 +122,12 @@ CORRELATION_FIELD_DEFAULTS = {
     "retrieval_evidence_status": "-",
     "retrieval_constraint_evidence_status": "unknown",
     "retrieval_close_reason": "-",
+    "retrieval_business_status": "unknown",
+    "retrieval_output_status": "unknown",
+    "route_argument_builder_status": "unknown",
+    "route_selector_a_latency_ms": "0",
+    "route_selector_b_latency_ms": "0",
+    "retrieval_fallback_attempted": "0",
     "route_arg_validation_status": "none",
     "route_selector_validation_error_code": "-",
     "route_selector_confidence": "-",
@@ -128,6 +141,7 @@ CORRELATION_FIELD_DEFAULTS = {
     "guardrail_blocked_tool": "-",
     "finalizer_mode": "-",
     "route_selector_sanitization_actions": "-",
+    "retrieval_output_status": "unknown",
 }
 SPAN_ATTRIBUTE_NAMES = {
     "request_source": "request_source",
@@ -148,6 +162,13 @@ SPAN_ATTRIBUTE_NAMES = {
     "retrieval_evidence_status": "retrieval_evidence_status",
     "retrieval_constraint_evidence_status": "retrieval_constraint_evidence_status",
     "retrieval_close_reason": "retrieval_close_reason",
+    "retrieval_business_status": "retrieval_business_status",
+    "retrieval_output_status": "retrieval_output_status",
+    "route_argument_builder_status": "route_argument_builder_status",
+    "route_selector_a_latency_ms": "route_selector_a_latency_ms",
+    "route_selector_b_latency_ms": "route_selector_b_latency_ms",
+    "retrieval_fallback_attempted": "retrieval_fallback_attempted",
+    "route_selector_sanitization_actions": "route_selector_sanitization_actions",
     "route_arg_validation_status": "route_arg_validation_status",
     "route_selector_validation_error_code": "route_selector_validation_error_code",
     "route_selector_confidence": "route_selector_confidence",
@@ -284,6 +305,32 @@ RETRIEVAL_CONSTRAINT_EVIDENCE_TOTAL = Counter(
     "Corp DB results grouped by bounded route, kind, and canonical constraint evidence status.",
     labelnames=("service", "selected_route_id", "kind", "status"),
     registry=REGISTRY,
+)
+RETRIEVAL_BUSINESS_OUTCOMES_TOTAL = Counter(
+    "retrieval_business_outcomes_total",
+    "Business result outcomes, distinct from HTTP/tool transport status.",
+    labelnames=("service", "route", "kind", "status", "reason"),
+    registry=REGISTRY,
+)
+RETRIEVAL_FALLBACK_OUTCOMES_TOTAL = Counter(
+    "retrieval_fallback_outcomes_total",
+    "Fallback completion outcomes; attempted count is a bounded zero/nonzero label.",
+    labelnames=("service", "route", "kind", "outcome", "attempted"),
+    registry=REGISTRY,
+)
+ROUTE_SELECTOR_STAGE_DURATION_MS = Histogram(
+    "route_selector_stage_duration_milliseconds",
+    "Selector A/B latency by stage and bounded selected route.",
+    labelnames=("service", "route", "stage"),
+    registry=REGISTRY,
+    buckets=LATENCY_BUCKETS_MS,
+)
+ROUTE_FINALIZER_DURATION_MS = Histogram(
+    "route_finalizer_duration_milliseconds",
+    "Route finalizer latency by bounded selected route and mode.",
+    labelnames=("service", "route", "mode"),
+    registry=REGISTRY,
+    buckets=LATENCY_BUCKETS_MS,
 )
 TOOL_EXECUTION_DURATION_MS = Histogram(
     "tool_execution_duration_milliseconds",
@@ -570,6 +617,25 @@ def _bounded_label(value: str, allowed: frozenset[str], default: str = "other") 
 
 
 @lru_cache(maxsize=1)
+def _known_route_ids() -> frozenset[str]:
+    from documents.routing import load_routing_index
+
+    return frozenset(
+        route_id
+        for route in load_routing_index().get("routes", ())
+        if isinstance(route, dict)
+        if (route_id := str(route.get("route_id") or "").strip())
+    )
+
+
+def _bounded_route_label(value: str) -> str:
+    try:
+        return _bounded_label(value, _known_route_ids())
+    except Exception:
+        return "other"
+
+
+@lru_cache(maxsize=1)
 def _known_knowledge_route_ids() -> frozenset[str]:
     """Return the catalog-bounded domain for knowledge-route metric labels."""
     # Keep this import lazy: documents.routing imports modules that may initialize
@@ -610,6 +676,58 @@ def observe_request_correlation(duration_ms: float, status: str) -> None:
         _metric_label(context, "used_fallback_scope"),
         _metric_label(context, "finalizer_mode"),
     )
+    route = _bounded_route_label(_metric_label(context, "selected_route_id"))
+    kind = context.get("selected_route_kind", "unknown")
+    if kind not in {"corp_table", "knowledge", "documents", "catalog", "unknown"}:
+        kind = "other"
+    business_status = context.get("retrieval_business_status", "unknown")
+    if business_status not in {"success", "empty", "error", "unknown"}:
+        business_status = "unknown"
+    reason = context.get("retrieval_close_reason", "unknown")
+    constraint_status = context.get("retrieval_constraint_evidence_status", "unknown")
+    if constraint_status in {"mismatch", "ignored"}:
+        reason = f"evidence_{constraint_status}"
+        if business_status == "unknown":
+            business_status = "error"
+    allowed_reasons = {
+        "entity_not_resolved", "unknown_series", "evidence_mismatch", "evidence_ignored", "fallback_exhausted",
+        "dropped_undeclared_fallback", "duplicate_empty_suppressed", "payload_sufficient", "unknown",
+    }
+    reason_text = reason.lower()
+    if "unknown_series" in reason_text or "series_not_found" in reason_text:
+        reason = "unknown_series"
+    elif "entity_not_found" in reason_text or "entity_not_resolved" in reason_text or "lamp_not_found" in reason_text:
+        reason = "entity_not_resolved"
+    elif "mismatch" in reason_text:
+        reason = "evidence_mismatch"
+    elif "ignored" in reason_text:
+        reason = "evidence_ignored"
+    elif "fallback_exhausted" in reason_text:
+        reason = "fallback_exhausted"
+    elif "dropped_undeclared_fallback" in reason_text or "dropped undeclared fallback" in reason_text:
+        reason = "dropped_undeclared_fallback"
+    elif "duplicate" in reason_text and "empty" in reason_text:
+        reason = "duplicate_empty_suppressed"
+    elif "sufficient" in reason_text:
+        reason = "payload_sufficient"
+    else:
+        reason = reason if reason in allowed_reasons else "unknown"
+    RETRIEVAL_BUSINESS_OUTCOMES_TOTAL.labels(
+        ACTIVE_SERVICE_NAME, route, kind, business_status, reason
+    ).inc()
+    fallback_count = context.get("retrieval_fallback_attempted", "0")
+    attempted = "yes" if fallback_count.isdigit() and int(fallback_count) > 0 else "no"
+    if reason == "fallback_exhausted":
+        RETRIEVAL_FALLBACK_OUTCOMES_TOTAL.labels(
+            ACTIVE_SERVICE_NAME, route, kind, "exhausted", attempted
+        ).inc()
+    for stage in ("a", "b"):
+        try:
+            stage_ms = float(context.get(f"route_selector_{stage}_latency_ms", "0"))
+        except ValueError:
+            stage_ms = 0.0
+        if stage_ms > 0:
+            ROUTE_SELECTOR_STAGE_DURATION_MS.labels(ACTIVE_SERVICE_NAME, route, stage).observe(stage_ms)
     RETRIEVAL_ROUTE_REQUESTS_TOTAL.labels(*labels).inc()
     RETRIEVAL_ROUTE_DURATION_MS.labels(*labels).observe(duration_ms)
     RETRIEVAL_ROUTE_FAMILY_REQUESTS_TOTAL.labels(
@@ -775,6 +893,15 @@ def observe_tool_execution(tool_name: str, tool_status: str, duration_ms: float)
     TOOL_EXECUTION_DURATION_MS.labels(*labels).observe(duration_ms)
 
 
+def observe_route_finalizer_duration(duration_ms: float, *, route: str, mode: str = "llm") -> None:
+    route_label = str(route or "none").strip()
+    ROUTE_FINALIZER_DURATION_MS.labels(
+        ACTIVE_SERVICE_NAME,
+        _bounded_route_label(route_label),
+        mode if mode in {"llm", "deterministic", "unavailable", "other"} else "other",
+    ).observe(max(0.0, float(duration_ms)))
+
+
 def observe_route_selector_prompt_size(total_chars: int) -> None:
     ROUTE_SELECTOR_PROMPT_CHARS.labels(ACTIVE_SERVICE_NAME).observe(max(0, int(total_chars)))
 
@@ -856,7 +983,10 @@ def setup_observability(service_name: str) -> None:
         "used_fallback_scope=%(used_fallback_scope)s used_fallback_route_id=%(used_fallback_route_id)s "
         "fallback_family_id=%(fallback_family_id)s routing_catalog_version=%(routing_catalog_version)s "
         "routing_guardrail_hits=%(routing_guardrail_hits)s guardrail_blocked_tool=%(guardrail_blocked_tool)s "
-        "finalizer_mode=%(finalizer_mode)s "
+        "finalizer_mode=%(finalizer_mode)s retrieval_business_status=%(retrieval_business_status)s "
+        "retrieval_output_status=%(retrieval_output_status)s route_argument_builder_status=%(route_argument_builder_status)s "
+        "route_selector_a_latency_ms=%(route_selector_a_latency_ms)s route_selector_b_latency_ms=%(route_selector_b_latency_ms)s "
+        "retrieval_fallback_attempted=%(retrieval_fallback_attempted)s "
         "route_selector_sanitization_actions=%(route_selector_sanitization_actions)s %(name)s: %(message)s"
     )
     request_filter = _RequestContextFilter()

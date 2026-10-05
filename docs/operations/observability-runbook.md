@@ -278,6 +278,24 @@ corp_db_search error: TimeoutError: request timed out; timeout_budget={connect:5
 
 If the error message is empty or lacks the budget, first verify the running container actually includes the updated build.
 
+Business-empty and restart-counter triage
+-----------------------------------------
+
+HTTP 2xx and `tool_status=ok` describe transport/execution only. Use the core business outcome signal to distinguish `success`, `empty`, `error`, and bounded reason groups. The dashboard panel **Retrieval Business Outcomes (HTTP 200 may be empty)** breaks down route/kind/status/reason. Alert thresholds deliberately require a minimum sample: `RetrievalBusinessEmptyHigh` requires at least 10 outcomes and >50% empty for a sustained 10m; `RetrievalFallbackExhaustedWithoutAttempts` requires at least 3 exhausted zero-attempt outcomes. A single legitimate unknown-series/no-match does not page. Constraint ignored/mismatch alert also requires at least 10 observations.
+
+```promql
+sum by (route, kind, status, reason) (increase(retrieval_business_outcomes_total{service_name="core"}[15m]))
+sum by (route, kind, outcome, attempted) (increase(retrieval_fallback_outcomes_total{service_name="core"}[15m]))
+histogram_quantile(0.95, sum by (le, route, stage) (rate(route_selector_stage_duration_milliseconds_bucket{service_name="core"}[15m])))
+histogram_quantile(0.95, sum by (le, route, mode) (rate(route_finalizer_duration_milliseconds_bucket{service_name="core"}[15m])))
+```
+
+Selector A/B metrics reuse the existing RFC-029 span measurements; finalizer histogram measures the LLM finalization call. `route_argument_builder_status`, phase/close reason, evidence/output status, selector latencies, and fallback attempt count are included in correlated core logs/spans. Metric labels are catalog route, bounded kind/status/reason, stage or finalizer mode only—never query/name/user/trace IDs.
+
+Prometheus counters are process-local and reset on restart. `increase()`/`rate()` can undercount a first increment if a scrape has not observed the series before process exit, or if the entire short-lived series falls between scrapes; this cannot be reconstructed from the new process's counter. Counters are incremented on the first observed request (no delayed initialization dependency), but the restart smoke should check a fresh request before and after restarting core, verify the new label series appears in `/metrics` and VictoriaMetrics after the next scrape, and compare the exact fresh request with correlated logs. For outage intervals or scrape gaps, mark counter totals as lower bounds and reconcile with logs/traces; never treat `increase()` as exact event accounting.
+
+Alert rule validation: run `promtool check rules victoriametrics/alerts/vmalert-rules.yaml` (or the matching `vmalert-tool` check in the deployed image). In rule tests inject (a) 10 outcomes with 6 empty across successive windows and (b) a single `unknown_series` empty; only (a) should fire. For fallback, three `exhausted,attempted=no` events should fire; a normal empty/no-match should not. A restart smoke should issue one request, restart `core`, issue a second request with the same bounded label combination, then check `/metrics` and VictoriaMetrics for the new process's first increment and the next scrape. This repository environment lacked `promtool` and pytest dependencies, so these runtime tests remain deployment verification steps rather than a claimed local pass.
+
 Notes
 -----
 

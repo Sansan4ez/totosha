@@ -221,6 +221,48 @@ class Rfc027ObservabilityTests(unittest.TestCase):
                 "corp_kb.series_description",
             )
 
+    def test_business_metrics_distinguish_empty_from_http_success_and_bound_reason(self):
+        observability.CORRELATION_CONTEXT.set({})
+        observability.RETRIEVAL_BUSINESS_OUTCOMES_TOTAL.label_calls.clear()
+        observability.update_correlation_context(
+            selected_route_id="corp_db.series_models",
+            selected_route_kind="catalog",
+            retrieval_business_status="empty",
+            retrieval_close_reason="entity_not_resolved",
+            retrieval_evidence_status="empty",
+        )
+        observability.observe_request_correlation(12.0, "200")
+        labels = observability.RETRIEVAL_BUSINESS_OUTCOMES_TOTAL.label_calls[-1]
+        self.assertEqual(labels[3:], ("empty", "entity_not_resolved"))
+        self.assertEqual(
+            observability.RETRIEVAL_BUSINESS_OUTCOMES_TOTAL.labelnames,
+            ("service", "route", "kind", "status", "reason"),
+        )
+
+    def test_legitimate_unknown_series_reason_is_separately_bounded(self):
+        observability.CORRELATION_CONTEXT.set({})
+        observability.RETRIEVAL_BUSINESS_OUTCOMES_TOTAL.label_calls.clear()
+        observability.update_correlation_context(
+            selected_route_id="corp_db.series_models",
+            selected_source="corp_db",
+            retrieval_business_status="empty",
+            retrieval_close_reason="unknown_series",
+        )
+        observability.observe_request_correlation(1.0, "200")
+        self.assertEqual(observability.RETRIEVAL_BUSINESS_OUTCOMES_TOTAL.label_calls[-1][4], "unknown_series")
+
+    def test_first_observed_series_is_created_on_increment(self):
+        observability.CORRELATION_CONTEXT.set({})
+        observability.RETRIEVAL_BUSINESS_OUTCOMES_TOTAL.label_calls.clear()
+        observability.update_correlation_context(
+            selected_route_id="corp_db.series_models",
+            selected_source="corp_db",
+            retrieval_business_status="empty",
+            retrieval_close_reason="unknown_series",
+        )
+        observability.observe_request_correlation(1.0, "200")
+        self.assertEqual(len(observability.RETRIEVAL_BUSINESS_OUTCOMES_TOTAL.label_calls), 1)
+
     def test_high_cardinality_document_id_is_not_a_metric_label(self):
         metrics = (
             observability.RETRIEVAL_ROUTE_REQUESTS_TOTAL,

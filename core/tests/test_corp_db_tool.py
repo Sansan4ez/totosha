@@ -268,6 +268,25 @@ class CorpDbToolFormattingTests(unittest.TestCase):
         self.assertEqual(result.metadata["retrieval_constraint_evidence_status"], "matched")
         self.assertEqual(result.metadata["filter_contract"]["status"], "ok")
 
+    def test_kb_series_evidence_requires_explicit_unambiguous_scope_on_every_chunk(self):
+        args = {"kind": "hybrid_search", "profile": "kb_route_lookup", "series": "LAD LED R700"}
+        explicit_r700 = {"entity_type": "kb_chunk", "metadata": {"series_scope": "LAD LED R700"}}
+        explicit_r500 = {"entity_type": "kb_chunk", "metadata": {"series_scope": "LAD LED R500"}}
+        incidental_r700 = {"entity_type": "kb_chunk", "heading": "LAD LED R700", "preview": "Описание серии R700"}
+        unknown = {"entity_type": "kb_chunk", "heading": "Обзор", "preview": "Общий обзор"}
+        self.assertEqual(_MODULE._constraint_evidence_status(args, {"kind": "hybrid_search", "results": [explicit_r700]}), "matched")
+        self.assertEqual(_MODULE._constraint_evidence_status(args, {"kind": "hybrid_search", "results": [explicit_r500]}), "mismatch")
+        self.assertEqual(_MODULE._constraint_evidence_status(args, {"kind": "hybrid_search", "results": [incidental_r700]}), "unknown")
+        self.assertEqual(_MODULE._constraint_evidence_status(args, {"kind": "hybrid_search", "results": [explicit_r700, unknown]}), "unknown")
+        self.assertEqual(_MODULE._constraint_evidence_status(args, {"kind": "hybrid_search", "results": [explicit_r700, explicit_r500]}), "mismatch")
+        multi_series = {"entity_type": "kb_chunk", "metadata": {"series_scope": "Сравнение LAD LED R500 и LAD LED R700"}}
+        self.assertEqual(_MODULE._constraint_evidence_status(args, {"kind": "hybrid_search", "results": [multi_series]}), "mismatch")
+        self.assertEqual(_MODULE._constraint_evidence_status(args, {"kind": "hybrid_search", "results": [{"metadata": {"series_scope": "LAD LED R7000"}}]}), "mismatch")
+        self.assertEqual(_MODULE._constraint_evidence_status(
+            {"kind": "hybrid_search", "profile": "kb_route_lookup"},
+            {"kind": "hybrid_search", "results": [explicit_r700, explicit_r500]},
+        ), "unknown")
+
     def test_tool_marks_constraint_mismatch_without_exposing_values_as_metric_labels(self):
         ctx = ToolContext(cwd="/tmp", user_id=42, chat_id=42, chat_type="private")
         payload = {

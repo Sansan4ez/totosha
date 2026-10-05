@@ -85,6 +85,7 @@ _stub_modules = {
     "observability": types.SimpleNamespace(
         REQUEST_ID=ContextVar("request_id", default="-"),
         inject_trace_context=lambda *args, **kwargs: {},
+        observe_route_finalizer_duration=lambda *args, **kwargs: None,
         observe_route_selector_prompt_size=lambda *args, **kwargs: None,
         observe_route_selector_sanitization=lambda *args, **kwargs: None,
         record_span_event=lambda *args, **kwargs: None,
@@ -239,6 +240,22 @@ class RoutingGuardrailTests(unittest.TestCase):
         for message, payload, expected in cases:
             with self.subTest(message=message, payload=payload):
                 self.assertEqual(_MODULE._company_fact_payload_is_relevant(payload, message), expected)
+
+    def test_ignored_explicit_kb_constraint_blocks_sufficiency_without_series_evidence(self):
+        result = _ToolResult(
+            True,
+            output=json.dumps({"status": "success", "results": [{"entity_type": "kb_chunk"}]}),
+            metadata={"filter_contract": {"ignored_filter_fields": ["series"]}, "retrieval_constraint_evidence_status": "unknown"},
+        )
+        args = {"kind": "hybrid_search", "profile": "kb_route_lookup", "series": "LAD LED R700"}
+        self.assertFalse(_MODULE._constraint_contract_allows_sufficiency(args, result))
+        result.metadata["retrieval_constraint_evidence_status"] = "mismatch"
+        self.assertFalse(_MODULE._constraint_contract_allows_sufficiency(args, result))
+        result.metadata["retrieval_constraint_evidence_status"] = "matched"
+        self.assertTrue(_MODULE._constraint_contract_allows_sufficiency(args, result))
+        result.metadata["filter_contract"]["ignored_filter_fields"] = []
+        result.metadata["retrieval_constraint_evidence_status"] = "unknown"
+        self.assertFalse(_MODULE._constraint_contract_allows_sufficiency(args, result))
 
     def test_broad_series_question_uses_series_description_leaf_route(self):
         response, exec_mock, meta = self._run_flow(
@@ -1352,8 +1369,22 @@ class RoutingGuardrailTests(unittest.TestCase):
         self.assertEqual(meta["retrieval_fallback_route_count"], 2)
         self.assertEqual(meta["retrieval_family_local_fallback_count"], 2)
         self.assertEqual(meta["retrieval_cross_family_fallback_count"], 0)
-        self.assertEqual(meta["retrieval_close_reason"], "")
+        self.assertEqual(meta["retrieval_phase"], "closed")
+        self.assertEqual(meta["retrieval_evidence_status"], "empty")
+        self.assertEqual(meta["retrieval_close_reason"], "portfolio_entity_not_found")
         self.assertEqual(meta["retrieval_used_fallback_route_id"], "")
+
+    def test_portfolio_empty_search_fingerprint_ignores_limit_but_not_entity(self):
+        state = {"retrieval_attempt_signatures": [], "retrieval_business_empty_fingerprints": []}
+        initial = {"kind": "portfolio_by_sphere", "sphere": "РЖД", "limit": 3}
+        revised_limit = {"kind": "portfolio_by_sphere", "sphere": "РЖД", "limit": 10}
+        clarified_entity = {"kind": "portfolio_by_sphere", "sphere": "LAD LED R700", "limit": 3}
+        empty = _ToolResult(True, output=json.dumps({"status": "empty", "results": []}))
+        _MODULE._record_retrieval_attempt("corp_db_search", initial, state)
+        _MODULE._record_business_empty_fingerprint("corp_db_search", initial, empty, state)
+
+        self.assertTrue(_MODULE._is_duplicate_retrieval_attempt("corp_db_search", revised_limit, state))
+        self.assertFalse(_MODULE._is_duplicate_retrieval_attempt("corp_db_search", clarified_entity, state))
 
     def test_wrong_document_doc_search_output_is_weak(self):
         payload = {

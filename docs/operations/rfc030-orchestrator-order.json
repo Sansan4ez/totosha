@@ -1,0 +1,146 @@
+{
+  "epic_id": "totosha-m911",
+  "source_rfc": "docs/rfc/RFC-030-capability-registry-and-atomic-llm-planning.md",
+  "prepared_on": "2026-09-07",
+  "launch_authorized": false,
+  "execution_policy": "Sequential rounds; one worker/issue; explicit operator review between rounds; never auto-launch all rounds. Revalidate live br status and blockers before every launch.",
+  "excluded_containers": [
+    "totosha-m911",
+    "totosha-i0zf"
+  ],
+  "rounds": [
+    {
+      "run_suffix": "r01-inventory-holdout",
+      "title": "Inventory и независимый holdout",
+      "issues": [
+        "totosha-m911.1",
+        "totosha-m911.3"
+      ],
+      "operator_gate": "Review scope RFC и независимой разметки; без production изменений."
+    },
+    {
+      "run_suffix": "r02-live-baseline",
+      "title": "Frozen live baseline",
+      "issues": [
+        "totosha-m911.2"
+      ],
+      "operator_gate": "Подтвердить pinned endpoint/models, доступ к baseline stack, стоимость и время реальных прогонов. Не продолжать без сохранённого baseline."
+    },
+    {
+      "run_suffix": "r03-contracts-planner",
+      "title": "Security ingress, registry, contracts, CI и planner",
+      "issues": [
+        "totosha-m911.15",
+        "totosha-m911.4",
+        "totosha-m911.5",
+        "totosha-m911.7",
+        "totosha-m911.8",
+        "totosha-m911.6",
+        "totosha-m911.12",
+        "totosha-m911.36",
+        "totosha-m911.9",
+        "totosha-m911.10"
+      ],
+      "operator_gate": "Review baseline/holdout и consolidation hypothesis. Завершить и проверить полные schemas; при неподходящем объёме разбить задачу до запуска, а не закрывать частично."
+    },
+    {
+      "run_suffix": "r04-provider-contract",
+      "title": "Контракт production provider",
+      "issues": [
+        "totosha-m911.11"
+      ],
+      "operator_gate": "Отдельно разрешить live provider probes и расходы. Schema/model mismatch блокирует продолжение; fake tests не заменяют live checks."
+    },
+    {
+      "run_suffix": "r05-isolated-pipeline",
+      "title": "Workspace isolation, finalizer и полная новая pipeline",
+      "issues": [
+        "totosha-m911.16",
+        "totosha-m911.17",
+        "totosha-m911.13",
+        "totosha-m911.14",
+        "totosha-m911.18",
+        "totosha-m911.19"
+      ],
+      "operator_gate": "Security review tool + shell/filesystem/network boundary. Изоляцию проверять в выделенном test stack; изменения production mounts/network требуют отдельного разрешения."
+    },
+    {
+      "run_suffix": "r06-shadow-canary-control",
+      "title": "Shadow, compatibility, quality reports и canary control",
+      "issues": [
+        "totosha-m911.20",
+        "totosha-m911.21",
+        "totosha-m911.37",
+        "totosha-m911.22"
+      ],
+      "operator_gate": "Review полной pipeline и telemetry. Coding/config support не означает разрешение включить live shadow/canary. Перед live запуском подтвердить cohort, stack и rollback."
+    },
+    {
+      "run_suffix": "r07-table-slices",
+      "title": "Первые четыре table vertical slices",
+      "issues": [
+        "totosha-m911.23",
+        "totosha-m911.24",
+        "totosha-m911.25",
+        "totosha-m911.26"
+      ],
+      "operator_gate": "Provider/pipeline/contracts/evaluation gates green. Review первой documents вертикали перед следующей при обнаружении общего contract defect; все slices проходят новый путь целиком."
+    },
+    {
+      "run_suffix": "r08-strict-catalog",
+      "title": "Catalog exact/structured/hybrid и canary vertical",
+      "issues": [
+        "totosha-m911.27",
+        "totosha-m911.28",
+        "totosha-m911.29"
+      ],
+      "operator_gate": "После table-slice review. В v3 ни один power/category constraint не ослабляется; legacy остаётся работоспособным для rollback."
+    },
+    {
+      "run_suffix": "r09-company-knowledge",
+      "title": "Source-scoped knowledge и grounded vertical",
+      "issues": [
+        "totosha-m911.30",
+        "totosha-m911.31"
+      ],
+      "operator_gate": "После catalog review. Отдельно проверить domain/facets, partial company facts и отсутствие company/series fallback."
+    },
+    {
+      "run_suffix": "r10-remaining-workflows",
+      "title": "Portfolio, corpus и recommendation; full coverage",
+      "issues": [
+        "totosha-m911.32",
+        "totosha-m911.33",
+        "totosha-m911.34",
+        "totosha-m911.35"
+      ],
+      "operator_gate": "После knowledge review. Сверить original route inventory: ни один корпоративный entry point не потерян и не ушёл в ReAct."
+    },
+    {
+      "run_suffix": "r11-live-acceptance",
+      "title": "Полный quality/security/performance gate",
+      "issues": [
+        "totosha-m911.38"
+      ],
+      "operator_gate": "Явное разрешение live прогонов и бюджета; независимые reviewers/labels доступны, held-out не использован для tuning. Минимум 3×100% prod-agent и >=10 повторов stability case."
+    },
+    {
+      "run_suffix": "r12-primary-cutover",
+      "title": "Primary cutover и pre-cleanup rollback drill",
+      "issues": [
+        "totosha-m911.39"
+      ],
+      "operator_gate": "STOP: отдельное разрешение оператора на production deployment после review acceptance artifacts. Проверить retained release digest/config и доступность rollback. Не запускать автоматически за r11."
+    },
+    {
+      "run_suffix": "r13-cleanup",
+      "title": "Удаление legacy после verified cutover",
+      "issues": [
+        "totosha-i0zf.1",
+        "totosha-i0zf.2",
+        "totosha-i0zf.3"
+      ],
+      "operator_gate": "STOP: отдельное разрешение Phase 6 после наблюдения primary и проверки rollback. Оператор снимает deferred с umbrella totosha-i0zf только после review; umbrella не передаётся worker. Post-cleanup rollback — deployment retained artifact, не runtime switch."
+    }
+  ]
+}

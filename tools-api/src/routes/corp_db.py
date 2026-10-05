@@ -501,6 +501,7 @@ class CorpDbSearchRequest(BaseModel):
     kind: Literal[
         "hybrid_search",
         "lamp_exact",
+        "series_models",
         "lamp_suggest",
         "sku_by_code",
         "lamp_code_lookup",
@@ -528,6 +529,7 @@ class CorpDbSearchRequest(BaseModel):
     include_debug: bool = False
 
     name: Optional[str] = None
+    subfamily: Optional[str] = None
     # RFC-029 workstream 3: document lookups accept up to five lamp/model/series names per
     # request; `name` stays supported for single-name callers.
     names: Optional[list[str]] = Field(default=None, min_length=1, max_length=5)
@@ -1405,6 +1407,7 @@ def _portfolio_examples_response(
     lamp: dict[str, Any] | None = None,
     spheres: list[dict[str, Any]] | None = None,
     portfolio_examples: list[dict[str, Any]] | None = None,
+    evidence_type: str = "category_sphere_example",
 ) -> dict[str, Any]:
     examples = portfolio_examples or []
     payload = {
@@ -1412,6 +1415,7 @@ def _portfolio_examples_response(
         "kind": "portfolio_examples_by_lamp",
         "query": query,
         "filters": filters,
+        "evidence_type": evidence_type,
         "results": examples,
         "portfolio_examples": examples,
         _EXECUTION_FILTER_EVIDENCE_KEY: _bounded_filter_field_names(applied_filter_fields),
@@ -3420,6 +3424,88 @@ async def _hybrid_search(conn: asyncpg.Connection, req: CorpDbSearchRequest, lim
     )
 
 
+def _normalize_series_selector(value: str) -> str:
+    normalized = _normalize_lamp_exact_name(value).replace("ё", "е")
+    normalized = re.sub(r"^(?:lad\s+)?led\s+", "", normalized)
+    return _normalize_ws(normalized)
+
+
+async def _series_models(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
+    requested = _req_str(req.name, "name")
+    normalized = _normalize_series_selector(requested)
+    requested_subfamily = _normalize_series_selector(req.subfamily or "")
+    # Resolve only against the canonical series/family registry; never infer a series
+    # from arbitrary SKU prefixes (which would make exact model lookups ambiguous).
+    family_rows = await conn.fetch(
+        """
+        SELECT DISTINCT canonical_series_name, category_family_name
+        FROM corp.catalog_series_families
+        ORDER BY canonical_series_name, category_family_name
+        """
+    )
+    series_names = sorted({str(row["canonical_series_name"]) for row in family_rows})
+    matched_series = next((name for name in series_names if _normalize_series_selector(name) == normalized), None)
+    inferred_subfamily = None
+    if matched_series is None:
+        family_match = next((row for row in family_rows
+                             if _normalize_series_selector(str(row["category_family_name"])) == normalized), None)
+        if family_match is not None:
+            matched_series = str(family_match["canonical_series_name"])
+            inferred_subfamily = str(family_match["category_family_name"])
+    if matched_series is None:
+        suggestions = [name for name in series_names if normalized and normalized in _normalize_series_selector(name)]
+        return {
+            "status": "unknown_series", "kind": "series_models", "query": requested,
+            "results": [], "suggestions": suggestions[:5], _EXECUTION_FILTER_EVIDENCE_KEY: (),
+        }
+    family_names = sorted({str(row["category_family_name"]) for row in family_rows
+                           if str(row["canonical_series_name"]) == matched_series})
+    matched_subfamily = inferred_subfamily
+    if requested_subfamily:
+        subfamily_matches = [name for name in family_names
+                             if _normalize_series_selector(name) == requested_subfamily
+                             or _normalize_series_selector(name).endswith(f" {requested_subfamily}")]
+        matched_subfamily = subfamily_matches[0] if len(subfamily_matches) == 1 else None
+        if matched_subfamily is None:
+            return {"status": "ambiguous_series", "kind": "series_models", "query": requested,
+                    "results": [], "series": matched_series, "subfamilies": family_names,
+                    _EXECUTION_FILTER_EVIDENCE_KEY: ()}
+    rows = await conn.fetch(
+        """
+        WITH RECURSIVE ancestry AS (
+            SELECT c.category_id AS descendant_id, c.category_id AS ancestor_id, c.parent_category_id,
+                   c.name AS ancestor_name, ARRAY[c.category_id]::bigint[] AS path
+            FROM corp.categories c
+            UNION ALL
+            SELECT a.descendant_id, p.category_id, p.parent_category_id, p.name, a.path || p.category_id
+            FROM ancestry a JOIN corp.categories p ON p.category_id = a.parent_category_id
+            WHERE NOT p.category_id = ANY(a.path)
+        )
+        SELECT l.*
+        FROM corp.v_catalog_lamps_agent l
+        WHERE l.series_name = $1
+          AND ($2::text IS NULL OR EXISTS (
+              SELECT 1 FROM ancestry a
+              WHERE a.descendant_id = l.category_id AND a.ancestor_name = $2
+          ))
+        ORDER BY l.name, l.lamp_id
+        LIMIT $3 OFFSET $4
+        """,
+        matched_series, matched_subfamily, limit, offset,
+    )
+    results = []
+    for row in rows:
+        item = _serialize_lamp_row(row)
+        item["series_evidence"] = {"canonical_series_name": matched_series,
+                                   "subfamily": matched_subfamily,
+                                   "category_name": _row_get(row, "category_name")}
+        results.append(item)
+    return {"status": "success" if results else "empty", "kind": "series_models", "query": requested,
+            "series": matched_series, "subfamily": matched_subfamily, "results": results,
+            "filters": {"series": matched_series, "subfamily": matched_subfamily},
+            _EXECUTION_FILTER_EVIDENCE_KEY: ()}
+
+
 async def _lamp_exact(conn: asyncpg.Connection, req: CorpDbSearchRequest, limit: int, offset: int) -> dict[str, Any]:
     name = _req_str(req.name, "name")
     rows = await _fetch_lamp_exact_rows(conn, name=name, limit=limit, offset=offset)
@@ -3837,43 +3923,141 @@ async def _portfolio_examples_by_lamp(
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
-    query = _req_str(req.name, "name")
-    profile_name = "exact_chain"
+    query = _req_str(req.name or req.series or req.category, "name/series/category")
+    profile_name = "typed_entity_chain"
+    lamp_payload = None
+    category_ids: list[int] = []
+    category_names: list[str] = []
+    lamp_id = None
+    category_id = None
+    category_name = None
+    resolved_as = None
 
-    async with _observe_search_phase(
-        kind="portfolio_examples_by_lamp",
-        profile=profile_name,
-        phase="lamp_exact",
-        span_name="corp_db.portfolio_examples.lamp_exact",
-    ):
-        lamp_rows = await _fetch_lamp_exact_rows(conn, name=query, limit=1, offset=0)
+    # A supplied model name is first treated as an exact model, preserving the exact-SKU
+    # contract. Series/subfamily/category selectors are resolved against the typed registry.
+    if req.name:
+        async with _observe_search_phase(
+            kind="portfolio_examples_by_lamp", profile=profile_name, phase="lamp_exact",
+            span_name="corp_db.portfolio_examples.lamp_exact",
+        ):
+            lamp_rows = await _fetch_lamp_exact_rows(conn, name=query, limit=1, offset=0)
+        if lamp_rows:
+            lamp_row = lamp_rows[0]
+            lamp_payload = _serialize_lamp_row(lamp_row)
+            category_id = _row_get(lamp_row, "category_id")
+            category_name = _row_get(lamp_row, "category_name")
+            lamp_id = _row_get(lamp_row, "lamp_id")
+            resolved_as = "exact_model"
+            if category_id is not None:
+                category_ids = [int(category_id)]
+                category_names = [str(category_name or "")]
 
-    if not lamp_rows:
+            # Exact-model resolution is authoritative. Any additional selector must
+            # agree with that model; never ignore it or broaden to a series fallback.
+            lamp_series = str(_row_get(lamp_row, "series_name") or "")
+            lamp_category = str(category_name or "")
+            requested_series = _normalize_series_selector(req.series or "")
+            requested_category = _normalize_series_selector(req.category or "")
+            requested_subfamily = _normalize_series_selector(req.subfamily or "")
+            conflicts = (
+                (requested_series and requested_series != _normalize_series_selector(lamp_series))
+                or (requested_category and requested_category != _normalize_series_selector(lamp_category))
+                or (requested_subfamily and not (
+                    _normalize_series_selector(lamp_category) == requested_subfamily
+                    or _normalize_series_selector(lamp_category).endswith(f" {requested_subfamily}")
+                ))
+            )
+            if conflicts:
+                response = _portfolio_examples_response(
+                    query=query, status="empty", filters={
+                        "reason": "selector_conflict", "resolved_as": "exact_model",
+                        "lamp_id": lamp_id, "series": lamp_series,
+                        "category_name": lamp_category,
+                    }, lamp=lamp_payload, evidence_type="category_sphere_example",
+                )
+                _log_portfolio_examples_result(status="empty", lamp_id=lamp_id, category_id=category_id)
+                return response
+
+    # A name supplied with other constraints cannot silently fall through to a
+    # broader series/category when it fails exact model resolution.
+    if req.name and lamp_payload is None and (req.series or req.subfamily or req.category):
         response = _portfolio_examples_response(
-            query=query,
-            status="empty",
-            filters={"reason": "lamp_not_found"},
+            query=query, status="empty", filters={"reason": "entity_not_resolved", "entity_type": "exact_model"},
+            evidence_type="category_sphere_example",
         )
         _log_portfolio_examples_result(status="empty")
         return response
 
-    lamp_row = lamp_rows[0]
-    lamp_payload = _serialize_lamp_row(lamp_row)
-    category_id = _row_get(lamp_row, "category_id")
-    category_name = _row_get(lamp_row, "category_name")
-    lamp_id = _row_get(lamp_row, "lamp_id")
-
-    if category_id is None:
+    if req.name and lamp_payload is not None and category_id is None:
         response = _portfolio_examples_response(
-            query=query,
-            status="empty",
-            filters={
-                "reason": "category_missing",
-                "lamp_id": lamp_id,
-            },
-            lamp=lamp_payload,
+            query=query, status="empty", filters={"reason": "category_missing", "lamp_id": lamp_id},
+            lamp=lamp_payload, evidence_type="category_sphere_example",
         )
         _log_portfolio_examples_result(status="empty", lamp_id=lamp_id)
+        return response
+
+    if not category_ids and (req.series or req.subfamily or req.category or req.name):
+        selector = req.series or req.category or req.name or ""
+        normalized = _normalize_series_selector(selector)
+        family_rows = await conn.fetch(
+            """
+            SELECT DISTINCT canonical_series_name, category_family_name
+            FROM corp.catalog_series_families
+            ORDER BY canonical_series_name, category_family_name
+            LIMIT 200
+            """
+        )
+        exact_series = [str(r["canonical_series_name"]) for r in family_rows
+                        if _normalize_series_selector(str(r["canonical_series_name"])) == normalized]
+        family_matches = [r for r in family_rows
+                          if _normalize_series_selector(str(r["category_family_name"])) == normalized]
+        if exact_series:
+            matched_series = exact_series[0]
+            families = sorted({str(r["category_family_name"]) for r in family_rows
+                               if str(r["canonical_series_name"]) == matched_series})
+            subfamily = req.subfamily
+            for constraint in (subfamily, req.category):
+                if constraint:
+                    constraint_key = _normalize_series_selector(constraint)
+                    families = [f for f in families
+                                if _normalize_series_selector(f) == constraint_key
+                                or _normalize_series_selector(f).endswith(f" {constraint_key}")]
+            resolved_as = "series"
+        elif len(family_matches) == 1:
+            families = [str(family_matches[0]["category_family_name"])]
+            resolved_as = "subfamily"
+        elif req.category and not req.series:
+            families = [str(req.category)]
+            resolved_as = "category"
+        else:
+            families = []
+        if families:
+            category_rows = await conn.fetch(
+                """
+                SELECT category_id, name AS category_name
+                FROM corp.categories
+                WHERE name = ANY($1::text[])
+                ORDER BY name, category_id
+                LIMIT 200
+                """,
+                families,
+            )
+            category_ids = sorted({int(r["category_id"]) for r in category_rows})
+            category_names = sorted({str(r["category_name"]) for r in category_rows})
+        if not category_ids:
+            response = _portfolio_examples_response(
+                query=query, status="empty", filters={"reason": "entity_not_resolved", "entity_type": "series"},
+                evidence_type="category_sphere_example",
+            )
+            _log_portfolio_examples_result(status="empty")
+            return response
+
+    if not category_ids:
+        response = _portfolio_examples_response(
+            query=query, status="empty", filters={"reason": "lamp_not_found"},
+            evidence_type="category_sphere_example",
+        )
+        _log_portfolio_examples_result(status="empty")
         return response
 
     async with _observe_search_phase(
@@ -3881,20 +4065,22 @@ async def _portfolio_examples_by_lamp(
         profile=profile_name,
         phase="sphere_lookup",
         span_name="corp_db.portfolio_examples.sphere_lookup",
-        attributes={"corp_db.category_id": int(category_id)},
+        attributes={"corp_db.category_count": len(category_ids)},
     ):
         sphere_rows = await conn.fetch(
             """
             SELECT s.sphere_id, s.name AS sphere_name
             FROM corp.sphere_categories sc
             JOIN corp.spheres s ON s.sphere_id = sc.sphere_id
-            WHERE sc.category_id = $1
-            ORDER BY s.name
+            WHERE sc.category_id = ANY($1::bigint[])
+            ORDER BY s.name, s.sphere_id
+            LIMIT 200
             """,
-            category_id,
+            category_ids,
         )
 
-    spheres = [dict(row) for row in sphere_rows]
+    spheres_by_id = {int(row["sphere_id"]): dict(row) for row in sphere_rows}
+    spheres = sorted(spheres_by_id.values(), key=lambda row: (str(row.get("sphere_name", "")), int(row["sphere_id"])))
     if not spheres:
         response = _portfolio_examples_response(
             query=query,
@@ -3902,8 +4088,8 @@ async def _portfolio_examples_by_lamp(
             filters={
                 "reason": "spheres_not_found",
                 "lamp_id": lamp_id,
-                "category_id": category_id,
-                "category_name": category_name,
+                "category_ids": category_ids,
+                "category_names": category_names,
                 "sphere_count": 0,
             },
             lamp=lamp_payload,
@@ -3926,7 +4112,7 @@ async def _portfolio_examples_by_lamp(
             FROM corp.portfolio p
             JOIN corp.spheres s ON s.sphere_id = p.sphere_id
             WHERE p.sphere_id = ANY($1::bigint[])
-            ORDER BY s.name, p.name
+            ORDER BY s.name, p.name, p.portfolio_id
             LIMIT $2 OFFSET $3
             """,
             sphere_ids,
@@ -3934,6 +4120,9 @@ async def _portfolio_examples_by_lamp(
             offset,
         )
 
+    # portfolio_id is a text primary key and the portfolio→sphere join is many-to-one,
+    # so each row is already unique. Keep the query's stable order and apply pagination
+    # before returning; do not coerce text IDs or deduplicate after LIMIT/OFFSET.
     portfolio_examples = [dict(row) for row in portfolio_rows]
     if not portfolio_examples:
         response = _portfolio_examples_response(
@@ -3943,7 +4132,8 @@ async def _portfolio_examples_by_lamp(
                 "reason": "portfolio_not_found",
                 "lamp_id": lamp_id,
                 "category_id": category_id,
-                "category_name": category_name,
+                "category_ids": category_ids,
+                "category_names": category_names,
                 "sphere_count": len(spheres),
             },
             lamp=lamp_payload,
@@ -3967,15 +4157,21 @@ async def _portfolio_examples_by_lamp(
             query=query,
             status="success",
             filters={
-                "lamp_match": "exact",
+                "lamp_match": "exact" if resolved_as == "exact_model" else resolved_as,
+                "category_ids": category_ids,
+                "category_names": category_names,
                 "category_id": category_id,
                 "category_name": category_name,
+                "resolved_as": resolved_as,
                 "sphere_count": len(spheres),
                 "portfolio_count": len(portfolio_examples),
             },
             lamp=lamp_payload,
             spheres=spheres,
             portfolio_examples=portfolio_examples,
+            # Current schema links categories to spheres, not lamps to portfolio records.
+            # Never imply direct application without a lamp/portfolio relation.
+            evidence_type="category_sphere_example",
         )
 
     _log_portfolio_examples_result(
@@ -4488,6 +4684,8 @@ async def corp_db_search(req: CorpDbSearchRequest, request: Request):
                 result = await _hybrid_search(conn, req, limit)
             elif req.kind == "lamp_exact":
                 result = await _lamp_exact(conn, req, limit, offset)
+            elif req.kind == "series_models":
+                result = await _series_models(conn, req, limit, offset)
             elif req.kind == "lamp_suggest":
                 if hasattr(req, "model_copy"):
                     suggest_req = req.model_copy(update={"kind": "hybrid_search", "profile": "entity_resolver", "entity_types": ["lamp", "sku"]})

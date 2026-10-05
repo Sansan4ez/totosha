@@ -69,6 +69,7 @@ _stub_modules = {
     "observability": types.SimpleNamespace(
         REQUEST_ID=ContextVar("request_id", default="-"),
         inject_trace_context=lambda headers=None, request_id=None: dict(headers or {}),
+        observe_route_finalizer_duration=lambda *args, **kwargs: None,
         observe_route_selector_prompt_size=lambda *args, **kwargs: None,
         observe_route_selector_sanitization=lambda *args, **kwargs: None,
         record_span_event=lambda *args, **kwargs: None,
@@ -145,6 +146,25 @@ def _arguments(tool_args: dict) -> dict:
 
 
 class RouteSelectorFakeTests(unittest.TestCase):
+    def test_bounded_catalog_and_project_answers_preserve_rows_and_provenance(self):
+        from types import SimpleNamespace
+        rows = [{"name": f"R700-{i} PROM", "url": f"https://example.org/{i}", "preview": "85 Вт"} for i in range(5)]
+
+        def finalize(kind, payload):
+            return asyncio.run(_MODULE._finalize_with_scoped_evidence(
+                base_messages=[], tool_name="corp_db_search", tool_args={"kind": kind, "name": "R700"},
+                tool_result=SimpleNamespace(output=json.dumps(payload)), route_hint={},
+            ))
+
+        answer = finalize("series_models", {"status": "success", "results": rows})
+        for row in rows:
+            self.assertIn(row["name"], answer)
+        answer = finalize("portfolio_examples_by_lamp", {"evidence_type": "category_sphere_example", "results": rows})
+        self.assertIn("не подтверждает применение", answer)
+        answer = finalize("lamp_code_lookup", {"status": "success", "results": [{"name": "R700", "primary_codes": {"etm": "123", "oracl": "456"}}]})
+        self.assertIn("etm: 123", answer)
+        self.assertIn("oracl: 456", answer)
+
     def _run(self, query: str, fake: ScriptedRouteSelectorLLM):
         with tempfile.TemporaryDirectory() as docs_tmp, patch.dict(
             os.environ,

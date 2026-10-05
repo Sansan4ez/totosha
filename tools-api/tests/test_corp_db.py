@@ -28,6 +28,33 @@ class DummyPool:
         return DummyAcquire(self.conn)
 
 
+class SeriesModelsConn:
+    async def fetchrow(self, query, *args):
+        return {"total": 0, "with_embedding": 0}
+
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "FROM corp.catalog_series_families" in sql:
+            return [
+                {"canonical_series_name": "LAD LED R700", "category_family_name": "LAD LED R700 PROM"},
+                {"canonical_series_name": "LAD LED R700", "category_family_name": "LAD LED R700 ST"},
+            ]
+        if "FROM corp.v_catalog_lamps_agent" in sql:
+            series, subfamily, limit, offset = args
+            self.query_args = args
+            return [{"lamp_id": 1, "name": "LAD LED R700-PROM-1", "category_id": 7,
+                     "category_name": "LAD LED R700 PROM", "series_name": series,
+                     "agent_facts": {}, "preview": "R700 PROM"}] if subfamily else [
+                         {"lamp_id": 1, "name": "LAD LED R700-PROM-1", "category_id": 7,
+                          "category_name": "LAD LED R700 PROM", "series_name": series,
+                          "agent_facts": {}, "preview": "R700 PROM"},
+                         {"lamp_id": 2, "name": "LAD LED R700-ST-1", "category_id": 8,
+                          "category_name": "LAD LED R700 ST", "series_name": series,
+                          "agent_facts": {}, "preview": "R700 ST"},
+                     ][offset:offset + limit]
+        return []
+
+
 class DummyConn:
     def __init__(self, rows):
         self.rows = rows
@@ -370,6 +397,7 @@ class PortfolioExamplesConn:
         self.include_portfolio = include_portfolio
         self.include_spheres = include_spheres
         self.include_category = include_category
+        self.portfolio_args = None
 
     @staticmethod
     def _lamp_row() -> dict:
@@ -406,9 +434,10 @@ class PortfolioExamplesConn:
         if "FROM corp.portfolio p" in sql:
             if not self.include_portfolio:
                 return []
-            return [
+            self.portfolio_args = args
+            rows = [
                 {
-                    "portfolio_id": 102,
+                    "portfolio_id": "project-reservoir",
                     "name": "Освещение резервуарного парка",
                     "url": "https://ladzavod.ru/portfolio/reservoir",
                     "group_name": "Нефтегаз",
@@ -417,7 +446,7 @@ class PortfolioExamplesConn:
                     "sphere_name": "Нефтегазовый комплекс",
                 },
                 {
-                    "portfolio_id": 205,
+                    "portfolio_id": "project-logistics",
                     "name": "Освещение логистического комплекса",
                     "url": "https://ladzavod.ru/portfolio/logistics",
                     "group_name": "Логистика",
@@ -426,11 +455,64 @@ class PortfolioExamplesConn:
                     "sphere_name": "Промышленность и склады",
                 },
             ]
+            limit, offset = args[1:3]
+            return rows[offset:offset + limit]
         return []
+
+
+class ExactR700PortfolioConn(PortfolioExamplesConn):
+    @staticmethod
+    def _lamp_row() -> dict:
+        row = PortfolioExamplesConn._lamp_row()
+        row.update({
+            "lamp_id": 7001,
+            "name": "LAD LED R700-1 ST",
+            "series_name": "LAD LED R700",
+            "category_id": 87,
+            "category_name": "LAD LED R700 ST",
+        })
+        return row
 
 
 class EmptyLampPortfolioConn:
     async def fetch(self, query, *args):
+        return []
+
+
+class SeriesPortfolioConn:
+    def __init__(self, *, include_projects=True):
+        self.include_projects = include_projects
+        self.project_args = None
+
+    async def fetch(self, query, *args):
+        sql = str(query)
+        if "FROM corp.v_catalog_lamps_agent" in sql:
+            return []
+        if "FROM corp.catalog_series_families" in sql:
+            return [
+                {"canonical_series_name": "LAD LED R700", "category_family_name": "LAD LED R700 PROM"},
+                {"canonical_series_name": "LAD LED R700", "category_family_name": "LAD LED R700 ST"},
+            ]
+        if "FROM corp.categories" in sql:
+            families = args[0]
+            return [
+                {"category_id": 17, "category_name": "LAD LED R700 PROM"},
+            ] if len(families) == 1 and "PROM" in families[0] else [
+                {"category_id": 17, "category_name": "LAD LED R700 PROM"},
+                {"category_id": 18, "category_name": "LAD LED R700 ST"},
+            ]
+        if "FROM corp.sphere_categories sc" in sql:
+            return [{"sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"}]
+        if "FROM corp.portfolio p" in sql:
+            self.project_args = args
+            if not self.include_projects:
+                return []
+            rows = [
+                {"portfolio_id": f"project-{index}", "name": f"Проект {index}", "sphere_id": 4, "sphere_name": "Нефтегазовый комплекс"}
+                for index in range(5)
+            ]
+            limit, offset = args[1:3]
+            return rows[offset:offset + limit]
         return []
 
 
@@ -904,6 +986,28 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["results"][0]["entity_type"], "lamp")
         self.assertEqual(payload["results"][0]["title"], "LAD LED LINE-OZ-25")
 
+    def test_series_models_resolves_canonical_series_and_prom_subfamily(self):
+        conn = SeriesModelsConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post("/corp-db/search", json={
+                "kind": "series_models", "name": "r700", "subfamily": "LAD LED R700 PROM", "limit": 5,
+            })
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["results"][0]["series_evidence"]["canonical_series_name"], "LAD LED R700")
+        self.assertEqual(payload["results"][0]["series_evidence"]["subfamily"], "LAD LED R700 PROM")
+        self.assertEqual(conn.query_args, ("LAD LED R700", "LAD LED R700 PROM", 5, 0))
+
+    def test_series_models_does_not_match_r7000(self):
+        conn = SeriesModelsConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post("/corp-db/search", json={"kind": "series_models", "name": "R7000"})
+        self.assertEqual(response.json()["status"], "unknown_series")
+        self.assertEqual(response.json()["results"], [])
+
     def test_lamp_exact_returns_weight(self):
         conn = LampExactConn()
         with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
@@ -1022,7 +1126,89 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(payload["results"], payload["portfolio_examples"])
         self.assertEqual(payload["filters"]["lamp_match"], "exact")
         self.assertEqual(payload["filters"]["portfolio_count"], 2)
+        self.assertEqual(payload["evidence_type"], "category_sphere_example")
         self.assertEqual(payload["portfolio_examples"][0]["sphere_name"], "Нефтегазовый комплекс")
+        self.assertEqual(
+            [row["portfolio_id"] for row in payload["portfolio_examples"]],
+            ["project-reservoir", "project-logistics"],
+        )
+
+    def test_portfolio_examples_preserves_text_ids_and_limit_offset(self):
+        conn = PortfolioExamplesConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "R500-9-30-6-650LZD", "limit": 1, "offset": 1},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual([row["portfolio_id"] for row in payload["portfolio_examples"]], ["project-logistics"])
+        self.assertEqual(conn.portfolio_args[1:], (1, 1))
+
+    def test_portfolio_exact_model_rejects_conflicting_subfamily_and_series(self):
+        for extra in ({"subfamily": "PROM"}, {"subfamily": "HT"}, {"series": "R500"}):
+            conn = ExactR700PortfolioConn()
+            with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+                from app import app
+                response = TestClient(app).post(
+                    "/corp-db/search",
+                    json={"kind": "portfolio_examples_by_lamp", "name": "R700-1-ST", **extra},
+                )
+            payload = response.json()
+            self.assertEqual(payload["status"], "empty")
+            self.assertEqual(payload["filters"]["reason"], "selector_conflict")
+            self.assertEqual(payload["filters"]["resolved_as"], "exact_model")
+
+    def test_portfolio_exact_model_accepts_matching_subfamily(self):
+        conn = ExactR700PortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "R700-1-ST", "subfamily": "ST"},
+            )
+        self.assertEqual(response.json()["status"], "success")
+        self.assertEqual(response.json()["filters"]["resolved_as"], "exact_model")
+
+    def test_portfolio_unknown_name_with_constraints_does_not_fall_back(self):
+        conn = EmptyLampPortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "name": "UNKNOWN-MODEL", "series": "R700"},
+            )
+        self.assertEqual(response.json()["status"], "empty")
+        self.assertEqual(response.json()["filters"]["entity_type"], "exact_model")
+
+    def test_portfolio_examples_by_lamp_resolves_series_paginates_and_reports_evidence(self):
+        conn = SeriesPortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "series": "R700", "limit": 1, "offset": 2},
+            )
+        payload = response.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["evidence_type"], "category_sphere_example")
+        self.assertEqual(payload["filters"]["category_ids"], [17, 18])
+        self.assertEqual(len(payload["portfolio_examples"]), 1)
+        self.assertEqual(conn.project_args[1:], (1, 2))
+
+    def test_portfolio_examples_by_lamp_resolves_only_requested_subfamily(self):
+        conn = SeriesPortfolioConn()
+        with patch("src.routes.corp_db._get_pool", new=AsyncMock(return_value=DummyPool(conn))):
+            from app import app
+            response = TestClient(app).post(
+                "/corp-db/search",
+                json={"kind": "portfolio_examples_by_lamp", "series": "R700", "subfamily": "PROM"},
+            )
+        payload = response.json()
+        self.assertEqual(payload["filters"]["category_ids"], [17])
 
     def test_portfolio_examples_by_lamp_reports_portfolio_not_found(self):
         conn = PortfolioExamplesConn(include_portfolio=False)
@@ -1058,7 +1244,8 @@ class CorpDbRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "empty")
-        self.assertEqual(payload["filters"]["reason"], "lamp_not_found")
+        self.assertEqual(payload["filters"]["reason"], "entity_not_resolved")
+        self.assertEqual(payload["evidence_type"], "category_sphere_example")
         self.assertEqual(payload["results"], [])
 
     def test_application_recommendation_resolves_stadium_and_returns_payload(self):

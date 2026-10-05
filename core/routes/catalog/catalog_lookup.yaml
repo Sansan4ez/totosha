@@ -3,11 +3,11 @@ route_family: corp_db.catalog_lookup
 route_kind: corp_table
 authority: primary
 title: Lamp catalog lookup
-summary: Exact models, codes, series, categories, and structured catalog lookup.
+summary: Exact model and identifier lookup.
 when_to_use: >-
-  Select when the user names one concrete lamp model, series, or code and wants its exact catalog card,
-  structured characteristics, or identifier lookup. Do not select for comparisons between series or
-  series-wide knowledge facts; use the series-description route for those.
+  Select when the user names one concrete lamp model/SKU and wants its exact catalog card,
+  structured characteristics, or identifier lookup. Do not use for a family/series listing;
+  use corp_db.series_models. Route code lookups to the specialized code executor.
 schema_ref: catalog_lookup.schema.json
 topics:
 - catalog
@@ -30,3 +30,9 @@ patterns:
 executor: corp_db_search
 executor_args_template:
   kind: lamp_exact
+fallback_route_ids:
+- corp_db.series_models
+- corp_db.sku_lookup
+cross_family_fallback_route_ids:
+- corp_db.series_models
+- corp_db.sku_lookup

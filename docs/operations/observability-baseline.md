@@ -42,6 +42,7 @@ Minimum Expectations
   - metric `tool_executions_total`
   - metric `tool_execution_duration_milliseconds`
   - metric `retrieval_guardrail_blocks_total`
+- Core business retrieval additionally emits `retrieval_business_outcomes_total{route,kind,status,reason}` and `retrieval_fallback_outcomes_total{route,kind,outcome,attempted}`; HTTP/tool status is not treated as business success. Selector A/B latency reuses existing RFC-029 timings in `route_selector_stage_duration_milliseconds`, and finalizer LLM latency is recorded in `route_finalizer_duration_milliseconds`.
 - Catalog retrieval services additionally emit:
   - metric `corp_db_search_duration_milliseconds`
   - metric `corp_db_search_phase_duration_milliseconds`

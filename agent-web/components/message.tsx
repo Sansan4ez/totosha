@@ -1,10 +1,9 @@
 "use client";
 
 import ArtifactPanel from "@/components/artifact-panel";
+import AssistantMarkdown from "@/components/assistant-markdown";
 import type { WidgetMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
 interface MessageProps {
   message: WidgetMessage;
@@ -33,7 +32,7 @@ export default function Message({ message }: MessageProps) {
             <div className="whitespace-pre-wrap">{message.content}</div>
           ) : (
             <div className="markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+              <AssistantMarkdown content={message.content} />
             </div>
           )}
           {!isUser && message.artifact ? <ArtifactPanel artifact={message.artifact} /> : null}

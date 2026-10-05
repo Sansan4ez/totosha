@@ -18,3 +18,5 @@ This inventory is generated from the minimum alert catalog under `victoriametric
 | `OBS-ALERT-006` | vmalert | Route selector sanitization sustained | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |
 | `OBS-ALERT-007` | vmalert | Corp DB search documents missing embeddings | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |
 | `OBS-ALERT-008` | vmalert | Catalog filter contract mismatch sustained | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-009` | vmalert | Retrieval business-empty high | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |
+| `OBS-ALERT-010` | vmalert | Retrieval fallback exhausted without attempts | warning | VictoriaMetrics | `docs/operations/observability-runbook.md` |

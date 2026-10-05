@@ -49,3 +49,5 @@ db/catalog.normalized.json
 # Bench artifacts
 bench/results/
 bench/reports/
+# br doctor per-run artifacts
+.doctor/

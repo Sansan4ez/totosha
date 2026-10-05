@@ -80,6 +80,11 @@ CORP_DB_KIND_CONTRACTS: dict[str, dict[str, Any]] = {
         "consumed": ("name",),
         "passthrough": _PAGINATION,
     },
+    "series_models": {
+        "required": ("name",),
+        "consumed": ("name", "subfamily"),
+        "passthrough": _PAGINATION,
+    },
     "lamp_suggest": {
         "required": ("query",),
         "consumed": ("query", "profile", "entity_types", "include_debug", "fuzzy", *_LAMP_FILTER_FIELDS),
