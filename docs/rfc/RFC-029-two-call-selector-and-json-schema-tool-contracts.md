@@ -145,7 +145,7 @@ Observability
 - `route_selector_a_latency_ms` / `route_selector_b_latency_ms` split out from today's single `route_selector_latency_ms`, so the two-call cost is visible per stage, not just in aggregate.
 - `route_argument_builder_status` (valid / repaired / fail_closed) alongside the existing `route_selector_status`, using the same sanitizing-vs-reject classification RFC-028 defined, scoped to Call B only.
 - `application_recommendation` gains `context_profile` and `application_key` as observability labels (mirrors `knowledge_route_id` today), so the resolution path is visible in traces without reading tool output.
-- Bench per-route accuracy (RFC-028 workstream 5) gains a second column: argument-validity rate (Call B output passing its JSON Schema on first attempt, no repair), so argument-construction quality is tracked as its own signal distinct from route-choice accuracy.
+- Bench per-route accuracy (RFC-028 workstream 5) gains a second column: argument-validity rate (Call B output passing its JSON Schema on first attempt, no repair), so argument-construction quality is tracked as its own signal distinct from route-choice accuracy. The numerator counts only `valid`; the denominator counts `valid`, `repaired`, and `failed`. Runtime `failed` denotes any Call B or Call B repair rejection/upstream failure and retains the successful Call A route identity and stage durations before the fail-closed response. Call A failures are not Call B samples. Missing, `skipped`, and unknown legacy statuses are excluded; an empty denominator is reported as N/A.
 
 Testing approach
 ----------------

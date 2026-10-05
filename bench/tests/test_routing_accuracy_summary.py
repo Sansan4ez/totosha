@@ -8,9 +8,13 @@ def test_argument_validity_excludes_missing_and_skipped():
     dataset = [{"id": str(i), "routing": {"route_id": "r"}} for i in range(len(statuses))]
     rows = {str(i): {"meta": {"route_argument_builder_status": status}} for i, status in enumerate(statuses)}
     route = routing_accuracy_summary(dataset, rows)["by_route"]["r"]
-    assert route["argument_valid"] == 2
+    assert route["argument_valid"] == 1
     assert route["argument_scored"] == 3
-    assert route["argument_validity_rate"] == 0.6667
+    assert route["argument_validity_rate"] == 0.3333
+    for samples, expected in [(["valid", "failed"], 0.5), (["repaired"], 0.0)]:
+        cases = [{"id": str(i), "routing": {"route_id": "r"}} for i in range(len(samples))]
+        results = {str(i): {"meta": {"route_argument_builder_status": status}} for i, status in enumerate(samples)}
+        assert routing_accuracy_summary(cases, results)["by_route"]["r"]["argument_validity_rate"] == expected
     assert routing_accuracy_summary(dataset, {})["by_route"]["r"]["argument_validity_rate"] is None
 
 

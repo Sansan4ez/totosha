@@ -4141,66 +4141,90 @@ async def _select_route_with_llm(
     argument_builder_sanitization_actions: list[str] = []
     if route_has_selector_fillable_arguments(choice_route):
         call_b_started = perf_counter()
-        builder_messages = _build_route_argument_builder_messages(choice_route, selector_payload)
-        builder_result = await call_selector_llm(builder_messages, "route_argument_builder")
-        selector_model = str(builder_result.get("model") or selector_model)
-        if "error" in builder_result:
-            raise RuntimeError(str(builder_result.get("error") or "route argument builder LLM error"))
-        builder_choices = builder_result.get("choices") or []
-        if not builder_choices:
-            raise RuntimeError("route argument builder returned no choices")
-        builder_content = str((builder_choices[0].get("message") or {}).get("content") or "").strip()
-        normalized_builder_content, series_outcome, canonical_series = _normalize_route_argument_builder_content(
-            builder_content,
-            choice_route,
-            routing_message,
-        )
-        series_conflict = series_outcome == "conflict"
-        arg_validation = validate_route_arguments_output(normalized_builder_content, choice_route)
-        repair_prompt = _series_conflict_repair_prompt(canonical_series) if series_conflict else arg_validation.repair_prompt
-        should_repair = series_conflict or (not arg_validation.valid and arg_validation.repairable)
-        if should_repair:
-            if not first_validation_error_code:
-                first_validation_error_code = "series_alias_conflict" if series_conflict else arg_validation.error_code
-                first_validation_error = (
-                    f"tool_args.series conflicts with explicit alias for {canonical_series or 'explosion protection'}"
-                    if series_conflict
-                    else arg_validation.error
-                )
-            argument_builder_repair_attempted = True
-            argument_builder_repair_status = "attempted"
-            builder_repair_messages = _route_arguments_repair_messages(
-                builder_messages,
+        try:
+            builder_messages = _build_route_argument_builder_messages(choice_route, selector_payload)
+            builder_result = await call_selector_llm(builder_messages, "route_argument_builder")
+            selector_model = str(builder_result.get("model") or selector_model)
+            if "error" in builder_result:
+                raise RuntimeError(str(builder_result.get("error") or "route argument builder LLM error"))
+            builder_choices = builder_result.get("choices") or []
+            if not builder_choices:
+                raise RuntimeError("route argument builder returned no choices")
+            builder_content = str((builder_choices[0].get("message") or {}).get("content") or "").strip()
+            normalized_builder_content, series_outcome, canonical_series = _normalize_route_argument_builder_content(
                 builder_content,
-                repair_prompt,
+                choice_route,
+                routing_message,
             )
-            builder_repair_result = await call_selector_llm(builder_repair_messages, "route_argument_builder_repair")
-            selector_model = str(builder_repair_result.get("model") or selector_model)
-            if "error" in builder_repair_result:
-                raise RuntimeError(str(builder_repair_result.get("error") or "route argument builder repair LLM error"))
-            builder_repair_choices = builder_repair_result.get("choices") or []
-            builder_repair_content = ""
-            if builder_repair_choices:
-                builder_repair_content = str((builder_repair_choices[0].get("message") or {}).get("content") or "").strip()
-            normalized_repair_content, repair_series_outcome, _repair_canonical_series = (
-                _normalize_route_argument_builder_content(builder_repair_content, choice_route, routing_message)
-            )
-            arg_validation = validate_route_arguments_output(normalized_repair_content, choice_route, repair_attempted=True)
-            if repair_series_outcome == "conflict":
-                arg_validation = type(arg_validation)(
-                    valid=False,
-                    error_code="series_alias_conflict",
-                    error="route argument builder repair still conflicts with explicit series alias",
+            series_conflict = series_outcome == "conflict"
+            arg_validation = validate_route_arguments_output(normalized_builder_content, choice_route)
+            repair_prompt = _series_conflict_repair_prompt(canonical_series) if series_conflict else arg_validation.repair_prompt
+            should_repair = series_conflict or (not arg_validation.valid and arg_validation.repairable)
+            if should_repair:
+                if not first_validation_error_code:
+                    first_validation_error_code = "series_alias_conflict" if series_conflict else arg_validation.error_code
+                    first_validation_error = (
+                        f"tool_args.series conflicts with explicit alias for {canonical_series or 'explosion protection'}"
+                        if series_conflict
+                        else arg_validation.error
+                    )
+                argument_builder_repair_attempted = True
+                argument_builder_repair_status = "attempted"
+                builder_repair_messages = _route_arguments_repair_messages(
+                    builder_messages,
+                    builder_content,
+                    repair_prompt,
                 )
-            argument_builder_repair_status = "succeeded" if arg_validation.valid else "failed"
-        selector_b_latency_ms = (perf_counter() - call_b_started) * 1000
-        if not arg_validation.valid:
-            raise RuntimeError(
-                f"route argument builder output rejected: {arg_validation.error_code}: {arg_validation.error}"
-            )
-        argument_builder_status = "repaired" if argument_builder_repair_attempted else "valid"
-        argument_builder_sanitization_actions = list(arg_validation.sanitization_actions)
-        final_tool_args = dict(arg_validation.tool_args)
+                builder_repair_result = await call_selector_llm(builder_repair_messages, "route_argument_builder_repair")
+                selector_model = str(builder_repair_result.get("model") or selector_model)
+                if "error" in builder_repair_result:
+                    raise RuntimeError(str(builder_repair_result.get("error") or "route argument builder repair LLM error"))
+                builder_repair_choices = builder_repair_result.get("choices") or []
+                builder_repair_content = ""
+                if builder_repair_choices:
+                    builder_repair_content = str((builder_repair_choices[0].get("message") or {}).get("content") or "").strip()
+                normalized_repair_content, repair_series_outcome, _repair_canonical_series = (
+                    _normalize_route_argument_builder_content(builder_repair_content, choice_route, routing_message)
+                )
+                arg_validation = validate_route_arguments_output(normalized_repair_content, choice_route, repair_attempted=True)
+                if repair_series_outcome == "conflict":
+                    arg_validation = type(arg_validation)(
+                        valid=False,
+                        error_code="series_alias_conflict",
+                        error="route argument builder repair still conflicts with explicit series alias",
+                    )
+                argument_builder_repair_status = "succeeded" if arg_validation.valid else "failed"
+            selector_b_latency_ms = (perf_counter() - call_b_started) * 1000
+            if not arg_validation.valid:
+                raise RuntimeError(
+                    f"route argument builder output rejected: {arg_validation.error_code}: {arg_validation.error}"
+                )
+            argument_builder_status = "repaired" if argument_builder_repair_attempted else "valid"
+            argument_builder_sanitization_actions = list(arg_validation.sanitization_actions)
+            final_tool_args = dict(arg_validation.tool_args)
+        except Exception:
+            # Call A succeeded: retain its canonical identity without executing or rerouting.
+            _update_routing_observability({
+                "route_id": str(choice_route.get("route_id") or ""),
+                "selected_source": str(choice_route.get("source") or "unknown"),
+                "selected_family_id": str(validation.selected_family_id or ""),
+                "retrieval_leaf_route_id": str(choice_route.get("leaf_route_id") or choice_route.get("route_id") or ""),
+                "selected_route_kind": str(choice_route.get("route_kind") or ""),
+                "selected_route_stage": str(choice_route.get("route_stage") or ""),
+                "route_selector_status": "unavailable",
+                "route_selector_model": selector_model,
+                "route_argument_builder_status": "failed",
+                "route_selector_a_latency_ms": selector_a_latency_ms,
+                "route_selector_b_latency_ms": (perf_counter() - call_b_started) * 1000,
+                "route_selector_latency_ms": (perf_counter() - selector_started) * 1000,
+                "routing_catalog_version": str(selector_payload.get("catalog_version") or ""),
+                "routing_catalog_origin": str(selector_payload.get("catalog_origin") or ""),
+                "routing_schema_version": int(selector_payload.get("schema_version") or 0),
+                "retrieval_phase": "closed",
+                "retrieval_evidence_status": "error",
+                "retrieval_close_reason": "route_selector_unavailable",
+            })
+            raise
     else:
         final_tool_args = merge_route_tool_args(choice_route, {}, validate_required=True)
 

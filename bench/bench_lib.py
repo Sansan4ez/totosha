@@ -780,7 +780,7 @@ def routing_accuracy_summary(dataset: list[dict[str, Any]], by_case: dict[str, d
         builder_status = str(meta.get("route_argument_builder_status") or "")
         if builder_status in {"valid", "repaired", "failed"}:
             argument_scored[expected_route_id] = argument_scored.get(expected_route_id, 0) + 1
-            if builder_status in {"valid", "repaired"}:
+            if builder_status == "valid":
                 argument_valid[expected_route_id] = argument_valid.get(expected_route_id, 0) + 1
 
         route_totals[expected_route_id] = route_totals.get(expected_route_id, 0) + 1

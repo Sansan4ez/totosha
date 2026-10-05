@@ -223,7 +223,7 @@ def main() -> None:
             lines.append(f"- Scored cases (golden entries with an expected `routing.route_id`): {routing_accuracy['scored_cases']}")
             lines.append("")
             lines.append("### By route")
-            lines.append("| Route | Routing accuracy | Argument validity (valid / scored) |")
+            lines.append("| Route | Routing accuracy | First-attempt argument validity (valid / scored) |")
             lines.append("| --- | --- | --- |")
             for route_id, s in routing_accuracy["by_route"].items():
                 validity = s["argument_validity_rate"]

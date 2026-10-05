@@ -118,7 +118,10 @@ class ScriptedRouteSelectorLLM:
         self.calls.append((messages, purpose))
         if not self._responses:
             raise AssertionError(f"ScriptedRouteSelectorLLM exhausted but called again with purpose={purpose}")
-        return self._responses.pop(0)
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def _choice(
@@ -371,6 +374,73 @@ class RouteSelectorFakeTests(unittest.TestCase):
 
         self.assertEqual(len(fake.calls), 3)
         self.assertIn("route argument builder output rejected", str(ctx.exception))
+
+    def test_call_b_failures_retain_identity_and_feed_metrics_and_bench(self):
+        from core.tests.test_rfc027_observability import observability
+        from bench.bench_lib import routing_accuracy_summary
+
+        failures = [
+            [_llm_response("invalid"), _llm_response("invalid again")],
+            [_arguments({"command": "unsafe"})],
+            [{"error": "upstream"}],
+            [{"choices": []}],
+            [RuntimeError("transport")],
+            [_llm_response("invalid"), {"error": "repair upstream"}],
+            [_llm_response("invalid"), {"choices": []}],
+            [_llm_response("invalid"), RuntimeError("repair transport")],
+        ]
+        for responses in failures:
+            with self.subTest(responses=responses):
+                meta = {}
+                captured_context = {}
+
+                def update_context(**fields):
+                    result = observability.update_correlation_context(**fields)
+                    captured_context.update(observability.get_correlation_context())
+                    return result
+
+                token = observability.CORRELATION_CONTEXT.set(None)
+                try:
+                    with patch.object(_MODULE, "run_meta_get", return_value=meta), patch.object(
+                        _MODULE, "update_correlation_context", update_context
+                    ), patch.object(observability, "_known_route_ids", return_value=frozenset({"corp_kb.company_common"})), patch.object(
+                        observability, "_known_knowledge_route_ids", return_value=frozenset({"corp_kb.company_common"})
+                    ), patch.object(observability.ROUTE_ARGUMENT_BUILDER_STATUS_TOTAL, "inc") as inc:
+                        fake = ScriptedRouteSelectorLLM([_choice("corp_kb.company_common"), *responses])
+                        with self.assertRaises(RuntimeError):
+                            self._run("какие есть сертификаты?", fake)
+                        observability.CORRELATION_CONTEXT.set(dict(captured_context))
+                        _MODULE._record_route_selector_unavailable("failure")
+                        self.assertEqual(meta["retrieval_route_id"], "corp_kb.company_common")
+                        self.assertEqual(meta["route_argument_builder_status"], "failed")
+                        # asyncio.run isolates ContextVars; inspect the context captured in the task.
+                        context = captured_context
+                        self.assertEqual(context["selected_route_id"], "corp_kb.company_common")
+                        self.assertEqual(context["route_argument_builder_status"], "failed")
+                        for stage in ("a", "b"):
+                            key = f"route_selector_{stage}_latency_ms"
+                            self.assertGreater(meta[key], 0)
+                            self.assertGreater(float(context[key]), 0)
+                        with observability.correlation_scope(**context):
+                            observability.observe_request_correlation(1, "error")
+                        inc.assert_called_once()
+                        self.assertEqual(observability.ROUTE_ARGUMENT_BUILDER_STATUS_TOTAL.label_calls[-1][-1], "failed")
+                        route = routing_accuracy_summary(
+                            [{"id": "failure", "routing": {"route_id": "corp_kb.company_common"}}],
+                            {"failure": {"meta": meta}},
+                        )["by_route"]["corp_kb.company_common"]
+                        self.assertEqual(route["argument_scored"], 1)
+                        self.assertEqual(route["argument_validity_rate"], 0)
+                finally:
+                    observability.CORRELATION_CONTEXT.reset(token)
+
+    def test_call_a_failure_is_not_a_builder_sample(self):
+        meta = {}
+        with patch.object(_MODULE, "run_meta_get", return_value=meta):
+            with self.assertRaises(RuntimeError):
+                self._run("какие есть сертификаты?", ScriptedRouteSelectorLLM([{"error": "Call A"}]))
+            _MODULE._record_route_selector_unavailable("Call A")
+        self.assertNotIn("route_argument_builder_status", meta)
 
     def test_2026_08_27_incident_matrix_uses_route_card_contracts(self):
         cases = (

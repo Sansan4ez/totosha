@@ -82,8 +82,25 @@ finally:
 
 
 class Rfc027ObservabilityTests(unittest.TestCase):
+    def setUp(self):
+        token = observability.CORRELATION_CONTEXT.set(None)
+        self.addCleanup(observability.CORRELATION_CONTEXT.reset, token)
+        docs = tempfile.TemporaryDirectory()
+        self.addCleanup(docs.cleanup)
+        env = patch.dict(os.environ, {
+            "CORP_DOCS_ROOT": docs.name,
+            "DOC_REPO_ROOT": str(Path(__file__).resolve().parents[2]),
+        })
+        env.start()
+        self.addCleanup(env.stop)
+        for lookup in (observability._known_route_ids, observability._known_knowledge_route_ids):
+            lookup.cache_clear()
+            self.addCleanup(lookup.cache_clear)
+
     def test_rfc029_stage_metrics_builder_counter_and_log_fields(self):
         with observability.correlation_scope(
+            selected_route_id="corp_db.certificate_by_lamp_name",
+            selected_source="corp_db",
             route_argument_builder_status="repaired",
             route_selector_a_latency_ms=12700,
             route_selector_b_latency_ms=4200,
@@ -97,7 +114,11 @@ class Rfc027ObservabilityTests(unittest.TestCase):
             record = logging.LogRecord("test", logging.INFO, __file__, 1, "hello", (), None)
             observability._RequestContextFilter().filter(record)
             self.assertEqual(record.route_argument_builder_status, "repaired")
-        with observability.correlation_scope(route_argument_builder_status="unbounded-value"):
+        with observability.correlation_scope(
+            selected_route_id="corp_db.certificate_by_lamp_name",
+            selected_source="corp_db",
+            route_argument_builder_status="unbounded-value",
+        ):
             observability.observe_request_correlation(1, "ok")
             self.assertEqual(observability.ROUTE_ARGUMENT_BUILDER_STATUS_TOTAL.label_calls[-1][-1], "unknown")
 
